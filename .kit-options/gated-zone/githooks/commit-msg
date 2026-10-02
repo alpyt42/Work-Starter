@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# commit-msg — zone gatée client : le message ne doit contenir ni référence locale ni signature d'IA.
+set -euo pipefail
+msg_file="$1"
+LOCAL_PATTERNS='/Users/|~/Work|/home/[a-z]+/Work|brain/'
+if grep -Eq "$LOCAL_PATTERNS" "$msg_file"; then
+  echo "✗ commit-msg refusé : référence au monde local dans le message" >&2; exit 1
+fi
+if grep -Eiq 'Co-Authored-By:.*(Claude|GPT|Codex|Copilot)|Generated with \[?Claude' "$msg_file"; then
+  echo "✗ commit-msg refusé : signature d'IA dans un commit client" >&2; exit 1
+fi
+exit 0

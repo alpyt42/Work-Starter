@@ -1,0 +1,83 @@
+{
+  "version": 1,
+  "skills": {
+    "diagnosing-bugs": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/diagnosing-bugs/SKILL.md",
+      "computedHash": "b35c6a6e37c61ca3169532fbab2300dea26f2ad190e1d2dac065800b8b2bb0aa"
+    },
+    "fastapi": {
+      "source": "fastapi/fastapi",
+      "sourceType": "github",
+      "skillPath": "fastapi/.agents/skills/fastapi/SKILL.md",
+      "computedHash": "1285499b71a2796fc0f0cd0a8ab1ff3886ebb47cd05a51062c5b84d34519f031"
+    },
+    "find-skills": {
+      "source": "vercel-labs/skills",
+      "sourceType": "github",
+      "skillPath": "skills/find-skills/SKILL.md",
+      "computedHash": "b146008599c31057cef1c145774cea5d5afb30e8f43fa802e47a4b461419aaaf"
+    },
+    "frontend-design": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/frontend-design/SKILL.md",
+      "computedHash": "89496d5dd00f4810205f351759594fc2742bf8eea85a2f2b2d1de59f4bd91576"
+    },
+    "pydantic": {
+      "source": "pydantic/skills",
+      "sourceType": "github",
+      "skillPath": "skills/pydantic/SKILL.md",
+      "computedHash": "65f68dbab0f7e60bfd26998350d674a104848daf23311067e0829758a7cf6f91"
+    },
+    "python-testing-patterns": {
+      "source": "wshobson/agents",
+      "sourceType": "github",
+      "skillPath": "plugins/python-development/skills/python-testing-patterns/SKILL.md",
+      "computedHash": "a0c0cd2841eb80fc082b360ebbee1ad69275234229e525a6da1baaee3f5a52bd"
+    },
+    "ruff": {
+      "source": "astral-sh/claude-code-plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/astral/skills/ruff/SKILL.md",
+      "computedHash": "905f1c2b66e722ab534d7cbeceafb6ee37d32e3bfe51f3e68c661c51eb19a776"
+    },
+    "security-and-hardening": {
+      "source": "addyosmani/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/security-and-hardening/SKILL.md",
+      "computedHash": "1e0cd727cccd3c8c0834ce7722a8a2851e2e849f1352ee972f39311437b021d3"
+    },
+    "tdd": {
+      "source": "mattpocock/skills",
+      "sourceType": "github",
+      "skillPath": "skills/engineering/tdd/SKILL.md",
+      "computedHash": "9ce12c4a1e209e557fcf9d02086ade3d7ffdb976186018fc1b063b4164246004"
+    },
+    "ty": {
+      "source": "astral-sh/claude-code-plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/astral/skills/ty/SKILL.md",
+      "computedHash": "5d82b319a84d296fae47f2664228bfac1a36dd832cb487b485a65ec36b3df21f"
+    },
+    "uv": {
+      "source": "astral-sh/claude-code-plugins",
+      "sourceType": "github",
+      "skillPath": "plugins/astral/skills/uv/SKILL.md",
+      "computedHash": "b1ca9e9826d906f6ee6ea172da50018ec13bb622ac9ba7204bda8b10e7fc8d0a"
+    },
+    "vercel-react-best-practices": {
+      "source": "vercel-labs/agent-skills",
+      "sourceType": "github",
+      "skillPath": "skills/react-best-practices/SKILL.md",
+      "computedHash": "ca7b0c0c6e5f2750043f7f0cd72d16ac4e2abc48f9b5500d047a4b77a2506212"
+    },
+    "webapp-testing": {
+      "source": "anthropics/skills",
+      "sourceType": "github",
+      "skillPath": "skills/webapp-testing/SKILL.md",
+      "computedHash": "ad5b1fc52807e9afa4635e59218a026b164dc58b6c3f41b0f7c644dcd6ccf572"
+    }
+  }
+}

@@ -1,0 +1,41 @@
+# Separate repositories and local work
+/brain/
+/brain-perso/
+/repos/*
+!/repos/README.md
+!/repos/workspaces/
+/repos/workspaces/*
+!/repos/workspaces/README.md
+/artifacts/*
+!/artifacts/README.md
+/agents/*
+!/agents/README.md
+
+# Third-party skills are restored from skills-lock.json
+/.agents/
+/.claude/skills/*
+!/.claude/skills/brain-clean
+!/.claude/skills/brand-deck
+!/.claude/skills/cr-reunion
+!/.claude/skills/timesheet
+!/.claude/skills/veille-messages
+
+# Local settings, secrets, and caches
+/.claude/settings.local.json
+.env
+.env.*
+!.env.example
+/tools/.toggl-cache.json
+__pycache__/
+*.pyc
+.DS_Store
+
+__azurite_*.json
+
+# Obsidian: track shared settings only; UI state can contain note paths
+/.obsidian/*
+!/.obsidian/app.json
+!/.obsidian/appearance.json
+!/.obsidian/core-plugins.json
+!/.obsidian/templates.json
+/.trash/

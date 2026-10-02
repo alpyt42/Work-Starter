@@ -1,0 +1,1 @@
+- Terraform: `terraform fmt -recursive` · `terraform validate` · `tflint`

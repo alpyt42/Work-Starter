@@ -1,0 +1,36 @@
+# Template for ~/.gitconfig: Git author and SSH key chosen per folder and per remote.
+# Copy into your home directory, replace every <placeholder>, then verify with
+#   git -C <clone> config --show-origin --get-regexp '^(user|core\.sshcommand)'
+# Keep real key paths, account names, and client folder names out of this repository.
+
+# No global identity: outside the rules below, Git refuses to commit.
+[user]
+    useConfigOnly = true
+
+# --- Author (and key, when needed) by folder. The last matching rule wins.
+[includeIf "gitdir:~/Work/.git"]                 # this repository only
+    path = ~/.gitconfig-personal
+[includeIf "gitdir:~/Work/repos/personal/"]
+    path = ~/.gitconfig-personal
+[includeIf "gitdir:~/Work/brain/"]
+    path = ~/.gitconfig-employer
+[includeIf "gitdir:~/Work/repos/<client-a>/"]
+    path = ~/.gitconfig-<client-a>
+
+# --- Same for a host shared by several accounts (e.g. github.com), matched by
+# remote URL: also applies during `git clone`, before the folder exists.
+[includeIf "hasconfig:remote.*.url:git@github.com:<personal-account>/**"]
+    path = ~/.gitconfig-personal
+[includeIf "hasconfig:remote.*.url:git@github.com:<client-a-org>/**"]
+    path = ~/.gitconfig-<client-a>
+
+# ---------------------------------------------------------------------------
+# ~/.gitconfig-<boundary>, one file per trust boundary:
+#
+# [user]
+#     name = <First Last>
+#     email = <address expected by that remote>
+# [core]
+#     # Only for a host shared by several accounts. Otherwise let ~/.ssh/config
+#     # pick the key for the host (Host <host> / IdentityFile / IdentitiesOnly yes).
+#     sshCommand = ssh -i ~/.ssh/id_ed25519_<boundary> -o IdentitiesOnly=yes

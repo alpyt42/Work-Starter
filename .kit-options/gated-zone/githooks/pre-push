@@ -1,0 +1,11 @@
+#!/usr/bin/env bash
+# pre-push — zone gatée client : jamais de push sur la branche par défaut, jamais de force.
+set -euo pipefail
+default="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@' || echo main)"
+while read -r local_ref local_sha remote_ref remote_sha; do
+  [[ -z "${local_ref:-}" ]] && continue
+  if [[ "$remote_ref" == "refs/heads/$default" ]]; then
+    echo "✗ pre-push refusé : push direct sur « $default » — passe par une PR" >&2; exit 1
+  fi
+done
+exit 0

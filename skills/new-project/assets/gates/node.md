@@ -1,0 +1,1 @@
+- Node: `npx prettier --write .` · `npx eslint .` · `npx tsc --noEmit` · `npm test` (if defined)

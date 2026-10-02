@@ -1,0 +1,31 @@
+#!/usr/bin/env bash
+# pre-commit — zone gatée client. Vaut pour tout le monde, la personne incluse.
+# Installation : dans chaque clone, `git config core.hooksPath ../.githooks` (ou copier dans .git/hooks/).
+set -euo pipefail
+
+# ── À adapter ────────────────────────────────────────────────────────────────
+EXPECTED_EMAIL_PATTERN='@client-domain\.com$'          # regex sur user.email
+LOCAL_PATTERNS='/Users/|~/Work|/home/[a-z]+/Work|brain/' # ce qui trahit le monde local
+# ─────────────────────────────────────────────────────────────────────────────
+
+fail() { echo "✗ pre-commit refusé : $1" >&2; exit 1; }
+
+# 1. Identité : l'email de commit doit être celui attendu chez le client.
+email="$(git config user.email || true)"
+[[ "$email" =~ $EXPECTED_EMAIL_PATTERN ]] || fail "user.email « $email » n'est pas l'identité client attendue (includeIf manquant ?)"
+
+# 2. Branche : pas de commit direct sur la branche par défaut.
+default="$(git symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null | sed 's@^origin/@@' || echo main)"
+current="$(git rev-parse --abbrev-ref HEAD)"
+[[ "$current" != "$default" ]] || fail "commit direct sur « $default » — travaille en branche, la PR c'est la personne"
+
+# 3. Secrets : scan gitleaks du staged. Échec fermé : gitleaks absent = commit refusé.
+command -v gitleaks >/dev/null || fail "gitleaks absent — installe-le (brew install gitleaks), le scan de secrets est obligatoire ici"
+gitleaks protect --staged --redact --no-banner >/dev/null 2>&1 || fail "gitleaks a trouvé un secret dans le staged"
+
+# 4. Anti-fuite locale : le staged ne doit contenir aucune référence au monde local.
+if git diff --cached -U0 | grep -E '^\+' | grep -Ev '^\+\+\+' | grep -Eq "$LOCAL_PATTERNS"; then
+  fail "le staged contient une référence au monde local ($LOCAL_PATTERNS) — le client n'a pas accès à ce monde"
+fi
+
+echo "✓ pre-commit : identité, branche, secrets, anti-fuite OK"
