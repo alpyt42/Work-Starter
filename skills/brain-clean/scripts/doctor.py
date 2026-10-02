@@ -162,6 +162,13 @@ def transcript_checks(findings: list[Finding]) -> None:
             if not destination.is_relative_to(BRAIN.resolve()) or not destination.is_file():
                 findings.append(Finding("ERROR", state, f"destination du transcript {name} absente ou hors brain : {raw}"))
     print(f"Destinations de transcripts examinées : {count}")
+    # Each transcript belongs to one brain only (see tools/brain-state.py).
+    for other in sorted(WORK.glob("brain*/.data/transcripts.json")):
+        if other.parent.parent.resolve() == BRAIN.resolve():
+            continue
+        shared = sorted(set(data) & set(json.loads(other.read_text(encoding="utf-8"))))
+        for name in shared:
+            findings.append(Finding("ERROR", state, f"transcript {name} aussi suivi par {other.parent.parent.name}/ : un seul brain par transcript"))
 
 
 def routing_checks(findings: list[Finding]) -> None:

@@ -38,6 +38,7 @@ This repository contains portable agent instructions and tools. Reply in the use
 - Run Python scripts with `uv run <script>`; do not invoke `python` or `python3` directly.
 - `machine/install.sh` is the one-command setup after cloning `Work`: it clones or creates `brain/` (and optionally `brain-perso/`), then runs `bootstrap.sh`.
 - `machine/bootstrap.sh` creates local directories, clones the private brain when configured, restores project skills, and checks links. It never restores local artifacts.
+- Several brains can coexist (`brain/`, `brain-perso/`, any `brain-*/` with `AGENTS.md` and `.data/`). Each item of skill state (a transcript, for example) belongs to one brain only. `uv run tools/brain-state.py` merges their states; `brain/.data/local-paths.json` holds the shared input folders and the `brains` expected on every machine.
 - `machine/update.sh` refreshes project skills and reports Git state. It does not commit or push.
 - Scripts that write to an external service require an explicit request for that specific operation. The timesheet workflow only reads Toggl and proposes values for manual entry.
 - After code work, update the relevant mission page and kanban in `brain/`, leaving a short dated entry and outstanding work. Do not copy code into memory.
