@@ -1,0 +1,10 @@
+.DS_Store
+__pycache__/
+*.tmp
+# secrets locaux : jamais commités
+.env
+.env.*
+!.env.example
+# Obsidian : le brain peut s'ouvrir dans le coffre de l'espace de travail, pas de coffre ici
+/.obsidian/
+/.trash/

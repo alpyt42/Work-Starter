@@ -1,0 +1,7 @@
+#!/usr/bin/env bash
+# pre-commit hook of the Work repository: refuse staged credentials. Installed by tools/machine/bootstrap.sh.
+set -euo pipefail
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+WORK="$(git rev-parse --show-toplevel)"
+command -v uv >/dev/null || { echo "pre-commit : uv introuvable, contrôle ignoré" >&2; exit 0; }
+uv run "$WORK/tools/machine/hooks/check-staged-secrets.py"

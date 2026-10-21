@@ -1,0 +1,64 @@
+#!/usr/bin/env bash
+# pre-commit hook of a brain repository (brain/, brain-perso/, brain-<name>/): refuse a commit when,
+# in the content being committed, a staged action register has an action under the wrong section or
+# a malformed action, a Markdown link is dead or points into another brain, the content names a
+# client of another brain (outside the `allow` list of .data/brain.json), or an addition looks like
+# a secret. It only validates; it never writes.
+# The checks read a snapshot of the index (what the commit will contain), not the working tree,
+# so unstaged fixes cannot hide a problem. Installed by tools/machine/bootstrap.sh into <brain>/.git/hooks.
+set -euo pipefail
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+
+BRAIN="$(git rev-parse --show-toplevel)"
+NAME="$(basename "$BRAIN")"
+WORK="$(dirname "$BRAIN")"
+[[ -f "$WORK/tools/brain/action.py" ]] || { echo "pre-commit : tools/brain/action.py introuvable, contrôle ignoré" >&2; exit 0; }
+command -v uv >/dev/null || { echo "pre-commit : uv introuvable, contrôle ignoré" >&2; exit 0; }
+
+staged="$(git -C "$BRAIN" diff --cached --name-only --diff-filter=ACMRD)"
+registers="$(grep -E '^projects/.+/state/actions\.md$' <<<"$staged" || true)"
+markdown="$(grep -E '\.md$' <<<"$staged" || true)"
+status=0
+
+if [[ -n "$registers" || -n "$markdown" ]]; then
+  # Snapshot of the index in a Work-like folder: this brain from the index, every other entry of Work
+  # linked (the sibling brains included, so a link into another brain is seen as such), so links to
+  # ../artifacts or ../repos resolve as they do in the real workspace. The brain being committed is
+  # never linked: its links resolve against the snapshot, not against the live working tree.
+  snapshot="$(mktemp -d "${TMPDIR:-/tmp}/brain-pre-commit.XXXXXX")"
+  trap 'rm -rf "$snapshot"' EXIT
+  git -C "$BRAIN" checkout-index -a --prefix="$snapshot/Work/$NAME/"
+  for entry in "$WORK"/* "$WORK"/.[!.]*; do
+    [[ -e "$entry" && "$(basename "$entry")" != "$NAME" ]] && ln -s "$entry" "$snapshot/Work/$(basename "$entry")"
+  done
+  SNAP="$snapshot/Work/$NAME"
+  cd "$WORK"
+
+  # Actions under the wrong section, and malformed or duplicated actions, in the staged registers.
+  if [[ -n "$registers" ]]; then
+    args=()
+    while IFS= read -r file; do
+      [[ -n "$file" && -f "$SNAP/$file" ]] && args+=(--register "$SNAP/$file")
+    done <<<"$registers"
+    if [[ ${#args[@]} -gt 0 ]]; then
+      uv run tools/brain/action.py --brain "$SNAP" sweep --check "${args[@]}" || status=1
+      uv run tools/brain/action.py --brain "$SNAP" check "${args[@]}" || status=1
+    fi
+  fi
+
+  # Dead Markdown links and links into another brain, in the content being committed.
+  if [[ -n "$markdown" ]]; then
+    out="$(BRAIN_DIR="$SNAP" WORK_DIR="$snapshot/Work" uv run tools/brain/check-links.py 2>&1)" || { echo "$out" >&2; status=1; }
+  fi
+fi
+
+# Client names of the other brains in the staged content (names listed in `allow` of .data/brain.json excepted).
+if [[ -f "$WORK/tools/machine/check-no-client.py" ]]; then
+  uv run "$WORK/tools/machine/check-no-client.py" --brain "$BRAIN" --staged || status=1
+fi
+
+# Credentials in the staged additions.
+(cd "$BRAIN" && uv run "$WORK/tools/machine/hooks/check-staged-secrets.py") || status=1
+
+[[ $status -eq 0 ]] || echo "Commit refusé : corriger puis re-stager (ou --no-verify pour passer outre)." >&2
+exit $status

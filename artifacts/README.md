@@ -1,6 +1,6 @@
 # artifacts/ — outputs destinés aux humains
 
-> Les fichiers produits **pour être vus par quelqu'un** : decks, one-pagers, documents Office, PDF, exports, diagrammes, maquettes. Ni du code (→ `repos/`), ni du contexte de travail (→ `brain/`), ni du scratch d'agent (→ `agents/`).
+> Les fichiers produits **pour être vus par quelqu'un** : decks, one-pagers, documents Office, PDF, exports, diagrammes, maquettes. Ni du code (→ `repos/`), ni du contexte de travail (→ un brain), ni du scratch d'agent (→ `agents/`).
 
 Ça couvre les vrais livrables (un deck, un one-pager) **et** les artefacts de travail qui ne sont livrés à personne mais qui restent des documents (un schéma, une page HTML de synthèse) **et** le matériel source reçu d'un client ou d'un tiers quand il est volumineux (un Excel, un PDF, une capture d'écran). Le critère n'est pas « qui l'a fait », mais « est-ce un gros binaire qui n'a rien à faire dans un historique git » (voir plus bas).
 
@@ -29,6 +29,6 @@ Ici restent les livrables destinés à être lus par un humain et leur README de
 
 À part ce README, le contenu du dossier est ignoré par Git : les fichiers peuvent être lourds et les binaires ne se diffent pas. La mémoire garde le pointeur (la fiche projet mentionne l'artefact et son chemin). Un générateur conservé durablement est versionné dans un repo ; dans `agents/`, il reste jetable. Si tu veux une sauvegarde du livrable, utilise un emplacement de stockage adapté, pas ce dépôt Git.
 
-**Matériel source reçu** (workbook Excel, export PDF, capture d'écran transmis par un client) : même règle — ça va ici, pas dans `brain/` (versionné en git, pas fait pour porter des binaires). Le texte qui en est extrait (analyse, chiffres, notes) reste dans `brain/` sous forme de `.md`, avec un lien vers son dossier `artifacts/` correspondant.
+**Matériel source reçu** (workbook Excel, export PDF, capture d'écran transmis par un client) : même règle — ça va ici, pas dans un brain (versionné en git, pas fait pour porter des binaires). Le texte qui en est extrait (analyse, chiffres, notes) reste dans le brain concerné sous forme de `.md`, avec un lien vers son dossier `artifacts/` correspondant.
 
 ⚠️ **Contenu client** : un artefact qui contient des données ou du contexte d'un client ne se publie jamais à l'extérieur (page web, service tiers, artefact partagé) sans demande explicite par pièce.

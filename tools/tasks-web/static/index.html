@@ -1,0 +1,175 @@
+<!doctype html>
+<html lang="fr">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light dark">
+  <meta name="theme-color" content="#f3f6f9" media="(prefers-color-scheme: light)">
+  <meta name="theme-color" content="#0e0e0f" media="(prefers-color-scheme: dark)">
+  <meta name="csrf-token" content="__CSRF_TOKEN__">
+  <title>Actions · Brain local</title>
+  <link rel="stylesheet" href="/app.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#mainContent">Aller au contenu</a>
+  <div class="app-shell">
+    <header class="site-header">
+      <div class="brand"><span class="brand-mark" aria-hidden="true">▦</span><h1>Brain <span class="brand-muted">/</span> Actions</h1></div>
+      <span class="local-badge">Données locales</span>
+      <p id="lastSync" class="last-sync" aria-live="polite">Chargement…</p>
+      <div class="heading-actions">
+        <button id="refreshButton" class="button button-quiet" type="button" aria-label="Actualiser les actions"><span aria-hidden="true">↻</span> <span class="button-copy">Actualiser</span></button>
+        <button id="undoButton" class="button button-quiet" type="button" title="Rien à annuler" aria-label="Rien à annuler" disabled><span aria-hidden="true">↶</span> <span class="button-copy">Annuler</span></button>
+        <button id="newButton" class="button button-primary" type="button" aria-label="Créer une action"><span aria-hidden="true">+</span> <span class="button-copy">Task</span></button>
+        <button id="newNoteButton" class="button button-quiet new-note-button" type="button" aria-label="Créer une note" title="Créer une note"><span class="new-note-plus" aria-hidden="true">+</span> <span class="button-copy">Note</span></button>
+        <button id="quitButton" class="button button-quiet quit-button" type="button" aria-label="Quitter Actions Brain et arrêter le serveur"><span aria-hidden="true">⏻</span> <span class="button-copy">Quitter</span></button>
+      </div>
+    </header>
+    <main id="mainContent" tabindex="-1">
+      <section class="workspace" aria-label="Gérer les actions">
+        <div class="workspace-header">
+          <div class="view-switch" role="group" aria-label="Vue">
+            <button id="listButton" type="button" class="selected" aria-pressed="true">Liste</button>
+            <button id="boardButton" type="button" aria-pressed="false">Kanban</button>
+            <button id="toolsButton" type="button" aria-pressed="false" title="Commandes du workspace ; rien n'est envoyé à un service externe, et celles qui modifient le brain demandent une confirmation.">Outils</button>
+            <button id="gitButton" type="button" aria-pressed="false" title="Lecture seule : état local de Work et du brain. Rien n'est récupéré, commité ni poussé ; les fichiers sensibles ne sont pas affichés.">Git</button>
+            <button id="searchButton" type="button" aria-pressed="false">Recherche</button>
+          </div>
+          <span id="resultCount" class="result-count" tabindex="-1"></span>
+          <div id="summaryChips" class="summary-chips" aria-label="Vue d'ensemble des actions">
+            <span class="chip chip-due"><strong id="dueCount">—</strong> échéances</span>
+            <span class="chip chip-wait"><strong id="waitingCount">—</strong> en attente</span>
+          </div>
+          <span id="gitStatus" class="view-status" role="status" aria-live="polite" hidden></span>
+        </div>
+        <div id="filters" class="filters">
+          <label class="search-label">Rechercher <input id="searchInput" type="search" placeholder="ID, sujet, responsable…" autocomplete="off"></label>
+          <label>Projet <select id="projectFilter"><option value="">Tous les projets</option></select></label>
+          <label>Groupe <select id="groupFilter"><option value="">Tous les groupes</option><option value="none">Sans groupe</option></select></label>
+          <label>Responsable <select id="ownerFilter"><option value="">Toute l'équipe</option><option value="mine">Mes actions</option></select></label>
+          <label>Afficher <select id="scopeFilter"><option value="active">Actions ouvertes</option><option value="all">Toutes les actions</option><option value="closed">Terminées et annulées</option></select></label>
+          <button id="resetFilters" class="button button-quiet filter-reset" type="button">Effacer les filtres</button>
+        </div>
+        <p id="errorBanner" class="error-banner" role="alert" hidden></p>
+        <div id="listView" class="list-view" aria-label="Vue liste"></div>
+        <p id="boardHint" class="board-hint" hidden>Fais défiler les colonnes horizontalement.</p>
+        <div id="boardView" class="board-view" aria-label="Vue kanban" hidden></div>
+        <div id="toolsView" class="tools-view" aria-label="Outils locaux" hidden>
+          <label class="tool-search-label">Rechercher un outil <input id="toolSearch" type="search" placeholder="Nom, catégorie ou usage…" autocomplete="off"></label>
+          <div class="tools-layout">
+            <div id="toolsCatalog" class="tools-catalog"></div>
+            <section id="toolResult" class="tool-result" aria-labelledby="toolResultTitle">
+              <div class="tool-result-head"><h3 id="toolResultTitle">Résultat</h3><span id="toolResultStatus" role="status" aria-live="polite">Prêt</span></div>
+              <p id="toolResultEmpty" class="tool-result-empty">Lance un outil pour voir sa sortie ici.</p>
+              <pre id="toolResultOutput" tabindex="0" hidden></pre>
+            </section>
+          </div>
+        </div>
+        <div id="gitView" class="git-view" aria-label="Changements Git" hidden>
+          <div class="git-layout">
+            <div id="gitRepos" class="git-repos"></div>
+            <section id="gitDetail" class="git-detail" aria-labelledby="gitDetailTitle">
+              <div class="git-detail-head"><h3 id="gitDetailTitle">Différences</h3><span id="gitDetailStatus" role="status" aria-live="polite">Prêt</span></div>
+              <p id="gitDetailEmpty" class="git-detail-empty">Choisis un fichier modifié ou un commit pour voir ses différences ici.</p>
+              <p id="gitDetailNote" class="git-detail-note" hidden></p>
+              <div id="gitDiff" class="git-diff" tabindex="0" aria-label="Différences" hidden></div>
+            </section>
+          </div>
+        </div>
+        <div id="searchView" class="search-view" aria-label="Recherche dans les documents" hidden>
+          <div class="search-layout">
+            <section class="search-side" aria-label="Résultats">
+              <div class="search-toolbar">
+                <label>Rechercher <input id="docQuery" type="search" placeholder="Mots ou « phrase exacte » dans le brain…" autocomplete="off" spellcheck="false"></label>
+                <label>Projet <select id="docProject"><option value="">Tous les projets</option><option value="none">Hors projets</option></select></label>
+              </div>
+              <p id="docStatus" class="doc-status" role="status" aria-live="polite">Chargement…</p>
+              <div id="docList" class="doc-list"></div>
+            </section>
+            <section id="docPane" class="doc-pane" aria-labelledby="docPaneTitle">
+              <div class="doc-pane-head">
+                <div class="doc-pane-heading">
+                  <button id="docBack" class="button button-quiet doc-back" type="button" hidden>← Retour</button>
+                  <h3 id="docPaneTitle">Document</h3>
+                  <p id="docPaneMeta" class="doc-pane-meta" hidden></p>
+                  <p id="docPanePath" class="doc-pane-path" hidden></p>
+                </div>
+                <div class="doc-pane-actions">
+                  <button id="docEdit" class="button button-quiet" type="button" hidden>Modifier</button>
+                  <button id="docCancel" class="button button-quiet" type="button" hidden>Annuler</button>
+                  <button id="docSave" class="button button-primary" type="button" hidden>Enregistrer</button>
+                </div>
+              </div>
+              <p id="docPaneEmpty" class="doc-pane-empty">Choisis un document pour le lire.</p>
+              <p id="docPaneError" class="form-error doc-pane-error" role="alert" hidden></p>
+              <article id="docArticle" class="markdown-body" tabindex="0" aria-label="Document" hidden></article>
+              <textarea id="docEditor" class="doc-pane-editor" aria-label="Contenu Markdown de la note" spellcheck="false" hidden></textarea>
+            </section>
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+  <dialog id="editor" aria-labelledby="editorTitle">
+    <form id="editorForm" method="dialog" novalidate>
+      <div class="dialog-head"><h2 id="editorTitle">Nouvelle action</h2><button id="closeEditor" class="icon-button" type="button" aria-label="Fermer">×</button></div>
+    <p id="editorHint">Choisis un projet puis décris l'action.</p>
+    <div class="editor-layout">
+      <div class="editor-primary">
+        <label>Projet <select id="editorProject" required></select></label>
+        <label>Intitulé <textarea id="editorActionTitle" rows="3" maxlength="300" required placeholder="Décrire l'action à réaliser"></textarea></label>
+        <div class="group-field">
+          <label>Groupe <select id="editorGroup" aria-describedby="editorGroupHint"></select></label>
+          <label id="editorGroupNewLabel" class="group-new" hidden>Nouveau groupe <input id="editorGroupNew" maxlength="80" autocomplete="off" placeholder="Ex. Atelier ingestion" aria-describedby="editorGroupHint"></label>
+          <small id="editorGroupHint" class="field-hint"></small>
+        </div>
+      </div>
+      <aside id="editorHistory" class="editor-history" aria-labelledby="editorHistoryTitle" hidden>
+        <div class="editor-history-head"><h3 id="editorHistoryTitle">Historique et notes</h3><span id="editorHistoryCount"></span><button id="addNoteButton" class="note-add" type="button" aria-label="Ajouter une note" title="Ajouter une note" aria-controls="noteForm" aria-expanded="false">+</button></div>
+        <ol id="editorHistoryList" class="note-list" aria-labelledby="editorHistoryTitle">Chargement…</ol>
+        <div id="noteForm" class="note-form" hidden>
+          <label>Nouvelle note <textarea id="noteInput" rows="2" maxlength="1000" placeholder="Nouvelle note…"></textarea></label>
+          <p id="noteHint">Datée du jour, enregistrée immédiatement.</p>
+          <div class="note-form-actions"><button id="submitNote" class="button button-primary note-button" type="button">Ajouter</button><button id="closeNoteForm" class="button button-quiet note-button" type="button">Fermer</button></div>
+        </div>
+        <p id="noteError" class="form-error note-error" role="alert" hidden></p>
+      </aside>
+      <div class="form-grid">
+        <label>Responsable <input id="editorOwner" maxlength="120" required></label>
+        <label>État <select id="editorState"><option value=" ">À faire</option><option value="/">En cours</option><option value="w">En attente</option><option value="x">Terminée</option><option value="-">Annulée</option></select></label>
+        <label>Priorité <select id="editorPriority"><option value="">Normale</option><option value="⏫">Haute</option><option value="🔼">Moyenne</option><option value="🔽">Basse</option></select></label>
+        <label>Échéance <input id="editorDue" type="date"></label>
+        <label>Planifiée pour <input id="editorScheduled" type="date"></label>
+      </div>
+    </div>
+      <p id="editorError" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="deleteEditor" class="button button-danger" type="button" aria-label="Supprimer l'action" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/></svg>Supprimer</button><button id="cancelEditor" class="button button-quiet" type="button">Annuler</button><button id="saveEditor" class="button button-primary" type="submit">Créer l'action</button></div>
+    </form>
+  </dialog>
+  <dialog id="newNoteDialog" aria-labelledby="newNoteHeading">
+    <form id="newNoteForm" method="dialog" novalidate>
+      <div class="dialog-head"><h2 id="newNoteHeading">Nouvelle note</h2><button id="closeNewNote" class="icon-button" type="button" aria-label="Fermer">×</button></div>
+      <p id="newNoteIntro">La note est enregistrée en Markdown dans le dossier <code>notes/</code> du projet, ou dans <code>inbox/</code> pour une note à trier plus tard.</p>
+      <div class="dialog-body">
+        <label>Titre <input id="newNoteTitle" maxlength="150" required autocomplete="off" placeholder="Titre de la note"></label>
+        <label>Projet <select id="newNoteProject" required aria-describedby="newNoteWhere"></select></label>
+        <label>Contenu <textarea id="newNoteContent" rows="10" placeholder="Texte en Markdown" spellcheck="false"></textarea></label>
+        <p id="newNoteWhere" class="new-note-where"></p>
+      </div>
+      <p id="newNoteError" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="cancelNewNote" class="button button-quiet" type="button">Annuler</button><button id="saveNewNote" class="button button-primary" type="submit">Créer</button></div>
+    </form>
+  </dialog>
+  <aside id="detailPreview" class="detail-preview" role="region" aria-label="Aperçu de l'action" tabindex="0" hidden></aside>
+  <dialog id="detailDialog" class="detail-dialog" aria-labelledby="detailTitle">
+    <div class="detail-dialog-inner">
+      <div class="dialog-head"><h2 id="detailTitle">Détail de l'action</h2><button id="closeDetail" class="icon-button" type="button" aria-label="Fermer">×</button></div>
+      <div id="detailMeta" class="detail-meta"></div>
+      <div id="detailBody" class="detail-body"></div>
+      <div class="dialog-actions"><button id="editDetail" class="button button-primary" type="button">Modifier l'action</button><button id="dismissDetail" class="button button-quiet" type="button">Fermer</button></div>
+    </div>
+  </dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>

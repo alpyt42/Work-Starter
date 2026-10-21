@@ -1,0 +1,9 @@
+{
+  "last_run": null,
+  "mail_received_after": null,
+  "mail_sent_after": null,
+  "teams_after": null,
+  "mail_processed_ids": [],
+  "teams_processed_ids": [],
+  "note": "Ids : internetMessageId pour les mails, id de message pour le chat."
+}

@@ -1,0 +1,39 @@
+{
+  "markdown.updateLinksOnFileMove.enabled": "always",
+  "editor.wordWrap": "on",
+  "files.trimTrailingWhitespace": true,
+  "todo-tree.general.tags": [
+    "[/]",
+    "[w]",
+    "[ ]"
+  ],
+  "todo-tree.regex.regex": "^\\s*- (\\[/\\]|\\[w\\]|\\[ \\]) \\*\\*[A-Z]{2,5}-\\d{3}\\*\\*",
+  "todo-tree.filtering.includeGlobs": [
+    "**/projects/**/state/actions.md"
+  ],
+  "todo-tree.filtering.excludeGlobs": [
+    "**/agents/**",
+    "**/repos/**",
+    "**/node_modules/**"
+  ],
+  "todo-tree.highlights.customHighlight": {
+    "[/]": {
+      "icon": "sync",
+      "iconColour": "orange",
+      "foreground": "orange"
+    },
+    "[w]": {
+      "icon": "clock",
+      "iconColour": "yellow",
+      "foreground": "yellow"
+    },
+    "[ ]": {
+      "icon": "issue-opened",
+      "iconColour": "lightblue",
+      "foreground": "lightblue"
+    }
+  },
+  "todo-tree.tree.showCountsInTree": true,
+  "todo-tree.tree.hideTreeWhenEmpty": false,
+  "todo-tree.general.statusBar": "tags"
+}

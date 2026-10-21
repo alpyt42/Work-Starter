@@ -1,0 +1,325 @@
+/* Task board (brain/tasks.md): states of the action registers.
+   [/] en cours, [w] en attente: Obsidian would draw them as checked and struck through. */
+
+.task-list-item[data-task="/"],
+.task-list-item[data-task="w"] {
+  text-decoration: none !important;
+  color: var(--text-normal) !important;
+}
+
+.task-list-item[data-task="/"] > .task-list-item-checkbox,
+.task-list-item[data-task="w"] > .task-list-item-checkbox {
+  background-color: transparent !important;
+}
+.task-list-item[data-task="/"] > .task-list-item-checkbox { border-color: var(--color-orange) !important; }
+.task-list-item[data-task="w"] > .task-list-item-checkbox { border-color: var(--color-yellow) !important; }
+
+.task-list-item[data-task="/"] > .task-list-item-checkbox::after,
+.task-list-item[data-task="w"] > .task-list-item-checkbox::after {
+  -webkit-mask-image: none !important;
+  mask-image: none !important;
+  background: none !important;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 100%;
+  font-size: 0.65em;
+  font-weight: 700;
+  position: static;
+}
+.task-list-item[data-task="/"] > .task-list-item-checkbox::after { content: "◐"; color: var(--color-orange); }
+.task-list-item[data-task="w"] > .task-list-item-checkbox::after { content: "⏸"; color: var(--color-yellow); }
+
+/* Status label after the checkbox, so the state reads without a legend. */
+.plugin-tasks-query-result .task-list-item[data-task="/"] .tasks-list-text::before,
+.plugin-tasks-query-result .task-list-item[data-task="w"] .tasks-list-text::before {
+  font-size: var(--font-smallest);
+  font-weight: 600;
+  padding: 0 0.4em;
+  margin-right: 0.4em;
+  border-radius: var(--radius-s);
+}
+.plugin-tasks-query-result .task-list-item[data-task="/"] .tasks-list-text::before {
+  content: "en cours";
+  color: var(--color-orange);
+  background: rgba(var(--color-orange-rgb), 0.12);
+}
+.plugin-tasks-query-result .task-list-item[data-task="w"] .tasks-list-text::before {
+  content: "en attente";
+  color: var(--color-yellow);
+  background: rgba(var(--color-yellow-rgb), 0.15);
+}
+
+/* Project callouts: a little more air between tasks, none above the list. */
+.callout .plugin-tasks-query-result .task-list-item { margin-block: 0.15em; }
+.callout .plugin-tasks-query-result > ul { margin-top: 0; }
+
+/* ---- Kanban callout, now embedded in brain/tasks.md ---- */
+
+/* Use the full width of the pane, in reading and editing modes: four columns need more
+   than the readable line. Obsidian sizes both modes from --file-line-width. */
+.kanban-board {
+  --file-line-width: 100%;
+}
+.kanban-board .markdown-preview-sizer,
+.kanban-board .cm-sizer,
+.kanban-board .cm-contentContainer > .cm-content {
+  max-width: 100% !important;
+}
+/* The cssclasses property is only plumbing on this page. */
+.kanban-board .metadata-container { display: none; }
+
+/* The board callout lays its column callouts side by side, scrolling sideways if narrow. */
+.callout[data-callout="board"] {
+  background: transparent;
+  border: none;
+  padding: 0;
+}
+.callout[data-callout="board"] > .callout-title { display: none; }
+.callout[data-callout="board"] > .callout-content {
+  display: flex;
+  gap: 12px;
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: 8px;
+}
+.callout[data-callout="board"] > .callout-content > p { display: none; }
+
+.callout[data-callout="column"] {
+  --callout-color: var(--color-base-50-rgb, 128, 128, 128);
+  --callout-icon: lucide-columns-3;
+  flex: 1 1 0;
+  min-width: 240px;
+  margin: 0 !important;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  padding: 8px;
+}
+.callout[data-callout="column"] > .callout-title {
+  font-weight: 700;
+  padding: 2px 4px 8px;
+}
+
+/* Each task is a card. */
+.callout[data-callout="column"] .plugin-tasks-query-result > ul.contains-task-list { padding-left: 0; margin: 0; }
+.callout[data-callout="column"] .plugin-tasks-query-result .task-list-item {
+  list-style: none;
+  background: var(--background-primary);
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-s);
+  padding: 6px 8px 6px 30px;
+  margin: 0 0 6px;
+  font-size: var(--font-ui-small);
+  line-height: 1.35;
+  position: relative;
+}
+.callout[data-callout="column"] .plugin-tasks-query-result .task-list-item > .task-list-item-checkbox {
+  position: absolute;
+  left: 8px;
+  top: 8px;
+  margin: 0;
+}
+.callout[data-callout="column"] .plugin-tasks-query-result .task-list-item:hover {
+  border-color: var(--interactive-accent);
+}
+/* The "en cours" / "en attente" labels repeat the column name here. */
+.callout[data-callout="column"] .plugin-tasks-query-result .tasks-list-text::before { display: none; }
+/* Keep the filter box and the task count compact. */
+.callout[data-callout="column"] .plugin-tasks-query-result input[type="text"] { width: 100%; }
+.callout[data-callout="column"] .tasks-count { font-size: var(--font-smallest); color: var(--text-muted); }
+
+/* ---- Action dashboard: native Tasks results, scoped to this note class ---- */
+
+.tasks-dashboard {
+  --file-line-width: 1040px;
+}
+.tasks-dashboard .inline-title,
+.tasks-dashboard .metadata-container {
+  display: none;
+}
+.tasks-dashboard .markdown-preview-sizer {
+  padding-bottom: 48px;
+}
+.tasks-dashboard h1 {
+  font-size: 2em;
+  letter-spacing: -0.025em;
+  margin-bottom: 0.3em;
+}
+.tasks-dashboard h2 {
+  font-size: 1.2em;
+  margin-top: 1.8em;
+  padding-bottom: 0.45em;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.tasks-dashboard .callout {
+  border: 1px solid var(--background-modifier-border);
+  border-radius: var(--radius-m);
+  background: var(--background-primary);
+  padding: 12px 16px;
+}
+.tasks-dashboard .callout-title {
+  gap: 8px;
+  align-items: center;
+}
+.tasks-dashboard .callout-content > :first-child { margin-top: 10px; }
+.tasks-dashboard .callout-content > :last-child { margin-bottom: 0; }
+.tasks-dashboard .callout-content > p {
+  color: var(--text-muted);
+  font-size: var(--font-ui-small);
+  line-height: 1.5;
+}
+.tasks-dashboard .callout[data-callout="task-nav"] {
+  padding: 0;
+  border: none;
+  background: transparent;
+}
+.tasks-dashboard .callout[data-callout="task-nav"] > .callout-title { display: none; }
+.tasks-dashboard .callout[data-callout="task-nav"] .callout-content > p {
+  margin: 0;
+  line-height: 2.4;
+}
+.tasks-dashboard .callout[data-callout="task-nav"] a {
+  display: inline-block;
+  padding: 0 8px;
+  border-radius: var(--radius-s);
+  font-weight: 500;
+  text-decoration: none;
+}
+.tasks-dashboard .callout[data-callout="task-nav"] a:hover {
+  background: var(--background-modifier-hover);
+}
+.tasks-dashboard a:focus-visible,
+.tasks-dashboard input:focus-visible,
+.tasks-dashboard button:focus-visible {
+  outline: 2px solid var(--interactive-accent);
+  outline-offset: 3px;
+}
+.tasks-dashboard .callout[data-callout="task-capture"] {
+  --callout-icon: lucide-plus-circle;
+  background: var(--background-secondary);
+}
+.tasks-dashboard .callout[data-callout="task-focus"] {
+  --callout-icon: lucide-calendar-check;
+  border-left: 3px solid var(--interactive-accent);
+}
+.tasks-dashboard .callout[data-callout="task-active"] {
+  --callout-icon: lucide-circle-play;
+  --callout-color: var(--color-orange-rgb);
+}
+.tasks-dashboard .callout[data-callout="task-next"] {
+  --callout-icon: lucide-list-todo;
+}
+.tasks-dashboard .callout[data-callout="task-wait"] {
+  --callout-icon: lucide-message-circle;
+  --callout-color: var(--color-yellow-rgb);
+}
+.tasks-dashboard .callout[data-callout="task-calendar"] {
+  --callout-icon: lucide-calendar-days;
+}
+.tasks-dashboard .callout[data-callout="task-project"] {
+  --callout-icon: lucide-folder-open;
+}
+.tasks-dashboard .callout[data-callout="task-history"] {
+  --callout-icon: lucide-circle-check;
+  --callout-color: var(--color-green-rgb);
+}
+
+/* The pair follows pane width: two working lists on desktop, one on narrow panes. */
+.tasks-dashboard .callout[data-callout="task-grid"] {
+  border: none;
+  padding: 0;
+  background: transparent;
+}
+.tasks-dashboard .callout[data-callout="task-grid"] > .callout-title { display: none; }
+.tasks-dashboard .callout[data-callout="task-grid"] > .callout-content {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 340px), 1fr));
+  gap: 16px;
+  align-items: start;
+}
+.tasks-dashboard .callout[data-callout="task-grid"] > .callout-content > p { display: none; }
+.tasks-dashboard .callout[data-callout="task-grid"] > .callout-content > .callout {
+  min-width: 0;
+  margin: 0;
+}
+
+/* Quiet rows keep long titles readable; controls and source links stay accessible. */
+.tasks-dashboard ul.plugin-tasks-query-result.contains-task-list,
+.tasks-dashboard .plugin-tasks-query-result > ul.contains-task-list {
+  padding-left: 0;
+  margin-block: 8px 0;
+}
+.tasks-dashboard .plugin-tasks-query-result .task-list-item {
+  list-style: none;
+  position: relative;
+  margin: 0;
+  padding: 10px 4px 10px 28px;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+  border-bottom: 1px solid var(--background-modifier-border);
+}
+.tasks-dashboard .plugin-tasks-query-result .task-list-item:last-child { border-bottom: none; }
+.tasks-dashboard .plugin-tasks-query-result .task-list-item:hover {
+  background: var(--background-modifier-hover);
+}
+.tasks-dashboard .plugin-tasks-query-result .task-list-item > .task-list-item-checkbox {
+  position: absolute;
+  left: 3px;
+  top: 14px;
+  margin: 0;
+}
+.tasks-dashboard .plugin-tasks-query-result .tasks-list-text > strong:first-child {
+  color: var(--text-muted);
+  font-size: 0.85em;
+  font-weight: 600;
+}
+.tasks-dashboard .plugin-tasks-query-result .tasks-backlink {
+  font-size: var(--font-smallest);
+}
+.tasks-dashboard .plugin-tasks-query-result .tasks-count {
+  margin-top: 8px;
+  color: var(--text-muted);
+  font-size: var(--font-smallest);
+}
+.tasks-dashboard .plugin-tasks-query-result input[type="text"] {
+  width: 100%;
+  min-width: 0;
+}
+.tasks-dashboard .callout[data-callout="task-active"] .tasks-list-text::before,
+.tasks-dashboard .callout[data-callout="task-wait"] .tasks-list-text::before { display: none; }
+
+@media (max-width: 600px) {
+  .tasks-dashboard .callout { padding: 10px 12px; }
+  .tasks-dashboard .callout[data-callout="task-grid"] { padding: 0; }
+  .tasks-dashboard h1 { font-size: 1.65em; }
+}
+
+/* Keep the embedded board visually distinct from the dashboard's list panels. */
+.tasks-dashboard .callout[data-callout="board"] {
+  padding: 0;
+  border: 0;
+  background: transparent;
+}
+.tasks-dashboard .callout[data-callout="board"] > .callout-content {
+  margin: 0;
+  padding: 0 0 8px;
+}
+.tasks-dashboard .callout[data-callout="board"] > .callout-content > .callout[data-callout="column"] {
+  min-width: 240px;
+  padding: 8px;
+  margin: 0;
+  background: var(--background-secondary);
+  border: 1px solid var(--background-modifier-border);
+}
+.tasks-dashboard .callout[data-callout="column"] .plugin-tasks-query-result .task-list-item {
+  margin: 0 0 6px;
+  padding: 6px 8px 6px 30px;
+  border: 1px solid var(--background-modifier-border);
+  background: var(--background-primary);
+}
+.tasks-dashboard .callout[data-callout="column"] .plugin-tasks-query-result .task-list-item > .task-list-item-checkbox {
+  left: 8px;
+  top: 8px;
+}

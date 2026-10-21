@@ -1,0 +1,24 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Tasks board (live)",
+      "detail": "Garde agents/tasks-board.md à jour depuis les registres ; ouvrir son aperçu Markdown",
+      "type": "shell",
+      "command": "uv run ../tools/brain/action.py board --write --watch",
+      "options": {
+        "cwd": "${workspaceFolder}"
+      },
+      "isBackground": true,
+      "problemMatcher": [],
+      "runOptions": {
+        "runOn": "folderOpen"
+      },
+      "presentation": {
+        "reveal": "silent",
+        "panel": "dedicated",
+        "clear": true
+      }
+    }
+  ]
+}

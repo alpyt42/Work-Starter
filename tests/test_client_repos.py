@@ -9,7 +9,7 @@ import unittest
 from pathlib import Path
 
 
-TOOL = Path(__file__).resolve().parents[1] / "tools/client-repos.py"
+TOOL = Path(__file__).resolve().parents[1] / "tools/repos/client-repos.py"
 URL_A = "git@git.example.test:acme/app.git"
 URL_B = "git@git.example.test:acme/api.git"
 URL_BY_REMOTE = "git@git.example.test:by-url/app.git"

@@ -1,5 +1,6 @@
 """Regression checks for the cross-brain state tool (no network, no real brain)."""
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -7,9 +8,10 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 
-TOOL = Path(__file__).resolve().parents[1] / "tools/brain-state.py"
+TOOL = Path(__file__).resolve().parents[1] / "tools/brain/brain-state.py"
 
 
 class BrainStateTest(unittest.TestCase):
@@ -43,6 +45,33 @@ class BrainStateTest(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertEqual([line.split("\t")[0] for line in result.stdout.splitlines()], ["brain", "brain-perso"])
 
+    def declare(self, name: str, scope: str, description: str) -> None:
+        (self.work / name / ".data/brain.json").write_text(
+            json.dumps({"version": 1, "scope": scope, "description": description}), encoding="utf-8"
+        )
+
+    def test_brains_print_scope_and_description(self) -> None:
+        self.declare("brain", "employeur", "Contexte de l'employeur et de ses clients ; jamais de perso.")
+        self.declare("brain-perso", "perso", "Réunions perso\n  et carrière,   jamais de client.")
+        result = self.run_tool("brains")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        rows = [line.split("\t") for line in result.stdout.splitlines()]
+        self.assertEqual(rows, [
+            ["brain", "1 transcript(s) suivis", "employeur", "Contexte de l'employeur et de ses clients ; jamais de perso."],
+            ["brain-perso", "1 transcript(s) suivis", "perso", "Réunions perso et carrière, jamais de client."],
+        ])
+
+    def test_brains_without_declaration_have_empty_scope_and_description(self) -> None:
+        self.declare("brain", "employeur", "Employeur.")
+        rows = [line.split("\t") for line in self.run_tool("brains").stdout.splitlines()]
+        self.assertEqual(rows[1], ["brain-perso", "1 transcript(s) suivis", "", ""])
+
+    def test_unreadable_declaration_is_reported(self) -> None:
+        (self.work / "brain/.data/brain.json").write_text("{", encoding="utf-8")
+        result = self.run_tool("brains")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("brain/.data/brain.json", result.stderr)
+
     def test_new_ignores_files_tracked_by_any_brain(self) -> None:
         result = self.run_tool("transcripts", "--new")
         self.assertEqual(result.returncode, 0, result.stderr)
@@ -66,6 +95,19 @@ class BrainStateTest(unittest.TestCase):
         result = self.run_tool("transcripts", "--new")
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("brain-asso", result.stderr)
+
+    def test_unreadable_transcript_folder_reports_access_error(self) -> None:
+        spec = importlib.util.spec_from_file_location("brain_state", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        brains = [self.work / "brain", self.work / "brain-perso"]
+        with patch.dict(os.environ, {"TRANSCRIPTS_DIR": str(self.inbox)}), patch.object(
+            Path, "iterdir", side_effect=PermissionError(1, "Operation not permitted", str(self.inbox))
+        ):
+            with self.assertRaises(SystemExit) as error:
+                module.cmd_transcripts(brains, new=True, where=None)
+        self.assertIn("Accès refusé", str(error.exception))
+        self.assertIn(str(self.inbox), str(error.exception))
 
 
 if __name__ == "__main__":
