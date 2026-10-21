@@ -97,6 +97,44 @@ class NewBrainTest(unittest.TestCase):
         for expected in ("brain.json", "work-config.json"):
             self.assertIn(f"| `{expected}` |", data_readme)
 
+    def test_seed_skills_readme_gives_a_way_to_find_the_work_root_that_survives_moves_and_links(self) -> None:
+        readme = (SEED / "skills/README.md").read_text(encoding="utf-8")
+        self.assertIn("tools/machine/work_config.py", readme)
+        self.assertIn("WORK_DIR", readme)
+        snippet = re.search(r"```python\n(.*?)```", readme, re.S).group(1)
+        self.assertLessEqual(len([line for line in snippet.splitlines() if line.strip()]), 8)  # stays a short snippet
+        self.assertNotIn("parents[", snippet)  # never a fixed depth
+
+        self.assertEqual(self.run_tool("brain-perso").returncode, 0)
+        script = self.work / "brain-perso/skills/demo/scripts/probe.py"
+        script.parent.mkdir(parents=True)
+        script.write_text(snippet + "print(work, brain, tools, sep='\\n')\n", encoding="utf-8")
+        (self.work / "brain-perso/skills/demo/SKILL.md").write_text("# demo\n", encoding="utf-8")
+        (self.work / ".claude/skills").mkdir(parents=True)
+        (self.work / ".claude/skills/demo").symlink_to("../../brain-perso/skills/demo")
+
+        def probe(path: Path, **extra: str) -> list[str]:
+            env = {key: value for key, value in os.environ.items() if key not in ("WORK_DIR", "BRAIN_DIR")}
+            result = subprocess.run([sys.executable, str(path)], env={**env, **extra}, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            return result.stdout.splitlines()
+
+        expected = [str(self.work), str(self.work / "brain"), str(self.work / "tools")]
+        self.assertEqual(probe(script), expected)  # from the brain
+        self.assertEqual(probe(self.work / ".claude/skills/demo/scripts/probe.py"), expected)  # through the agent link
+        elsewhere = self.work.parent / "Elsewhere"
+        self.assertEqual(probe(script, WORK_DIR=str(elsewhere))[0], str(elsewhere))
+        self.assertEqual(probe(script, BRAIN_DIR=str(self.work / "brain-perso"))[1], str(self.work / "brain-perso"))
+        # Outside a Work and without WORK_DIR: a clear message, not a traceback.
+        stray = self.work.parent / "stray/probe.py"
+        stray.parent.mkdir()
+        stray.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")
+        env = {key: value for key, value in os.environ.items() if key not in ("WORK_DIR", "BRAIN_DIR")}
+        result = subprocess.run([sys.executable, str(stray)], env=env, capture_output=True, text=True)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("WORK_DIR", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_seed_ships_no_employer_tooling(self) -> None:
         self.assertEqual(self.run_tool("brain").returncode, 0)
         brain = self.work / "brain"
@@ -106,6 +144,21 @@ class NewBrainTest(unittest.TestCase):
         hits = [str(p.relative_to(SEED)) for p in SEED.rglob("*")
                 if p.is_file() and (pattern.search(p.read_text(encoding="utf-8")) or pattern.search(str(p.relative_to(SEED))))]
         self.assertEqual(hits, [])
+
+    def test_seed_gitignore_keeps_local_caches_out_of_the_brain(self) -> None:
+        self.assertEqual(self.run_tool("brain").returncode, 0)
+        brain = self.work / "brain"
+
+        def ignored(relative: str) -> bool:
+            (brain / relative).parent.mkdir(parents=True, exist_ok=True)
+            (brain / relative).write_text("x\n", encoding="utf-8")
+            env = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}  # no personal excludes
+            return subprocess.run(["git", "check-ignore", "-q", relative], cwd=brain, env=env).returncode == 0
+
+        for cache in (".cache/state.json", ".data/projects.cache.json", ".data/.projects-cache.json", ".data/sub/x.cache.json"):
+            self.assertTrue(ignored(cache), cache)
+        for versioned in (".data/doctor.json", ".data/work-config.json", ".data/transcripts.json", "skills/README.md"):
+            self.assertFalse(ignored(versioned), versioned)
 
     def test_boundary_options_fill_brain_json(self) -> None:
         result = self.run_tool("brain-asso", "--scope", "asso", "--description", "Données de l'asso ; jamais de client.",

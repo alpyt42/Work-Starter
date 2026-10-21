@@ -9,3 +9,20 @@ Un skill = un dossier `skills/<nom>/` :
 - `.install-as-copy` — fichier marqueur à ajouter pour un skill qui doit être **copié** chez l'agent plutôt que lié à ce dossier.
 
 Les skills de tiers (catalogue public) ne sont pas copiés ici : ils sont listés dans [`.data/work-config.json`](../.data/work-config.json) (`skills.thirdParty`) et installés par `tools/machine/update.sh` ; `skills.disabled` liste ceux qu'on désactive. Pour reprendre dans ce brain un skill déjà présent dans l'espace : `uv run tools/machine/work_config.py adopt --brain <brain>`.
+
+## Retrouver la racine de Work depuis un script
+
+Un script de skill (`scripts/`) ne compte jamais un nombre fixe de `parents[N]` pour atteindre la racine de l'espace : le dossier du skill peut être déplacé, et le script tourne aussi par le lien `.claude/skills/<nom>`. Il remonte depuis `Path(__file__).resolve()` jusqu'au premier dossier qui contient `tools/machine/work_config.py` (la racine de Work ; `WORK_DIR`, s'il est défini, l'emporte), puis en déduit le brain et `tools/` :
+
+```python
+import os
+import sys
+from pathlib import Path
+
+here = Path(__file__).resolve()
+found = next((p for p in here.parents if (p / "tools/machine/work_config.py").is_file()), None)
+work = Path(os.environ.get("WORK_DIR") or found or sys.exit("racine de Work introuvable : définir WORK_DIR"))
+brain, tools = Path(os.environ.get("BRAIN_DIR") or work / "brain"), work / "tools"
+```
+
+Le brain par défaut est `brain/` ; pour un autre brain (`brain-<nom>`), le script lit `BRAIN_DIR`, comme les outils de `tools/`.

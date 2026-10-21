@@ -12,7 +12,9 @@ le script repère brain/ à la racine de Work ; variable BRAIN_DIR pour forcer,
 comme les autres outils ; BRAIN reste accepté). Échoue si la mémoire est
 introuvable, pour ne jamais annoncer « 0 lien mort » sur un dossier vide.
 `--allow-missing-local` signale séparément les liens manquants vers les
-artifacts et repos locaux, absents d'un nouveau checkout.
+artifacts et repos locaux, absents d'un nouveau checkout. Les fichiers de
+`skills/<nom>/assets/` sont ignorés : ce sont des modèles copiés ailleurs, leurs
+liens sont des placeholders (comme les `_*-TEMPLATE.md`).
 
 Chaque brain est une frontière de confiance : un lien dont la cible se trouve
 dans un AUTRE brain de la même racine Work (un dossier frère nommé `brain` ou
@@ -48,7 +50,8 @@ def is_local_work_target(path: str) -> bool:
     work_root = os.path.dirname(os.path.realpath(BRAIN))
     target = os.path.realpath(path)
     for folder in ("artifacts", "repos"):
-        local_root = os.path.join(work_root, folder)
+        # realpath on both sides: the pre-commit snapshot links these folders to the real ones
+        local_root = os.path.realpath(os.path.join(work_root, folder))
         if os.path.commonpath((local_root, target)) == local_root:
             return True
     return False
@@ -70,13 +73,19 @@ def mask_code(text: str) -> str:
     return CODESPAN.sub(lambda m: " " * len(m.group(0)), text)
 
 
+def is_skill_asset(rel: str) -> bool:
+    """True pour `skills/<nom>/assets/**` : des modèles copiés ailleurs, dont les liens sont des placeholders."""
+    parts = rel.replace(os.sep, "/").split("/")
+    return len(parts) > 3 and parts[0] == "skills" and parts[2] == "assets"
+
+
 def list_md_files() -> list[str]:
-    """Fichiers suivis par git si on est dans un repo, sinon tous les .md du dossier."""
+    """Fichiers suivis par git si on est dans un repo, sinon tous les .md du dossier (hors modèles de skills)."""
     try:
         out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.md"],
                              cwd=BRAIN, capture_output=True, text=True, check=True).stdout.split()
         # un fichier déplacé / supprimé mais pas encore commité reste dans l'index : on l'ignore
-        out = [f for f in out if os.path.exists(os.path.join(BRAIN, f))]
+        out = [f for f in out if os.path.exists(os.path.join(BRAIN, f)) and not is_skill_asset(f)]
         if out:
             return out
     except (subprocess.CalledProcessError, FileNotFoundError):
@@ -87,7 +96,7 @@ def list_md_files() -> list[str]:
         for n in names:
             if n.endswith(".md"):
                 files.append(os.path.relpath(os.path.join(root, n), BRAIN))
-    return sorted(files)
+    return sorted(f for f in files if not is_skill_asset(f))
 
 
 def main() -> int:

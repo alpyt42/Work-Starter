@@ -278,6 +278,20 @@ class PreCommitHookTest(WorkFolder):
         result = self.run_hook(self.perso)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
+    def test_missing_artifacts_and_repos_targets_do_not_block_a_commit(self) -> None:
+        # Fresh machine: artifacts/ exists but holds nothing, repos/ does not exist yet.
+        (self.work / "artifacts").mkdir()
+        self.stage(self.perso, {"notes/a.md": "[rapport](../../artifacts/rapport/README.md)\n[code](../../repos/app/README.md)\n"})
+        result = self.run_hook(self.perso)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        # Dead links inside the brain and links into another brain stay fatal.
+        self.stage(self.perso, {"notes/b.md": "[mort](absent.md)\n"})
+        result = self.run_hook(self.perso)
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("LIEN MD MORT (absent.md)", result.stdout + result.stderr)
+        self.stage(self.perso, {"notes/b.md": "ok\n", "notes/c.md": "[tâches](../../brain/tasks.md)\n"})
+        self.assertNotEqual(self.run_hook(self.perso).returncode, 0)
+
     def test_the_hook_never_writes_to_the_brain(self) -> None:
         self.stage(self.perso, {"notes/a.md": "Réunion avec Acme Corp.\n"})
         before = subprocess.run(["git", "status", "--porcelain"], cwd=self.perso, env=GIT_ENV, capture_output=True, text=True).stdout

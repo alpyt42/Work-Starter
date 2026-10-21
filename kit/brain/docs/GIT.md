@@ -33,7 +33,7 @@ ssh -T git@<hôte>                                                        # comp
 
 - Le brain contient du contexte client et doit rester privé ; sa destination : (à compléter, remote privé). Ne rien copier vers un dépôt public sans anonymisation explicite.
 - Publier un instantané initial avec un historique neuf.
-- Le hook pre-commit du brain (`tools/machine/hooks/brain-pre-commit`) refuse un commit qui contient un lien vers un autre brain ou un nom de client d'un autre brain (hors `allow` de `.data/brain.json`), en plus des registres mal formés, des liens morts et des secrets. Il ne fait que valider.
+- Le hook pre-commit du brain (`tools/machine/hooks/brain-pre-commit`) refuse un commit qui contient un lien vers un autre brain ou un nom de client d'un autre brain (hors `allow` de `.data/brain.json`), en plus des registres mal formés, des liens morts (une cible absente de `artifacts/` ou `repos/`, locaux à chaque machine, est seulement signalée) et des secrets. Il ne fait que valider.
 
 ## Repos partagés et clones client
 

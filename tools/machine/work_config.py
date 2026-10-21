@@ -47,11 +47,20 @@ BRAIN_NAME = re.compile(r"^brain(-[a-z0-9][a-z0-9-]*)?$")
 SKILL_NAME = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 ENTRY_KEYS = ("source", "sourceType", "skillPath", "computedHash")
 COPY_MARKER = ".install-as-copy"
+GENERATED_MARKER = ".generated-from-brain-skill"  # written by sync-house-skills.py in the copies it installs
+LEGACY_MARKER_PREFIX = ".generated-from-skills-"  # copies of the previous layout (.generated-from-skills-<name>): generated too
 EMPTY_LAYER: dict[str, Any] = {"version": 1, "skills": {"thirdParty": {}, "disabled": []}}
 
 
 class ConfigError(ValueError):
     """A Work configuration is invalid."""
+
+
+def is_generated_copy(path: Path) -> bool:
+    """A skill folder that sync-house-skills.py installed, now or under the previous layout."""
+    if (path / GENERATED_MARKER).is_file():
+        return True
+    return path.is_dir() and any(item.is_file() and item.name.startswith(LEGACY_MARKER_PREFIX) for item in path.iterdir())
 
 
 def rel(path: Path) -> str:

@@ -8,3 +8,7 @@ __pycache__/
 # Obsidian : le brain peut s'ouvrir dans le coffre de l'espace de travail, pas de coffre ici
 /.obsidian/
 /.trash/
+# caches locaux d'un skill (ils peuvent citer des clients) : jamais commités
+.cache/
+*.cache.json
+.*-cache.json

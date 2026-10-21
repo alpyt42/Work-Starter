@@ -1,6 +1,7 @@
 """Regression checks for portable brain link validation."""
 
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -8,7 +9,8 @@ import unittest
 from pathlib import Path
 
 
-CHECKER = Path(__file__).resolve().parents[1] / "tools/brain/check-links.py"
+REPO = Path(__file__).resolve().parents[1]
+CHECKER = REPO / "tools/brain/check-links.py"
 
 
 class CheckLinksTest(unittest.TestCase):
@@ -62,6 +64,45 @@ class CheckLinksTest(unittest.TestCase):
             self.assertIn("⛔ LIEN MD MORT (../../elsewhere.md)", broken.stdout)
             self.assertIn("⚠ LIEN MD MORT (../artifacts/missing.md)", broken.stdout)
             self.assertIn("⚠ LIEN MD MORT (../repos/missing/README.md)", broken.stdout)
+
+    def test_templates_under_skill_assets_are_skipped_but_the_rest_is_checked(self) -> None:
+        for use_git in (False, True):
+            if use_git and not shutil.which("git"):
+                continue
+            with self.subTest(git=use_git), tempfile.TemporaryDirectory() as directory:
+                brain = Path(directory) / "Work" / "brain"
+                files = {
+                    "index.md": "[skill](skills/demo/SKILL.md)\n[x](projects/assets/note.md)\n",
+                    "projects/assets/note.md": "# Note\n",
+                    "skills/demo/SKILL.md": "[guide](references/guide.md)\n",
+                    "skills/demo/references/guide.md": "# Guide\n",
+                    # placeholders of a template copied elsewhere by the skill
+                    "skills/demo/assets/common/AGENTS.md": "[spec](SPEC.md)\n[plan](PLAN.md)\n",
+                    "skills/demo/assets/common/docs/deep.md": "[x](../../nothing.md)\n",
+                }
+                for relative, text in files.items():
+                    (brain / relative).parent.mkdir(parents=True, exist_ok=True)
+                    (brain / relative).write_text(text, encoding="utf-8")
+                if use_git:
+                    subprocess.run(["git", "init", "-q", str(brain)], check=True, env={**os.environ, "GIT_CONFIG_GLOBAL": os.devnull})
+
+                def check() -> subprocess.CompletedProcess[str]:
+                    return subprocess.run([sys.executable, str(CHECKER)], env={**os.environ, "BRAIN_DIR": str(brain)},
+                                          capture_output=True, text=True, check=False)
+
+                result = check()
+                self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+                self.assertIn("fichiers      : 4", result.stdout)
+                self.assertIn("morts (md)    : 0", result.stdout)
+
+                # The rest of skills/ and an `assets` folder elsewhere are still checked.
+                (brain / "skills/demo/references/guide.md").write_text("[mort](missing.md)\n", encoding="utf-8")
+                (brain / "projects/assets/note.md").write_text("[mort](absent.md)\n", encoding="utf-8")
+                result = check()
+                self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+                self.assertIn("⛔ LIEN MD MORT (missing.md)", result.stdout)
+                self.assertIn("⛔ LIEN MD MORT (absent.md)", result.stdout)
+                self.assertNotIn("SPEC.md", result.stdout)
 
     def test_missing_or_empty_brain_fails_instead_of_reporting_zero_links(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
@@ -162,6 +203,50 @@ class CrossBrainLinksTest(unittest.TestCase):
         self.write("brain", "index.md", "[x](../brainstorm/x.md)\n")
         result = self.check("brain")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+
+
+@unittest.skipUnless(shutil.which("uv") and shutil.which("bash"), "uv and bash are required")
+class CheckLinksScriptTest(unittest.TestCase):
+    """tools/machine/check-links.sh checks every brain, even after a failing one."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name).resolve()
+        for source in ("tools/machine/check-links.sh", "tools/machine/work_config.py", "tools/machine/sync-house-skills.py",
+                       "tools/brain/check-links.py"):
+            (self.root / source).parent.mkdir(parents=True, exist_ok=True)
+            shutil.copy(REPO / source, self.root / source)
+        for name in ("brain", "brain-perso", "brain-zeta"):
+            (self.root / name / ".data").mkdir(parents=True)
+            (self.root / name / "AGENTS.md").write_text("# brain\n", encoding="utf-8")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def check(self) -> subprocess.CompletedProcess[str]:
+        return subprocess.run(["bash", str(self.root / "tools/machine/check-links.sh")],
+                              env={**os.environ, "WORK_DIR": str(self.root)}, capture_output=True, text=True, check=False)
+
+    def test_every_brain_is_checked_and_any_failure_fails_the_script(self) -> None:
+        self.assertEqual(self.check().returncode, 0)
+        (self.root / "brain/index.md").write_text("[mort](first-missing.md)\n", encoding="utf-8")
+        (self.root / "brain-perso/index.md").write_text("[mort](second-missing.md)\n", encoding="utf-8")
+        (self.root / "brain-zeta/index.md").write_text("[ok](index.md)\n", encoding="utf-8")
+        result = self.check()
+        self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
+        for expected in ("== brain ==", "== brain-perso ==", "== brain-zeta ==", "first-missing.md", "second-missing.md"):
+            self.assertIn(expected, result.stdout)
+        self.assertNotIn("Skill links OK", result.stdout)
+
+        (self.root / "brain/index.md").write_text("[ok](index.md)\n", encoding="utf-8")
+        later = self.check()  # the first brain is fine, a later one still fails the script
+        self.assertNotEqual(later.returncode, 0, later.stdout + later.stderr)
+        self.assertIn("second-missing.md", later.stdout)
+
+        (self.root / "brain-perso/index.md").write_text("[ok](index.md)\n", encoding="utf-8")
+        clean = self.check()
+        self.assertEqual(clean.returncode, 0, clean.stdout + clean.stderr)
+        self.assertIn("Skill links OK", clean.stdout)
 
 
 if __name__ == "__main__":

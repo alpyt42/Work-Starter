@@ -47,13 +47,19 @@ done
   exit 1
 }
 
+# Every brain is checked, even after a failure: the status is accumulated and reported at the end.
+status=0
 if [[ -z "$brains" ]]; then
   echo "No brain present; memory links were not checked"
 else
   while IFS= read -r brain; do
     [[ -n "$brain" ]] || continue
     echo "== $brain =="
-    BRAIN_DIR="$ROOT/$brain" uv run "$ROOT/tools/brain/check-links.py" --allow-missing-local
+    BRAIN_DIR="$ROOT/$brain" uv run "$ROOT/tools/brain/check-links.py" --allow-missing-local || status=1
   done <<< "$brains"
+fi
+if [[ $status -ne 0 ]]; then
+  echo "Memory links check failed" >&2
+  exit 1
 fi
 echo "Skill links OK"

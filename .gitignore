@@ -29,6 +29,11 @@ __pycache__/
 *.pyc
 .DS_Store
 
+# A private skill may keep a local cache or config file at the root of tools/ (it can name clients):
+# ignore every dotfile there, except the example of the environment variables
+/tools/.*
+!/tools/.env.example
+
 __azurite_*.json
 
 # Obsidian is configured by hand on each machine and never tracked (see kit/obsidian/README.md)

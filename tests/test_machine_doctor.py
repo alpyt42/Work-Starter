@@ -123,6 +123,31 @@ class MachineDoctorTest(unittest.TestCase):
         self.assertNotIn("skills/live", out)
         self.assertNotIn("skills/foreign", out)
 
+    def test_real_folder_in_agents_skills_that_is_neither_enabled_nor_generated_is_a_warning(self) -> None:
+        skills = self.work / ".agents/skills"
+
+        def folder(name: str, marker: str = "") -> None:
+            (skills / name).mkdir(parents=True)
+            (skills / name / "SKILL.md").write_text(f"# {name}\n", encoding="utf-8")
+            if marker:
+                (skills / name / marker).write_text("generated\n", encoding="utf-8")
+
+        self.write_local({"version": 1, "skills": {"thirdParty": {"tp": third_party_entry("tp")}}})
+        (self.work / "skills-lock.json").write_text(
+            json.dumps({"version": 1, "skills": {"added": third_party_entry("added")}}), encoding="utf-8"
+        )
+        folder("tp")  # enabled third-party skill
+        folder("generated", ".generated-from-brain-skill")  # copy made by sync-house-skills.py
+        folder("legacy", ".generated-from-skills-new-project")  # copy made by the previous layout
+        folder("added")  # installed by npx, not adopted yet: reported on its own
+        folder("leftover")  # what a failed cleanup leaves
+        (skills / "a-link").symlink_to(self.home)
+        result = self.run_doctor()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("WARN: dossier orphelin : .agents/skills/leftover", result.stdout)
+        self.assertEqual(result.stdout.count("dossier orphelin"), 1, result.stdout)
+        self.assertIn("skill installé mais non adopté : added", result.stdout)
+
     def test_brain_json_missing_or_incomplete_is_a_warning(self) -> None:
         self.assertIn("brain/.data/brain.json absent", self.run_doctor().stdout)
         self.write_brain_json(scope="client", description="")

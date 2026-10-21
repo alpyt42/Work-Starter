@@ -5,8 +5,10 @@ A brain skill whose folder holds an empty `.install-as-copy` file is copied from
 `<brain>/skills/<name>` to `.agents/skills/<name>` and `.claude/skills/<name>`
 (a copy keeps its own relative paths and survives a moved brain). Each copy carries
 a generated marker file; copies without a matching enabled skill are removed, and
-a directory without the marker is never touched. Other own skills are symbolic
-links, handled by link-skills.sh.
+a directory without the marker is never touched. The marker of the previous layout
+(`.generated-from-skills-new-project`) counts as a generated copy too: it is replaced
+or removed like the others, and the old links `../../skills/<name>` are managed links.
+Other own skills are symbolic links, handled by link-skills.sh.
 
 `--check` changes nothing and fails when a copy is missing, stale or obsolete.
 """
@@ -19,10 +21,9 @@ import shutil
 import sys
 from pathlib import Path
 
-from work_config import ROOT, ConfigError, enabled_own, rel, resolve
+from work_config import GENERATED_MARKER as MARKER, ROOT, ConfigError, enabled_own, is_generated_copy, rel, resolve
 
 DESTINATIONS = (ROOT / ".agents/skills", ROOT / ".claude/skills")
-MARKER = ".generated-from-brain-skill"
 CACHES = ("__pycache__", "*.pyc", ".DS_Store")
 IGNORED = shutil.ignore_patterns(*CACHES)
 
@@ -54,7 +55,8 @@ def is_current(destination: Path, name: str, skill: dict) -> bool:
 
 
 def is_managed_link(path: Path, name: str) -> bool:
-    return path.is_symlink() and re.fullmatch(rf"\.\./\.\./brain(-[a-z0-9][a-z0-9-]*)?/skills/{re.escape(name)}", str(path.readlink())) is not None
+    # `../../skills/<name>` is the link of the previous layout (house skills in Work/skills/)
+    return path.is_symlink() and re.fullmatch(rf"\.\./\.\./(brain(-[a-z0-9][a-z0-9-]*)?/)?skills/{re.escape(name)}", str(path.readlink())) is not None
 
 
 def sync(copies: dict[str, dict], check: bool) -> list[str]:
@@ -65,7 +67,7 @@ def sync(copies: dict[str, dict], check: bool) -> list[str]:
     for root in DESTINATIONS:
         if root.is_dir():
             for path in sorted(root.iterdir()):
-                if path.name not in copies and path.is_dir() and not path.is_symlink() and (path / MARKER).is_file():
+                if path.name not in copies and path.is_dir() and not path.is_symlink() and is_generated_copy(path):
                     if check:
                         problems.append(f"Obsolete generated skill copy: {rel(path)}")
                     else:
@@ -83,7 +85,7 @@ def sync(copies: dict[str, dict], check: bool) -> list[str]:
                     raise SystemExit(f"Refusing to replace an unmanaged symbolic link: {rel(destination)}")
                 destination.unlink()
             elif destination.exists():
-                if not destination.is_dir() or not (destination / MARKER).is_file():
+                if not destination.is_dir() or not is_generated_copy(destination):
                     raise SystemExit(f"Refusing to replace a non-generated path: {rel(destination)}")
                 shutil.rmtree(destination)
             root.mkdir(parents=True, exist_ok=True)

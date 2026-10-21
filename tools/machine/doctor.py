@@ -10,7 +10,8 @@ Checks the required commands, the brains expected by brain/.data/local-paths.jso
 named there, the JSON state files of every brain, and the local artifacts folder.
 It also checks the skill configuration (valid layers, changed since the last
 update.sh, skills of skills-lock.json no layer knows, enabled third-party skills not
-installed, broken or orphan links in .agents/skills and .claude/skills) and, for each
+installed, broken or orphan links in .agents/skills and .claude/skills, real folders of
+.agents/skills that are neither an enabled third-party skill nor a generated copy) and, for each
 brain, its boundary declaration .data/brain.json (fields filled in; Git remote and
 effective user.email matching the declared patterns).
 It never fetches, pulls, writes, or prints the configured paths; the skill links
@@ -191,6 +192,18 @@ def skills_checks() -> None:
                 report("WARN", f"lien cassé : {agent}/skills/{entry.name} — lancer tools/machine/update.sh")
             elif MANAGED_LINK.fullmatch(target) and (agent, entry.name, target) not in expected and entry.name not in unadopted:
                 report("WARN", f"lien orphelin : {agent}/skills/{entry.name} (skill non activé) — lancer tools/machine/update.sh")
+    leftover_checks(third_party, unadopted)
+
+
+def leftover_checks(third_party: dict, unadopted: list[str]) -> None:
+    """A real folder of .agents/skills must be an enabled third-party skill or a generated copy."""
+    folder = WORK / ".agents/skills"
+    for entry in sorted(folder.iterdir()) if folder.is_dir() else []:
+        if entry.is_symlink() or not entry.is_dir() or entry.name in third_party or entry.name in unadopted:
+            continue  # links are checked above; a skill installed but not adopted is reported on its own
+        if not work_config.is_generated_copy(entry):
+            report("WARN", f"dossier orphelin : .agents/skills/{entry.name} (ni skill tiers activé, ni copie générée) "
+                           "— reste d'un nettoyage raté ? le retirer, ou lancer tools/machine/update.sh s'il est désactivé")
 
 
 def artifacts_checks() -> None:

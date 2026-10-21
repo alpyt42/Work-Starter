@@ -8,6 +8,10 @@ mkdir -p "$ROOT/.agents/skills" "$ROOT/.agents/skills-disabled" "$ROOT/.claude/s
 
 ensure_link() {
   local link="$1" target="$2"
+  # Link of the previous layout (house skills in Work/skills/): managed, replaced by the current one.
+  if [[ -L "$link" && "$(readlink "$link")" == "../../skills/${link##*/}" ]]; then
+    rm "$link"
+  fi
   if [[ -e "$link" || -L "$link" ]]; then
     [[ -L "$link" && "$(readlink "$link")" == "$target" && -f "$link/SKILL.md" ]] || {
       echo "Conflicting skill path: $link" >&2
@@ -49,30 +53,33 @@ done <<< "$enabled_own"
 while IFS= read -r skill; do
   [[ -n "$skill" ]] || continue
   if printf '%s\n' "$enabled_third_party" | grep -Fqx "$skill"; then
+    # Re-enabled while the copy set aside when it was disabled is still there (and nothing reinstalled it): put it back.
+    if [[ ! -e "$ROOT/.agents/skills/$skill" && ! -L "$ROOT/.agents/skills/$skill" && -d "$ROOT/.agents/skills-disabled/$skill" ]]; then
+      mv "$ROOT/.agents/skills-disabled/$skill" "$ROOT/.agents/skills/$skill"
+    fi
     [[ -f "$ROOT/.agents/skills/$skill/SKILL.md" ]] || { echo "Missing installed skill: $skill" >&2; exit 1; }
     ensure_link "$ROOT/.claude/skills/$skill" "../../.agents/skills/$skill"
     expected+=".claude|$skill|../../.agents/skills/$skill"$'\n'
   else
     remove_managed_link "$ROOT/.claude/skills/$skill" "../../.agents/skills/$skill"
     if [[ -d "$ROOT/.agents/skills/$skill" && ! -L "$ROOT/.agents/skills/$skill" ]]; then
-      [[ ! -e "$ROOT/.agents/skills-disabled/$skill" ]] || {
-        echo "Disabled skill backup already exists: $skill" >&2
-        exit 1
-      }
+      # An older set-aside copy is a regenerable third-party copy: the current one replaces it.
+      rm -rf "$ROOT/.agents/skills-disabled/$skill"
       mv "$ROOT/.agents/skills/$skill" "$ROOT/.agents/skills-disabled/$skill"
     fi
   fi
 done <<< "$catalog"
 
-# Remove the managed links (into a brain's skills/ or into .agents/skills/) that are no longer enabled:
-# disabled or deleted skill, brain removed. Links pointing anywhere else are not ours and stay.
+# Remove the managed links (into a brain's skills/, into .agents/skills/, or the old ../../skills/ of the
+# previous layout) that are no longer enabled: disabled or deleted skill, brain removed.
+# Links pointing anywhere else are not ours and stay.
 for agent in .agents .claude; do
   for entry in "$ROOT/$agent/skills"/*; do
     [[ -L "$entry" ]] || continue
     name="${entry##*/}"
     target="$(readlink "$entry")"
     case "$target" in
-      ../../brain/skills/"$name" | ../../brain-*/skills/"$name" | ../../.agents/skills/"$name") ;;
+      ../../brain/skills/"$name" | ../../brain-*/skills/"$name" | ../../.agents/skills/"$name" | ../../skills/"$name") ;;
       *) continue ;;
     esac
     printf '%s' "$expected" | grep -Fxq "$agent|$name|$target" || rm "$entry"

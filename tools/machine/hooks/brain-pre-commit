@@ -46,9 +46,10 @@ if [[ -n "$registers" || -n "$markdown" ]]; then
     fi
   fi
 
-  # Dead Markdown links and links into another brain, in the content being committed.
+  # Dead Markdown links and links into another brain, in the content being committed. Targets in
+  # artifacts/ and repos/ are local to each machine: reported, never blocking (as in check-links.sh).
   if [[ -n "$markdown" ]]; then
-    out="$(BRAIN_DIR="$SNAP" WORK_DIR="$snapshot/Work" uv run tools/brain/check-links.py 2>&1)" || { echo "$out" >&2; status=1; }
+    out="$(BRAIN_DIR="$SNAP" WORK_DIR="$snapshot/Work" uv run tools/brain/check-links.py --allow-missing-local 2>&1)" || { echo "$out" >&2; status=1; }
   fi
 fi
 
