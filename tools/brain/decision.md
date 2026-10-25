@@ -1,53 +1,54 @@
-# Outil des décisions
+# Decision tool
 
-`tools/brain/decision.py` est le seul outil qui écrit dans les registres de décisions (`projects/**/state/decisions.md`, à côté du `actions.md` du projet). Il réutilise `action.py` (résolution du projet, écriture atomique, dates, validation des textes). Une décision s'écrit donc toujours de la même façon :
+`tools/brain/decision.py` is the only tool that writes to the decision registers (`projects/**/state/decisions.md`, next to the project's `actions.md`). It reuses `action.py` (project resolution, atomic write, dates, text validation). A decision is therefore always written the same way:
 
 ```markdown
-### Intitulé de la décision (2026-10-13, statut : proposée)
-- **Contexte :** …
-- **Décision :** …
-- **Conséquences :** …
-- **Source :** [CR du 13/10](../sources/2026-10/2026-10-13-cr-daily-migration.md)
-- **Validation :** Propriétaire, 2026-10-14.
+### Decision title (2026-10-13, status: proposed)
+- **Context:** …
+- **Decision:** …
+- **Consequences:** …
+- **Source:** [Minutes of 13/10](../sources/2026-10/2026-10-13-cr-daily-migration.md)
+- **Accepted:** Owner, 2026-10-14.
 ```
 
-- Le registre a trois sections : `## Proposées`, `## Validées`, `## Refusées / remplacées`. Une proposition s'ajoute en fin de `Proposées` ; une décision validée, refusée ou remplacée passe en **haut** de sa section (la plus récente d'abord).
-- Les blocs existants varient (statut absent du titre, `active`, `remplacée`, champs `Suite`, `Remplacée par`, `Source et validation`) : l'outil les lit tels quels et ne réécrit que le bloc qu'il déplace. Le contenu d'une décision validée ne se réécrit jamais ; une nouvelle décision la remplace.
-- **Numéro** : rang de la décision dans le registre du projet (1..n, dans l'ordre du fichier). Il change quand une décision change de section : relancer `list` avant de s'en servir.
+- The register has three sections: `## Proposed`, `## Accepted`, `## Rejected / superseded`. A proposal is appended at the end of `Proposed`; an accepted, rejected or superseded decision moves to the **top** of its section (most recent first).
+- Existing blocks vary (status missing from the title, `active`, `superseded`, `Follow-up` and `Superseded by` fields, `Source and validation`): the tool reads them as they are and only rewrites the block it moves. The content of an accepted decision is never rewritten; a new decision supersedes it.
+- **Number**: rank of the decision in the project's register (1..n, in file order). It changes when a decision changes section: run `list` again before using it.
+- A brain written with the earlier French labels is converted once with `uv run tools/brain/migrate-english.py` (dry run by default, `--write` to apply it).
 
-## Commandes
+## Commands
 
-Depuis la racine de Work ; la sortie est du JSON (codes de sortie : 0 fait, 2 requête invalide, 3 introuvable, 4 conflit ou référence ambiguë).
+From the Work root; the output is JSON (exit codes: 0 done, 2 invalid request, 3 not found, 4 conflict or ambiguous reference).
 
 ```sh
-uv run tools/brain/decision.py list --project acme/demo --status proposee --table
+uv run tools/brain/decision.py list --project acme/demo --status proposed --table
 uv run tools/brain/decision.py show 12 --project acme/demo
-uv run tools/brain/decision.py propose --project acme/demo --title "Démo enregistrée" \
-    --decision "Vidéo enregistrée plutôt que démo en direct." --context "Risque d'accès AWS." \
-    --source "[CR du 13/10](../sources/2026-10/2026-10-13-cr-demo.md)" --date 2026-10-13
-uv run tools/brain/decision.py validate "Démo enregistrée" --project acme/demo --on 2026-10-14 --note "en comité"
-uv run tools/brain/decision.py refuse 12 --project acme/demo --reason "hors périmètre"
-uv run tools/brain/decision.py replace "Calendrier des ateliers" --by "Calendrier corrigé" --project acme/demo
+uv run tools/brain/decision.py propose --project acme/demo --title "Recorded demo" \
+    --decision "Recorded video rather than a live demo." --context "Risk of AWS access." \
+    --source "[Minutes of 13/10](../sources/2026-10/2026-10-13-cr-demo.md)" --date 2026-10-13
+uv run tools/brain/decision.py accept "Recorded demo" --project acme/demo --on 2026-10-14 --note "in committee"
+uv run tools/brain/decision.py reject 12 --project acme/demo --reason "out of scope"
+uv run tools/brain/decision.py supersede "Workshop schedule" --by "Corrected schedule" --project acme/demo
 ```
 
-- `list` : tous les projets par défaut ; `--status proposee|validee|refusee|all` (la section fait foi, pas le texte du statut) ; `--table` pour une ligne par décision.
-- `REF` : numéro du `list` de ce projet, ou sous-chaîne du titre sans tenir compte de la casse. Plusieurs décisions correspondent : code 4 avec la liste des candidats ; aucune : code 3.
-- `propose` : `--title`, `--decision`, `--source` obligatoires ; `--context`, `--consequences`, `--date` (défaut : aujourd'hui, heure de Paris) en option. Crée `state/decisions.md` (titre, citation, trois sections) s'il manque. Refuse un titre déjà présent.
-- `validate` : seulement une décision proposée. Statut `validée` dans le titre (ajouté s'il manquait), ligne `- **Validation :** PROPRIÉTAIRE, DATE.` (`--by`, `--note`).
-- `refuse` : seulement une décision proposée. Statut `refusée`, ligne `- **Refus :** PROPRIÉTAIRE, DATE (raison).` (`--by`, `--reason`). Sans `--by`, le nom vient de `BRAIN_OWNER` ou de `owner` dans `brain/.data/doctor.json`.
-- `replace OLD --by NEW` : OLD (proposée ou validée) passe en haut de `Refusées / remplacées`, statut `remplacée`, ligne `- **Remplacée par :** « titre de NEW » (DATE).` ; NEW reste en place.
-- `--project` accepte les mêmes formes que `action.py` (chemin du registre, dossier du projet, `client/mission`, libellé).
-- Toute écriture accepte `--dry-run` et renvoie un `label` lisible (« validation de … ») avec le bloc obtenu.
-- `--brain CHEMIN` ou `BRAIN_DIR` pour un autre brain ; `ACTION_NOW="AAAA-MM-JJ HH:MM"` fige l'horloge (tests).
+- `list`: every project by default; `--status proposed|accepted|rejected|all` (the section is authoritative, not the status text); `--table` for one line per decision.
+- `REF`: number from the `list` of that project, or a case-insensitive substring of the title. Several decisions match: exit code 4 with the list of candidates; none: exit code 3.
+- `propose`: `--title`, `--decision`, `--source` required; `--context`, `--consequences`, `--date` (default: today, Paris time) optional. Creates `state/decisions.md` (title, quote, three sections) if it is missing. Refuses a title that is already present.
+- `accept`: only a proposed decision. Status `accepted` in the title (added if it was missing), line `- **Accepted:** OWNER, DATE.` (`--by`, `--note`).
+- `reject`: only a proposed decision. Status `rejected`, line `- **Rejected:** OWNER, DATE (reason).` (`--by`, `--reason`). Without `--by`, the name comes from `BRAIN_OWNER` or from `owner` in `brain/.data/doctor.json`.
+- `supersede OLD --by NEW`: OLD (proposed or accepted) moves to the top of `Rejected / superseded`, status `superseded`, line `- **Superseded by:** “title of NEW” (DATE).`; NEW stays in place.
+- `--project` accepts the same forms as `action.py` (register path, project folder, `client/mission`, label).
+- Every write accepts `--dry-run` and returns a readable `label` with the resulting block.
+- `--brain PATH` or `BRAIN_DIR` for another brain; `ACTION_NOW="YYYY-MM-DD HH:MM"` freezes the clock (tests).
 
-## Quand l'agent l'utilise
+## When the agent uses it
 
-- Un compte rendu ou une veille qui relève une décision la **propose** avec `propose` (source obligatoire) ; l'agent ne la valide pas.
-- Seul le propriétaire du brain fait valider, refuser ou remplacer : `validate`, `refuse` et `replace` s'exécutent sur sa demande explicite, avec la date de sa décision (`--on`).
-- Pour lire l'état des décisions d'un projet : `list` puis `show`, jamais une lecture du fichier à la main pour en déduire un statut.
+- Minutes or a message review that surfaces a decision **proposes** it with `propose` (source required); the agent does not accept it.
+- Only the brain's owner has a decision accepted, rejected or superseded: `accept`, `reject` and `supersede` run on their explicit request, with the date of their decision (`--on`).
+- To read the state of a project's decisions: `list` then `show`, never a hand reading of the file to infer a status.
 
-## Garanties
+## Guarantees
 
-- Écritures atomiques ; refus (code 4) si le registre a changé entre la lecture et l'écriture.
-- Seuls le bloc déplacé et les lignes blanches de ses deux jonctions changent ; fins de ligne et retour final conservés.
-- Les entrées doivent tenir sur une ligne, sans séparateur réservé, avec des dates réelles (`AAAA-MM-JJ`).
+- Atomic writes; refused (exit code 4) if the register changed between the read and the write.
+- Only the moved block and the blank lines at its two joins change; line endings and final newline preserved.
+- Entries must fit on one line, with no reserved separator, with real dates (`YYYY-MM-DD`).

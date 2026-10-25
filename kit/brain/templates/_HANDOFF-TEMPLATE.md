@@ -1,39 +1,39 @@
-# Handoff — (sujet en une ligne) (écrit le YYYY-MM-DD)
+# Handoff — (topic in one line) (written on YYYY-MM-DD)
 
-> Autoportant : cette page suffit à reprendre le travail. Mission [nom](../nom.md). Indiquer les validations encore nécessaires ; ne pas redemander un GO pour un travail déjà autorisé. Rédigé par (modèle).
+> Self-contained: this page is enough to resume the work. Mission [name](../name.md). State the validations still needed; do not ask again for a GO on work already authorized. Written by (model).
 >
-> À copier vers `projects/clients/<client>/missions/<mission>/handoffs/YYYY-MM-DD-handoff-<slug>.md` (ou `projects/internal/<projet>/handoffs/` pour un projet interne), daté du jour d'ÉCRITURE. Un handoff dit l'objectif, le contexte nécessaire (**des pointeurs, pas des copies**), l'état exact, et les impacts retour attendus.
+> To copy to `projects/clients/<client>/missions/<mission>/handoffs/YYYY-MM-DD-handoff-<slug>.md` (or `projects/internal/<project>/handoffs/` for an internal project), dated with the day of WRITING. A handoff states the goal, the necessary context (**pointers, not copies**), the exact state, and the expected return impacts.
 
-## Mission (une phrase)
-(ce que la session suivante doit accomplir — un verbe, un livrable)
+## Mission (one sentence)
+(what the next session must accomplish — one verb, one deliverable)
 
-## État à date (ce qui existe déjà)
-- (ce qui est fait, où c'est, ce qui est commité ou non — chemins précis)
-- (les décisions déjà prises et où elles sont écrites — on ne les re-délibère pas)
+## State to date (what already exists)
+- (what is done, where it is, what is committed or not — precise paths)
+- (the decisions already taken and where they are written — they are not re-debated)
 
-## Contexte à lire (pointeurs)
-- [fiche projet](../nom.md) — statut et timeline
-- [sujet de travail](../workstreams/sujet.md) — (ce qu'on y trouve, si la mission est structurée ainsi)
+## Context to read (pointers)
+- [project page](../name.md) — status and timeline
+- [work topic](../workstreams/topic.md) — (what is in it, if the mission is structured that way)
 
-## Le point de méthode à porter dans la session
-(l'hypothèse non validée, le piège connu, la contrainte qui change la forme du travail)
+## The methodological point to carry into the session
+(the unvalidated hypothesis, the known trap, the constraint that changes the shape of the work)
 
-## Ce qu'il faut produire
-1. (livrable 1, où il va — cf. table de routage)
-2. (livrable 2)
+## What to produce
+1. (deliverable 1, where it goes — see the "what goes where" table)
+2. (deliverable 2)
 
-## Garde-fous (non négociables)
-- (aucun secret dans le repo · sandbox pour ce qui écrit · le GO avant de pousser…)
+## Guardrails (non-negotiable)
+- (no secret in the repo · sandbox for anything that writes · the GO before pushing…)
 
-## Impacts retour attendus
-- (ce que la session doit écrire dans la mémoire en finissant : entrée de timeline, actions mises à jour dans leur registre, ce qu'elle doit signaler)
+## Expected return impacts
+- (what the session must write into the memory when finishing: timeline entry, actions updated in their register, what it must flag)
 
 ---
 
-**Message de lancement à livrer avec ce fichier, dans un code block :**
+**Launch message to deliver with this file, in a code block:**
 
 ```
-Lis et exécute le handoff `brain/projects/clients/<client>/missions/<mission>/handoffs/YYYY-MM-DD-handoff-<slug>.md` — il est autoportant.
-Mission : <une phrase>.
-Commence par <première action attendue> ; demande seulement les validations encore indiquées dans le handoff.
+Read and run the handoff `brain/projects/clients/<client>/missions/<mission>/handoffs/YYYY-MM-DD-handoff-<slug>.md` — it is self-contained.
+Mission: <one sentence>.
+Start with <expected first action>; only ask for the validations still listed in the handoff.
 ```

@@ -1,49 +1,50 @@
-# Outils
+# Tools
 
-Scripts réutilisables de l'espace de travail, rangés par domaine. Toutes les commandes se lancent depuis la racine de `Work/` avec `uv run`. Les scripts retrouvent la racine de `Work/` à partir de leur propre emplacement (variables `WORK_DIR` et `BRAIN_DIR` pour pointer ailleurs).
+Reusable scripts of the workspace, organized by domain. Every command runs from the root of `Work/` with `uv run`. The scripts find the root of `Work/` from their own location (`WORK_DIR` and `BRAIN_DIR` variables to point elsewhere).
 
-Configuration locale partagée, ignorée par Git, qui reste à la racine de ce dossier : `.env` (jetons éventuels, créé à partir de [.env.example](.env.example) ; aucun outil livré n'en a besoin pour l'instant). Ne jamais le lire, le copier ni le citer.
+Shared local configuration, ignored by Git, which stays at the root of this folder: `.env` (optional tokens, created from [.env.example](.env.example); no shipped tool needs one for now). Never read, copy or cite it.
 
-## Mémoire (`brain/`)
+## Memory (`brain/`)
 
-Les outils agissent sur le brain par défaut `brain/`, ou sur un autre brain avec `BRAIN_DIR` (`--brain` pour `action.py` et `decision.py`) ; `new-brain.py`, `brain-state.py` et `check-links.py` connaissent aussi les brains `brain-<nom>`.
+The tools act on the default brain `brain/`, or on another brain with `BRAIN_DIR` (`--brain` for `action.py` and `decision.py`); `new-brain.py`, `brain-state.py` and `check-links.py` also know the `brain-<name>` brains.
 
-| Commande | Rôle | Guide |
+| Command | Role | Guide |
 |---|---|---|
-| `uv run tools/brain/new-brain.py <dossier> [--scope S] [--description D] [--remote MOTIF] [--email MOTIF] [--no-git]` | Crée un brain vierge (`brain` ou `brain-<nom>`) depuis `kit/brain/seed/` : refuse d'écraser un dossier existant, lance `git init` (sauf `--no-git`), sans commit ni remote. Les quatre options remplissent la frontière du brain dans `.data/brain.json` | en-tête du script |
-| `uv run tools/brain/check-links.py [--allow-missing-local]` | Vérifie que tous les liens Markdown d'un brain pointent vers un fichier existant ; un lien vers un autre brain échoue même si la cible existe ; `--allow-missing-local` signale à part les cibles absentes de `artifacts/` et `repos/` ; les modèles de `skills/<nom>/assets/` ne sont pas contrôlés | en-tête du script |
-| `uv run tools/brain/brain-state.py brains` | Liste les brains présents (le brain par défaut d'abord) avec leur `scope`, leur `description` et les transcriptions suivies | en-tête du script |
-| `uv run tools/brain/brain-state.py transcripts [--new \| --where <fichier>]` | Fusionne l'état des transcriptions de tous les brains ; `--new` : celles qu'aucun brain ne suit ; `--where` : le brain qui possède un fichier | en-tête du script |
-| `uv run tools/brain/action.py board` | Affiche les registres d'actions par projet dans le terminal (`--write` pour un aperçu Markdown, `--watch` pour le tenir à jour) | [action.md](brain/action.md) |
-| `uv run tools/brain/action.py <commande>` | Crée, lit, modifie, complète l'historique et supprime les actions (agents et tasks-web), range les registres par statut (`sweep`) et archive les clôtures de plus de 30 jours (`archive`) | [action.md](brain/action.md) |
-| `uv run tools/brain/decision.py <commande>` | Liste, propose, valide, refuse ou remplace les décisions des registres `state/decisions.md` | [decision.md](brain/decision.md) |
+| `uv run tools/brain/new-brain.py <folder> [--scope S] [--description D] [--remote PATTERN] [--email PATTERN] [--no-git]` | Creates a blank brain (`brain` or `brain-<name>`) from `kit/brain/seed/`: refuses to overwrite an existing folder, runs `git init` (unless `--no-git`), with no commit and no remote. The four options fill in the brain's boundary in `.data/brain.json` | script header |
+| `uv run tools/brain/check-links.py [--allow-missing-local]` | Checks that every Markdown link of a brain points to an existing file; a link to another brain fails even if the target exists; `--allow-missing-local` reports separately the targets missing from `artifacts/` and `repos/`; the templates in `skills/<name>/assets/` are not checked | script header |
+| `uv run tools/brain/brain-state.py brains` | Lists the brains present (the default brain first) with their `scope`, their `description` and the transcripts they track | script header |
+| `uv run tools/brain/brain-state.py transcripts [--new \| --where <file>]` | Merges the transcript states of every brain; `--new`: those that no brain tracks; `--where`: the brain that owns a file | script header |
+| `uv run tools/brain/action.py board` | Prints the action registers by project in the terminal (`--write` for a Markdown preview, `--watch` to keep it up to date) | [action.md](brain/action.md) |
+| `uv run tools/brain/action.py <command>` | Creates, reads, edits, completes the history of and deletes actions (agents and tasks-web), files the registers by status (`sweep`) and archives closures older than 30 days (`archive`) | [action.md](brain/action.md) |
+| `uv run tools/brain/decision.py <command>` | Lists, proposes, accepts, rejects or supersedes the decisions of the `state/decisions.md` registers | [decision.md](brain/decision.md) |
+| `uv run tools/brain/migrate-english.py [--brain PATH] [--diff] [--write \| --check]` | Converts a brain written with the earlier French format labels (registers, project and person pages, `tasks.md`, `.data` values) to the English ones, without touching written content; dry run by default, `--write` applies, `--check` exits with code 1 if something is left to convert | script header |
 
-## Interface locale (`tasks-web/`)
+## Local interface (`tasks-web/`)
 
-| Commande | Rôle | Guide |
+| Command | Role | Guide |
 |---|---|---|
-| `uv run tools/tasks-web/tasks-web.py [--port N] [--brain DOSSIER]` | Interface web locale des actions (Liste, Kanban, Outils, Git, Recherche) sur `http://127.0.0.1:8765/` ; un sélecteur en haut à gauche passe d'un brain de l'espace à l'autre sans redémarrer (`?brain=<nom>`, `GET /api/brains` ; `--brain` fixe le brain par défaut) ; l'onglet Outils lance des commandes prédéfinies (liens, brains, transcriptions, actions, dépôts) | [README.md](tasks-web/README.md) |
-| `./tools/tasks-web/build-dock-app.sh` | Construit l'application macOS « Actions Brain » à poser dans le Dock (macOS) | [README.md](tasks-web/README.md) |
-| `tools/tasks-web/launcher.sh` | Lanceur appelé par l'application : démarre le serveur si besoin et ouvre la page | [README.md](tasks-web/README.md) |
+| `uv run tools/tasks-web/tasks-web.py [--port N] [--brain DIR]` | Local web interface for actions (Today, Actions, Board, Notes, Search, Tools, Git) on `http://127.0.0.1:8765/`; a selector at the top left switches between the brains of the workspace without a restart (`?brain=<name>`, `GET /api/brains`; `--brain` sets the default brain); the Tools view runs predefined commands (links, brains, transcripts, actions, repositories) | [README.md](tasks-web/README.md) |
+| `./tools/tasks-web/build-dock-app.sh` | Builds the macOS "Actions Brain" app to put in the Dock (macOS) | [README.md](tasks-web/README.md) |
+| `tools/tasks-web/launcher.sh` | Launcher called by the app: starts the server if needed and opens the page | [README.md](tasks-web/README.md) |
 
-## Dépôts (`repos/`)
+## Repositories (`repos/`)
 
-| Commande | Rôle | Guide |
+| Command | Role | Guide |
 |---|---|---|
-| `uv run tools/repos/client-repos.py list [<client> \| repos/<client>/<dépôt>]` | Liste les dépôts du catalogue privé `brain/.data/client-repos.json` | en-tête du script |
-| `uv run tools/repos/client-repos.py check [<client> \| repos/<client>/<dépôt>]` | Compare les clones présents au catalogue (URL `origin`) et montre l'auteur et la clé effectifs de chacun, sans réseau | en-tête du script |
-| `uv run tools/repos/client-repos.py clone <client> [--identity CLÉ --author-name N --author-email E]` | Clone les dépôts d'un client ; simple `git clone`, auteur et clé viennent de `~/.gitconfig` ; les trois options forment un contournement ponctuel | en-tête du script |
+| `uv run tools/repos/client-repos.py list [<client> \| repos/<client>/<repo>]` | Lists the repositories of the private catalog `brain/.data/client-repos.json` | script header |
+| `uv run tools/repos/client-repos.py check [<client> \| repos/<client>/<repo>]` | Compares the clones present with the catalog (`origin` URL) and shows the effective author and key of each one, without network | script header |
+| `uv run tools/repos/client-repos.py clone <client> [--identity KEY --author-name N --author-email E]` | Clones a client's repositories; a plain `git clone`, the author and key come from `~/.gitconfig`; the three options are a one-off override | script header |
 
 ## Machine (`machine/`)
 
-Installation, mise à jour, hooks Git et contrôles de l'espace sur une machine : voir [machine/README.md](machine/README.md). L'identité Git et SSH par frontière de confiance est détaillée dans [machine/GIT-IDENTITY.md](machine/GIT-IDENTITY.md).
+Installation, update, Git hooks and checks of the workspace on a machine: see [machine/README.md](machine/README.md). The Git and SSH identity per trust boundary is detailed in [machine/GIT-IDENTITY.md](machine/GIT-IDENTITY.md).
 
-| Commande | Rôle | Guide |
+| Command | Role | Guide |
 |---|---|---|
-| `tools/machine/install.sh [--brain URL] [--brain-perso URL\|new] [--no-bootstrap]` | Point d'entrée après le clone : clone ou crée `brain/` (et `brain-perso/`), puis lance `bootstrap.sh` | [README.md](machine/README.md) |
-| `tools/machine/bootstrap.sh` | Prépare un checkout neuf : dossiers locaux, hooks Git de Work et de chaque brain, skills, liens, contrôles | [README.md](machine/README.md) |
-| `tools/machine/update.sh` | Régénère skills et liens depuis la configuration, enregistre l'empreinte de la configuration et signale l'état Git de Work et de chaque brain | [README.md](machine/README.md) |
-| `uv run tools/machine/work_config.py <commande>` | Configuration des skills (`check`, `list-brains`, `list-own`, `list-third-party`, `list-catalog`, `lock`, `adopt [--brain B]`, `stamp`, `status`) | [README.md](machine/README.md) |
-| `uv run tools/machine/doctor.py` | Diagnostic local en lecture seule de l'espace, des brains et de leurs frontières | [README.md](machine/README.md) |
-| `tools/machine/check-links.sh` | Contrôle la configuration, les liens et copies de skills et les liens Markdown de chaque brain | [README.md](machine/README.md) |
-| `tools/machine/check-no-client.sh [--staged \| --worktree]` | Scan manuel facultatif des noms de clients et de personnes connus du brain par défaut | [README.md](machine/README.md) |
+| `tools/machine/install.sh [--brain URL] [--brain-perso URL\|new] [--no-bootstrap]` | Entry point after the clone: clones or creates `brain/` (and `brain-perso/`), then runs `bootstrap.sh` | [README.md](machine/README.md) |
+| `tools/machine/bootstrap.sh` | Prepares a fresh checkout: local folders, Git hooks of Work and of every brain, skills, links, checks | [README.md](machine/README.md) |
+| `tools/machine/update.sh` | Regenerates skills and links from the configuration, records the configuration fingerprint and reports the Git state of Work and of every brain | [README.md](machine/README.md) |
+| `uv run tools/machine/work_config.py <command>` | Skill configuration (`check`, `list-brains`, `list-own`, `list-third-party`, `list-catalog`, `lock`, `adopt [--brain B]`, `stamp`, `status`) | [README.md](machine/README.md) |
+| `uv run tools/machine/doctor.py` | Read-only local diagnosis of the workspace, the brains and their boundaries | [README.md](machine/README.md) |
+| `tools/machine/check-links.sh` | Checks the configuration, the skill links and copies and the Markdown links of every brain | [README.md](machine/README.md) |
+| `tools/machine/check-no-client.sh [--staged \| --worktree]` | Optional manual scan for the client and person names known to the default brain | [README.md](machine/README.md) |

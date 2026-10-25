@@ -1,41 +1,41 @@
-# Git et publication du brain
+# Git and publishing the brain
 
-À lire avant de préparer un commit, un push ou une modification de remote. Les interdictions essentielles restent dans [`AGENTS.md`](../AGENTS.md) et dans l'`AGENTS.md` de l'espace de travail.
+Read this before preparing a commit, a push or a remote change. The essential prohibitions stay in [`AGENTS.md`](../AGENTS.md) and in the workspace's `AGENTS.md`.
 
 ## Commits
 
-- Conventional Commits : `type(scope facultatif): sujet`, impératif minuscule sans point final, environ 72 caractères. Types autorisés : `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `perf`, `build`, `ci`, `style`, `revert`. La zone va dans le scope, jamais à la place du type. Le corps explique pourquoi, pas la liste des fichiers.
-- La langue du sujet suit l'historique du dépôt. Dans le brain : nouvelle note/fiche → `feat(notes):`, `feat(projects):`, `feat(people):` ; passe de tri ou grooming → `chore(brain):` ; convention ou `AGENTS.md` → `docs(…):`.
-- Aucun commit ni push sans demande explicite du propriétaire, un GO distinct pour chaque action. En fin de session, proposer fichiers et message ; signaler les commits locaux non poussés. Stager uniquement les chemins touchés (`git add <chemins>`), jamais `git add -A`. Vérifier `git diff --cached --name-only` avant de commiter ; si l'index contient le travail du propriétaire, utiliser `git commit -- <chemins>` pour n'inclure que les chemins de la passe autorisée.
-- Jamais de secret, `.env`, clé ou credential dans un commit, même dans le message. Aucune signature d'IA dans commit, PR, commentaire ou description. Jamais `push --force`, `--amend` ou rebase d'un commit déjà partagé.
+- Conventional Commits: `type(optional scope): subject`, lowercase imperative with no trailing period, about 72 characters. Allowed types: `feat`, `fix`, `docs`, `refactor`, `chore`, `test`, `perf`, `build`, `ci`, `style`, `revert`. The area goes in the scope, never in place of the type. The body explains why, not the list of files.
+- The language of the subject follows the repository's history. In the brain: new note or page → `feat(notes):`, `feat(projects):`, `feat(people):`; triage or grooming pass → `chore(brain):`; convention or `AGENTS.md` → `docs(…):`.
+- No commit or push without an explicit request from the brain owner, a separate GO for each action. At the end of a session, propose files and a message; flag unpushed local commits. Stage only the paths touched (`git add <paths>`), never `git add -A`. Check `git diff --cached --name-only` before committing; if the index holds the brain owner's work, use `git commit -- <paths>` to include only the paths of the authorized pass.
+- Never a secret, `.env`, key or credential in a commit, even in the message. No AI signature in a commit, PR, comment or description. Never `push --force`, `--amend` or rebase of a commit that has already been shared.
 
-## Identités Git et clés SSH
+## Git identities and SSH keys
 
-Une identité (auteur + clé SSH) par frontière de confiance : perso, employeur, chaque client. Elle se choisit une fois dans la configuration home, jamais dans chaque clone : `~/.gitconfig` porte `user.useConfigOnly = true` et inclut un `~/.gitconfig-<frontière>` par dossier (`includeIf "gitdir:…"`) et par remote (`includeIf "hasconfig:remote.*.url:…"`, qui s'applique aussi pendant `git clone`).
+One identity (author + SSH key) per trust boundary: personal, employer, each client. It is chosen once in the home configuration, never in each clone: `~/.gitconfig` carries `user.useConfigOnly = true` and includes one `~/.gitconfig-<boundary>` per folder (`includeIf "gitdir:…"`) and per remote (`includeIf "hasconfig:remote.*.url:…"`, which also applies during `git clone`).
 
-Chaque brain déclare dans `.data/brain.json` le `remote` et l'`email` attendus (motifs `fnmatch`) : le doctor de la machine compare ces motifs à l'identité effective du clone. Les correspondances propres à une machine ou à un compte ne se remplissent pas dans ce guide géré par le starter. Les garder dans le `docs/LOCAL-WORKFLOWS.md` du brain si elles doivent être documentées dans le brain privé, sans clé privée, phrase de passe ni chemin de clé.
+Each brain declares in `.data/brain.json` the expected `remote` and `email` (`fnmatch` patterns): the machine doctor compares these patterns with the clone's effective identity. Mappings specific to a machine or an account are not filled in this guide, which the starter manages. Keep them in the brain's `docs/LOCAL-WORKFLOWS.md` if they must be documented in the private brain, with no private key, passphrase or key path.
 
-- Un hôte qui sert plusieurs comptes (par exemple `github.com`) impose sa clé par `core.sshCommand` dans le fichier inclus ; un hôte à compte unique, par un bloc `Host` + `IdentityFile` + `IdentitiesOnly yes` dans `~/.ssh/config`.
-- Vérifier l'empreinte de la clé d'hôte d'un serveur auprès d'une source sûre avant la première connexion ; ne jamais l'accepter à l'aveugle.
-- Ne jamais ajouter de `user.*` ou `core.sshCommand` local dans un clone : il écrase silencieusement les règles home.
+- A host that serves several accounts (for example `github.com`) imposes its key through `core.sshCommand` in the included file; a single-account host, through a `Host` + `IdentityFile` + `IdentitiesOnly yes` block in `~/.ssh/config`.
+- Check a server's host key fingerprint against a trusted source before the first connection; never accept it blindly.
+- Never add a local `user.*` or `core.sshCommand` in a clone: it silently overrides the home rules.
 
-Contrôle (aucune de ces commandes ne lit de clé privée) :
+Check (none of these commands reads a private key):
 
 ```bash
-git config --file ~/.gitconfig --list                                    # useConfigOnly et règles includeIf
+git config --file ~/.gitconfig --list                                    # useConfigOnly and includeIf rules
 git -C <clone> config --show-origin --get-regexp '^(user|core\.sshcommand)'
-env | grep -E '^GIT_SSH' || echo "aucun GIT_SSH*"
-ssh -G <hôte> | grep -E '^(identityfile|identitiesonly) '                # clé choisie par ~/.ssh/config
-ssh -T git@<hôte>                                                        # compte authentifié
+env | grep -E '^GIT_SSH' || echo "no GIT_SSH*"
+ssh -G <host> | grep -E '^(identityfile|identitiesonly) '                # key chosen by ~/.ssh/config
+ssh -T git@<host>                                                        # authenticated account
 ```
 
-## Publication du brain
+## Publishing the brain
 
-- Le brain contient du contexte client et doit rester privé ; sa destination : (à compléter, remote privé). Ne rien copier vers un dépôt public sans anonymisation explicite.
-- Publier un instantané initial avec un historique neuf.
-- Le hook pre-commit du brain (`tools/machine/hooks/brain-pre-commit`) refuse un commit qui contient un lien vers un autre brain ou un nom de client d'un autre brain (hors `allow` de `.data/brain.json`), en plus des registres mal formés, des liens morts (une cible absente de `artifacts/` ou `repos/`, locaux à chaque machine, est seulement signalée) et des secrets. Il ne fait que valider.
+- The brain holds client context and must stay private; its destination: (to be completed, private remote). Do not copy anything to a public repository without explicit anonymization.
+- Publish an initial snapshot with a fresh history.
+- The brain's pre-commit hook (`tools/machine/hooks/brain-pre-commit`) refuses a commit that contains a link to another brain or a client name of another brain (outside the `allow` list of `.data/brain.json`), in addition to malformed registers, dead links (a target missing from `artifacts/` or `repos/`, which are local to each machine, is only reported) and secrets. It only validates.
 
-## Repos partagés et clones client
+## Shared repos and client clones
 
-- Un repo partagé reste neutre et autoportant : aucun chemin machine (`~/`, `/Users/…`), pointeur vers `brain/` ou `repos/`, ni contexte propre au propriétaire. Porter les décisions utiles dans le repo et citer les autres repos par URL. Avant de pousser, chercher `brain/`, `~/`, `/Users/`.
-- Lire `repos/<client>/AGENTS.md` avant de toucher un clone client. Dans un clone client, GO distinct pour commit, push, rebase, remote et opérations `gh`/`glab`. Aucune signature d'IA ni référence locale dans ce qui part chez le client.
+- A shared repo stays neutral and self-contained: no machine path (`~/`, `/Users/…`), no pointer to `brain/` or `repos/`, and no context specific to the brain owner. Carry the useful decisions in the repo and cite other repos by URL. Before pushing, search for `brain/`, `~/`, `/Users/`.
+- Read `repos/<client>/AGENTS.md` before touching a client clone. In a client clone, a separate GO for commit, push, rebase, remote and `gh`/`glab` operations. No AI signature or local reference in what goes to the client.

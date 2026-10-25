@@ -1,20 +1,20 @@
 # Actions — <mission>
 
-> À copier vers `<projet>/state/actions.md` (liens écrits pour une mission client). Ce registre fait foi pour ID, responsable, échéance et statut ; conserver le préfixe d'ID du client, y compris entre missions. La ligne d'action garde ID, responsable, intitulé et métadonnées Tasks (priorité, `📅` échéance précise, `⏳` date de travail choisie) ; seules les nuances d'échéance, la source et l'historique vont en sous-puces. Ne pas dupliquer une date `📅` en sous-puce. États : `[ ]` à faire · `[/]` en cours · `[w]` en attente (relancée) · `[x]` faite · `[-]` annulée. Le tableau [`tasks.md`](../../../../../../tasks.md) l'affiche avec le plugin Tasks. Une action close depuis plus de 30 jours passe avec ses sous-puces dans `actions-archive-AAAA.md`, sans demander (ID réservés ; voir `docs/CONVENTIONS.md`).
+> To copy to `<project>/state/actions.md` (links written for a client mission). This register is authoritative for ID, owner, due date and status; keep the client's ID prefix, including across missions. The action line keeps the ID, owner, title and Tasks metadata (priority, `📅` precise due date, `⏳` chosen work date); only due-date nuances, the source and the history go in sub-bullets. Do not duplicate a `📅` date in a sub-bullet. States: `[ ]` to do · `[/]` in progress · `[w]` waiting (reminded) · `[x]` done · `[-]` cancelled. The board [`tasks.md`](../../../../../../tasks.md) displays it with the Tasks plugin. An action closed for more than 30 days moves with its sub-bullets to `actions-archive-YYYY.md`, without asking (IDs stay reserved; see `docs/CONVENTIONS.md`).
 
-## Ouvertes
-- [ ] **<ID>** — <responsable> — <action concrète> 📅 YYYY-MM-DD
-    - échéance: <nuance si nécessaire, sinon retirer cette puce>
+## Open
+- [ ] **<ID>** — <owner> — <concrete action> 📅 YYYY-MM-DD
+    - due: <nuance if needed, otherwise remove this bullet>
     - source: [YYYY-MM-DD-<type>-<slug>](../sources/YYYY-MM/YYYY-MM-DD-<type>-<slug>.md)
-    - créée : YYYY-MM-DD HH:MM
-    - mise à jour : YYYY-MM-DD HH:MM
-    - JJ/MM : <changement d'état, avec sa source>
+    - created: YYYY-MM-DD HH:MM
+    - updated: YYYY-MM-DD HH:MM
+    - DD/MM: <state change, with its source>
 
-## Terminées
-- [x] **<ID>** — <responsable> — <action réalisée> 📅 YYYY-MM-DD ✅ YYYY-MM-DD
+## Done
+- [x] **<ID>** — <owner> — <completed action> 📅 YYYY-MM-DD ✅ YYYY-MM-DD
     - source: [YYYY-MM-DD-<type>-<slug>](../sources/YYYY-MM/YYYY-MM-DD-<type>-<slug>.md)
-    - faite : <preuve datée, ou case cochée par le propriétaire dans le tableau>
+    - done: <dated evidence, or box ticked by the brain owner in the board>
 
-## Annulées
-- [-] **<ID>** — <responsable> — <action> ❌ YYYY-MM-DD
-    - annulée le YYYY-MM-DD par <personne> — [source](../sources/YYYY-MM/YYYY-MM-DD-<type>-<slug>.md)
+## Cancelled
+- [-] **<ID>** — <owner> — <action> ❌ YYYY-MM-DD
+    - cancelled: YYYY-MM-DD by <person> — [source](../sources/YYYY-MM/YYYY-MM-DD-<type>-<slug>.md)

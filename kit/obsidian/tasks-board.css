@@ -1,5 +1,5 @@
 /* Task board (brain/tasks.md): states of the action registers.
-   [/] en cours, [w] en attente: Obsidian would draw them as checked and struck through. */
+   [/] in progress, [w] waiting: Obsidian would draw them as checked and struck through. */
 
 .task-list-item[data-task="/"],
 .task-list-item[data-task="w"] {
@@ -41,12 +41,12 @@
   border-radius: var(--radius-s);
 }
 .plugin-tasks-query-result .task-list-item[data-task="/"] .tasks-list-text::before {
-  content: "en cours";
+  content: "in progress";
   color: var(--color-orange);
   background: rgba(var(--color-orange-rgb), 0.12);
 }
 .plugin-tasks-query-result .task-list-item[data-task="w"] .tasks-list-text::before {
-  content: "en attente";
+  content: "waiting";
   color: var(--color-yellow);
   background: rgba(var(--color-yellow-rgb), 0.15);
 }
@@ -124,7 +124,7 @@
 .callout[data-callout="column"] .plugin-tasks-query-result .task-list-item:hover {
   border-color: var(--interactive-accent);
 }
-/* The "en cours" / "en attente" labels repeat the column name here. */
+/* The "in progress" / "waiting" labels repeat the column name here. */
 .callout[data-callout="column"] .plugin-tasks-query-result .tasks-list-text::before { display: none; }
 /* Keep the filter box and the task count compact. */
 .callout[data-callout="column"] .plugin-tasks-query-result input[type="text"] { width: 100%; }

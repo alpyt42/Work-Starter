@@ -1,50 +1,50 @@
 ---
-date: AAAA-MM-JJ
-heure: "HH:MM"
+date: YYYY-MM-DD
+time: "HH:MM"
 type: cr
 client: <client>
-mission: <mission ou supprimer si sans objet>
-titre: <titre>
-participants: ["Prénom Nom", "Prénom Nom"]
-provenance: "<outil ou personne, date, durée approximative>"
-fiabilite: <bonne | moyenne | faible>
-redige_par: "cr-reunion (<modèle>)"
+mission: <mission, or delete if not applicable>
+title: <title>
+participants: ["First Last", "First Last"]
+provenance: "<tool or person, date, approximate duration>"
+reliability: <good | medium | low>
+written_by: "cr-reunion (<model>)"
 ---
 
-# AAAA-MM-JJ — <Titre>
+# YYYY-MM-DD — <Title>
 
-> Modèle destiné à `<mission>/sources/YYYY-MM/YYYY-MM-DD-cr-<slug>.md`. Supprimer cette consigne, les exemples et toute section facultative vide. Le CR reste une source datée et autonome : il conserve les faits, attributions, décisions, engagements, chiffres, dates, risques et changements nécessaires à sa compréhension.
+> Template for `<mission>/sources/YYYY-MM/YYYY-MM-DD-cr-<slug>.md` (`cr` = meeting minutes). Delete this instruction, the examples and any empty optional section. The minutes stay a dated, standalone source: they keep the facts, attributions, decisions, commitments, figures, dates, risks and changes needed to understand them.
 
-Fiche : [<mission>](../../<mission>.md).
+Mission page: [<mission>](../../<mission>.md).
 
-> <Limite de fiabilité uniquement si elle affecte la lecture ; supprimer sinon.>
+> <Reliability limit, only if it affects reading; delete otherwise.>
 
-## Résumé
+## Summary
 
-<Deux phrases, environ 40 à 60 mots : résultat principal de la réunion, décision ou blocage majeur, puis prochaine étape immédiate. Ne pas recopier la liste des sujets.>
+<Two sentences, about 40 to 60 words: main outcome of the meeting, major decision or blocker, then the immediate next step. Do not copy the list of topics.>
 
-## Retenu
+## Key points
 
-- **<Sujet> :** <fait, position ou chiffre utile> ; <conséquence éventuelle>.
-- **<Sujet> :** <fait attribué à la personne concernée lorsque cela compte>.
+- **<Topic>:** <useful fact, position or figure>; <possible consequence>.
+- **<Topic>:** <fact attributed to the person concerned when it matters>.
 
-## Décisions
+## Decisions
 
-- **<Prise | refusée | à confirmer>** — <choix formulé> — <auteur ou arbitre>.
+- **<Taken | Rejected | To confirm>** — <worded choice> — <who decided or arbitrated>.
 
-## Actions et suivi
+## Actions and follow-up
 
-- **Nouvelle** — <responsable> — <résultat vérifiable> — <échéance annoncée ou échéance à obtenir>.
-- **Suivi · <ID>** — <changement de responsable, d'échéance, d'état ou de blocage>.
+- **New** — <owner> — <verifiable outcome> — <announced due date, or due date to obtain>.
+- **Follow-up · <ID>** — <change of owner, due date, state or blocker>.
 
-## À suivre
+## To follow
 
-- <Piste ou engagement non attribué> — prochaine question ou événement attendu : <…>.
+- <Unassigned lead or commitment> — next question or expected event: <…>.
 
-## À vérifier
+## To check
 
-- <Incertitude susceptible de modifier un fait, une attribution, une décision ou une action> — <horodatage éventuel>.
+- <Uncertainty that could change a fact, an attribution, a decision or an action> — <timestamp if any>.
 
-## Détail
+## Details
 
-<Seulement si une nuance technique, contractuelle ou de périmètre est indispensable.>
+<Only if a technical, contractual or scope nuance is essential.>

@@ -52,7 +52,7 @@ A brain is a private Git repository at the Work root named `brain` (the default)
 
 ```bash
 uv run tools/brain/new-brain.py brain-perso \
-  --scope perso \
+  --scope personal \
   --description "Personal meetings and career topics; no employer or client content" \
   --remote 'git@github.com:<personal-account>/*' \
   --email '<personal-address>'
@@ -98,13 +98,13 @@ Client clone URLs are versioned in the private `brain/.data/client-repos.json`. 
 
 Open `Work/` as the only Obsidian vault; the brains appear as folders inside it. The starter does not manage `.obsidian/`: it is ignored by Git and set by hand once per machine, following [`kit/obsidian/README.md`](kit/obsidian/README.md) (community plugins Tasks, Meta Bind, Templater and optionally Obsidian Git, the link and template settings, the task statuses, and the `tasks-board` CSS snippet in [`kit/obsidian/tasks-board.css`](kit/obsidian/tasks-board.css)).
 
-Each brain's `tasks.md` combines the daily dashboard, project lists and kanban columns as Obsidian **Tasks** queries over the action registers. To add an action, click **Nouvelle action** at the top of `tasks.md`; the Meta Bind button runs the Templater form, which writes to the chosen register with an ID, status, optional priority and a validated Tasks due date. The keyboard alternative is to search for `nouvelle-action` in the command palette and select **Templater: Insert**.
+Each brain's `tasks.md` combines the daily dashboard, project lists and kanban columns as Obsidian **Tasks** queries over the action registers. To add an action, click **New action** at the top of `tasks.md`; the Meta Bind button runs the Templater form, which writes to the chosen register with an ID, status, optional priority and a validated Tasks due date. The keyboard alternative is to search for `new-action` in the command palette and select **Templater: Insert**.
 
 Outside Obsidian, `uv run tools/brain/action.py board` prints a complete project view of the same registers, sorted by state then action ID; the daily planning dashboard remains in Obsidian (`--write` saves the project view to `agents/tasks-board.md` for the VS Code Markdown preview, each line linking to its register line; `--write --watch` keeps it up to date, and the VS Code task « Tasks board (live) » in a brain's `.vscode/tasks.json` starts it when the folder opens, once automatic tasks are allowed). In VS Code, the Todo Tree extension lists in-progress `[/]`, waiting `[w]`, and the owner's to-do `[ ]` actions live. Its settings live in the private brain's `.vscode/settings.json` because the regex names the owner; to open `Work/` instead, copy them to the ignored `Work/.vscode/settings.json` and add `"todo-tree.ripgrep.ripgrepArgs": "--max-columns=1000 --no-ignore"` (this repository's `.gitignore` hides the brains from ripgrep). Todo Tree may not find VS Code's bundled ripgrep: install it (`brew install ripgrep`) and set `todo-tree.ripgrep.ripgrep` to its path in the VS Code user settings.
 
 Closed actions older than 30 days move to `state/actions-archive-YYYY.md` with `uv run tools/brain/action.py archive` (dry-run) then `--write`; agents run it without asking when the doctor flags them or at the start of a month. See [tools/brain/action.md](tools/brain/action.md).
 
-For a local browser interface, run `uv run tools/tasks-web/tasks-web.py` and open `http://127.0.0.1:8765/`: tabs Liste, Kanban, Outils, Git and Recherche, buttons **+ Task** and **+ Note**, and a selector at the top left that switches between the brains of the Work without a restart. On macOS, `./tools/tasks-web/build-dock-app.sh` creates an app that starts the server and opens the browser from the Dock. Both routes read and edit the same Markdown files; details are in [the local task manager guide](tools/tasks-web/README.md). The server binds only to `127.0.0.1` and does not publish brain data.
+For a local browser interface, run `uv run tools/tasks-web/tasks-web.py` and open `http://127.0.0.1:8765/`: a sidebar with the views Today, Actions, Board, Notes, Search, Tools and Git, the **New action** and **New note** buttons, and a selector at the top left that switches between the brains of the Work without a restart. On macOS, `./tools/tasks-web/build-dock-app.sh` creates an app that starts the server and opens the browser from the Dock. Both routes read and edit the same Markdown files; details are in [the local task manager guide](tools/tasks-web/README.md). The server binds only to `127.0.0.1` and does not publish brain data.
 
 ## Checks
 

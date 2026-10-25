@@ -1,15 +1,15 @@
-# Dépôts client à cloner
+# Client repositories to clone
 
-Le catalogue privé `.data/client-repos.json` versionne **uniquement les chemins locaux et les URLs `origin`** des dépôts client. Il ne fixe ni branche ni commit. Les URLs client ne vont jamais dans un dépôt d'outillage personnel ou public : seulement ici, dans le brain privé.
+The private catalogue `.data/client-repos.json` versions **only the local paths and the `origin` URLs** of the client repositories. It pins neither a branch nor a commit. Client URLs never go into a personal or public tooling repository: only here, in the private brain.
 
-Format d'une entrée : `{"path": "repos/<client>/<repo>", "url": "<url-git>"}` dans la liste `repositories`. L'état réel du catalogue reste exclusivement dans `.data/client-repos.json`.
+Format of an entry: `{"path": "repos/<client>/<repo>", "url": "<git-url>"}` in the `repositories` list. The actual state of the catalogue lives exclusively in `.data/client-repos.json`.
 
-Si l'espace de travail fournit `tools/repos/client-repos.py`, il lit ce catalogue :
+If the workspace provides `tools/repos/client-repos.py`, it reads this catalogue:
 
 ```bash
-uv run tools/repos/client-repos.py list                 # tous les chemins et URLs
-uv run tools/repos/client-repos.py check                # origin + auteur et clé appliqués, sans réseau
-uv run tools/repos/client-repos.py clone <client>       # simple git clone, identité héritée de ~/.gitconfig
+uv run tools/repos/client-repos.py list                 # every path and URL
+uv run tools/repos/client-repos.py check                # origin + applied author and key, no network
+uv run tools/repos/client-repos.py clone <client>       # plain git clone, identity inherited from ~/.gitconfig
 ```
 
-Avant le premier clone d'un client, enregistrer sa clé publique et vérifier la clé d'hôte du serveur (voir [`GIT.md`](GIT.md)). Si un dépôt change d'URL, vérifier le nouveau remote avec le client, corriger le catalogue, puis relancer `check`.
+Before the first clone for a client, register its public key and check the server's host key (see [`GIT.md`](GIT.md)). If a repository changes URL, check the new remote with the client, fix the catalogue, then run `check` again.

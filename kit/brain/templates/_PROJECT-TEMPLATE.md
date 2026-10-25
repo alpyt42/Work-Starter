@@ -1,30 +1,30 @@
-# Project: (Nom)
+# Project: (Name)
 
-> À copier vers `projects/internal/<name>/<name>.md`. Pour un client ou une mission client, utiliser plutôt `kit/brain/templates/_CLIENT-TEMPLATE.md` et `_MISSION-TEMPLATE.md`. C'est un INDEX : il résume, pointe vers le repo et les notes, tient la timeline.
+> To copy to `projects/internal/<name>/<name>.md`. For a client or a client mission, use `kit/brain/templates/_CLIENT-TEMPLATE.md` and `_MISSION-TEMPLATE.md` instead. This is an INDEX: it summarizes, points to the repo and the notes, and keeps the timeline.
 >
-> Les `../../../` des liens valent pour `projects/<axe>/<name>/`. En cas de doute, lancer `uv run tools/brain/check-links.py` depuis la racine de l'espace de travail.
+> The `../../../` in the links are valid for `projects/<axis>/<name>/`. When in doubt, run `uv run tools/brain/check-links.py` from the workspace root.
 
 - **Status:** active | paused | done
-- **Goal:** (une phrase — à quoi ressemble « terminé »)
-- **Suivi du temps:** (référence confirmée par le propriétaire, jamais devinée ; facultatif, à retirer si inutile)
-- **Repo:** `../../../repos/(dossier)` ← le territoire que ce projet indexe (vide si pas de code)
-- **Stakeholders:** [nom-personne](../../../people/nom-personne.md)
-- **Tableau :** [tasks](../../../tasks.md)
+- **Goal:** (one sentence — what "done" looks like)
+- **Time tracking:** (reference confirmed by the brain owner, never guessed; optional, remove if unused)
+- **Repo:** `../../../repos/(folder)` ← the territory this project indexes (empty if no code)
+- **Stakeholders:** [person-name](../../../people/person-name.md)
+- **Board:** [tasks](../../../tasks.md)
 
 ## Context
-(contexte et contraintes — le pourquoi, pas le comment)
+(context and constraints — the why, not the how)
 
 ## Notes
-- [YYYY-MM-DD-sujet](notes/YYYY-MM-DD-sujet.md) — (de quoi il s'agit ; notes de travail datées dans `notes/`, à côté de `state/`)
-- Handoffs : `handoffs/`
+- [YYYY-MM-DD-topic](notes/YYYY-MM-DD-topic.md) — (what it is about; dated working notes in `notes/`, next to `state/`)
+- Handoffs: `handoffs/`
 
-## Registres
-> Créer `state/actions.md` à partir de [`_ACTIONS-TEMPLATE.md`](../../../../kit/brain/templates/_ACTIONS-TEMPLATE.md), en adaptant ses liens à ce projet interne ; `state/decisions.md` (depuis `_DECISIONS-TEMPLATE.md`) et `state/glossary.md` au besoin. Ces registres sont le seul endroit où écrire actions et décisions ; ne pas les recopier dans cette fiche.
-- [Registre des actions](state/actions.md)
-- [Décisions](state/decisions.md) — proposées, validées, refusées, remplacées
-- [Glossaire](state/glossary.md) — facultatif : termes, sigles et erreurs de transcription du projet
+## Registers
+> Create `state/actions.md` from [`_ACTIONS-TEMPLATE.md`](../../../../kit/brain/templates/_ACTIONS-TEMPLATE.md), adapting its links to this internal project; `state/decisions.md` (from `_DECISIONS-TEMPLATE.md`) and `state/glossary.md` as needed. These registers are the only place to write actions and decisions; do not copy them into this page.
+- [Action register](state/actions.md)
+- [Decisions](state/decisions.md) — proposed, accepted, rejected, superseded
+- [Glossary](state/glossary.md) — optional: the project's terms, acronyms and transcription errors
 
 ## Timeline
-> Un item par jour ou par session, une ligne chacun — de quoi reconstituer *comment on en est arrivé là* sans relire le détail. Seul le mois en cours reste ici : dès qu'il écrit un nouveau mois, l'agent déplace sans demander les entrées antérieures, inchangées, dans `journal/YYYY-MM.md` (convention du brain) et liste les mois archivés ci-dessous (ligne à retirer tant que rien n'est archivé).
-Mois précédents : [YYYY-MM](journal/YYYY-MM.md)
-- (date) — création de la fiche
+> One item per day or per session, one line each — enough to reconstruct *how we got here* without rereading the detail. Only the current month stays here: as soon as it writes in a new month, the agent moves the earlier entries without asking, unchanged, into `journal/YYYY-MM.md` (brain convention) and lists the archived months below (remove that line while nothing is archived).
+Previous months: [YYYY-MM](journal/YYYY-MM.md)
+- (date) — page created

@@ -1,22 +1,22 @@
-# repos/ — dépôts de code locaux
+# repos/ — local code repositories
 
-Les clones de code vivent ici. Chaque clone est un dépôt Git indépendant ; son contenu est ignoré par le dépôt `Work`. Seuls ce README et `workspaces/README.md` sont suivis par `Work`.
+Code clones live here. Each clone is an independent Git repository; its content is ignored by the `Work` repository. Only this README and `workspaces/README.md` are tracked by `Work`.
 
-## Organisation
+## Organization
 
-- `<client-ou-sujet>/<depot>/` : travail principal, avec un dossier par client ou sujet.
-- `personal/` : projets personnels.
-- `sandbox/` : expériences jetables.
-- `workspaces/` : fichiers `.code-workspace` locaux ; voir `workspaces/README.md`.
+- `<client-or-topic>/<repo>/`: main work, with one folder per client or topic.
+- `personal/`: personal projects.
+- `sandbox/`: disposable experiments.
+- `workspaces/`: local `.code-workspace` files; see `workspaces/README.md`.
 
-Garder les clones peu profonds et des noms descriptifs en lowercase-kebab. Un clone peut porter son propre `AGENTS.md` et son pointeur `CLAUDE.md` ; les lire avant de le modifier.
+Keep clones shallow and names descriptive in lowercase-kebab. A clone may carry its own `AGENTS.md` and its `CLAUDE.md` pointer; read them before modifying it.
 
-## Dépôts clients
+## Client repositories
 
-Le catalogue privé `brain/.data/client-repos.json` contient leurs URL. Utiliser `uv run tools/repos/client-repos.py check` pour contrôler les clones présents et `uv run tools/repos/client-repos.py clone <client>` pour les recréer. Les URL, l'inventaire, les faits de mission et les décisions propres à un client restent dans le brain privé.
+The private catalog `brain/.data/client-repos.json` holds their URLs. Use `uv run tools/repos/client-repos.py check` to check the clones present and `uv run tools/repos/client-repos.py clone <client>` to recreate them. The URLs, the inventory, the mission facts and the decisions specific to a client stay in the private brain.
 
-Avant une opération Git distante, vérifier l'identité Git et SSH selon [`tools/machine/GIT-IDENTITY.md`](../tools/machine/GIT-IDENTITY.md) et respecter les décisions du client consignées dans le brain. Chaque clone suit aussi les règles de son propre dépôt.
+Before any remote Git operation, check the Git and SSH identity according to [`tools/machine/GIT-IDENTITY.md`](../tools/machine/GIT-IDENTITY.md) and respect the client's decisions recorded in the brain. Each clone also follows the rules of its own repository.
 
-## Frontières
+## Boundaries
 
-Le code et la documentation technique durables restent dans leur dépôt. Le brain concerné conserve le contexte et les liens vers les dépôts ; `agents/` reçoit le travail jetable et `artifacts/` les livrables destinés aux humains. Un dépôt partagé ne doit pas contenir de chemin machine ni de référence à un dossier privé local.
+Durable code and technical documentation stay in their repository. The relevant brain keeps the context and the links to the repositories; `agents/` receives disposable work and `artifacts/` the deliverables meant for humans. A shared repository must not contain a machine path or a reference to a private local folder.

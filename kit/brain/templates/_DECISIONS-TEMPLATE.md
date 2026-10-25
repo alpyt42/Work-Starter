@@ -1,15 +1,15 @@
-# Décisions — <mission>
+# Decisions — <mission>
 
-> Créé par `uv run tools/brain/decision.py propose` s'il manque ; sinon à copier vers `missions/<mission>/state/decisions.md`. Une formulation issue d'un CR ou d'un message entre ici comme proposition. Seule la confirmation du propriétaire la fait passer en décision validée ; garder la source et la date du changement.
+> Created by `uv run tools/brain/decision.py propose` if missing; otherwise copy to `missions/<mission>/state/decisions.md`. A wording from minutes or a message enters here as a proposal. Only the brain owner's confirmation turns it into an accepted decision; keep the source and the date of the change.
 
-## Proposées
+## Proposed
 
-### <Titre de la décision> (AAAA-MM-JJ, statut : proposée)
-- **Contexte :** <ce qui la motive>
-- **Décision :** <formulation à trancher>
-- **Conséquences :** <effets, actions liées>
-- **Source :** [AAAA-MM-JJ-<type>-<slug>](../sources/AAAA-MM/AAAA-MM-JJ-<type>-<slug>.md)
+### <Decision title> (YYYY-MM-DD, status: proposed)
+- **Context:** <what motivates it>
+- **Decision:** <wording to settle>
+- **Consequences:** <effects, related actions>
+- **Source:** [YYYY-MM-DD-<type>-<slug>](../sources/YYYY-MM/YYYY-MM-DD-<type>-<slug>.md)
 
-## Validées
+## Accepted
 
-## Refusées / remplacées
+## Rejected / superseded

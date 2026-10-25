@@ -1,3 +1,3 @@
 # CLAUDE.md
 
-Lis @AGENTS.md — la carte de cet espace de travail : ce qu'il contient, où ranger chaque chose, et comment utiliser la mémoire (`brain/`). Pour les instructions détaillées de la mémoire, voir `brain/AGENTS.md`. `AGENTS.md` est la source canonique, partagée avec les autres outils agents.
+Read @AGENTS.md — the map of this workspace: what it contains, where to file each thing, and how to use the memory (`brain/`). For the detailed memory instructions, see `brain/AGENTS.md`. `AGENTS.md` is the canonical source, shared with the other agent tools.

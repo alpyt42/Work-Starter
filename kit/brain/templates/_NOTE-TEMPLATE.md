@@ -1,11 +1,11 @@
-# (Titre de la note)
+# (Note title)
 
-> Note de travail du propriétaire (idée, analyse, préparation), datée du début du sujet et modifiable ; ce qu'un tiers a dit ou envoyé va dans `sources/`. Destination : `<projet>/notes/YYYY-MM-DD-titre-slug.md`, à côté de `state/` ; pour un client, `projects/clients/<client>/missions/<mission>/notes/` ; sans mission, `projects/internal/setup/notes/`. Fichier plat qui commence par son titre et un lien vers la fiche du projet. La fiche du projet est toujours `../<projet>.md` depuis ce dossier. Pour une doc de référence tenue à jour, utiliser plutôt `workstreams/<sujet>.md`.
+> The brain owner's working note (idea, analysis, preparation), dated from the start of the topic and editable; what a third party said or sent goes in `sources/`. Destination: `<project>/notes/YYYY-MM-DD-title-slug.md`, next to `state/`; for a client, `projects/clients/<client>/missions/<mission>/notes/`; without a mission, `projects/internal/setup/notes/`. Flat file that starts with its title and a link to the project page. The project page is always `../<project>.md` from this folder. For a reference doc kept up to date, use `workstreams/<topic>.md` instead.
 
-> Note du JJ/MM/AAAA · projet : [<projet>](../<projet>.md)
+> Note from DD/MM/YYYY · project: [<project>](../<project>.md)
 
-(contenu)
+(content)
 
 ## Related
-- [autre note](YYYY-MM-DD-autre-sujet.md)
-- [fiche du projet](../<projet>.md)
+- [other note](YYYY-MM-DD-other-topic.md)
+- [project page](../<project>.md)

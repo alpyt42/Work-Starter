@@ -1,7 +1,7 @@
 # Sources — YYYY-MM — <mission>
 
-> À copier vers `missions/<mission>/sources/YYYY-MM/index.md`. Une entrée par CR, fil de mails ou conversation Teams substantielle. Cet index sert à retrouver une source, sans dupliquer son contenu dans la timeline.
+> To copy to `missions/<mission>/sources/YYYY-MM/index.md`. One entry per substantial meeting minutes, mail thread or Teams conversation. This index is for finding a source, without duplicating its content in the timeline.
 
-[Retour à la mission](../../<mission>.md)
+[Back to the mission](../../<mission>.md)
 
-- YYYY-MM-DD · CR · [<titre>](YYYY-MM-DD-cr-<slug>.md) — <sujet en une phrase>
+- YYYY-MM-DD · CR · [<title>](YYYY-MM-DD-cr-<slug>.md) — <one-line subject>

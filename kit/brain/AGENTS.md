@@ -1,72 +1,72 @@
-# AGENTS.md — Mémoire brain
+# AGENTS.md — Brain memory
 
-La mémoire est l'index du travail de son propriétaire ; les repos sont le territoire. Markdown pur, liens relatifs avec extension `.md`, dépôt Git privé. Répondre dans la langue du propriétaire ; conserver en anglais les noms de dossiers et mots-clés structurels. Ces conventions valent pour tous les brains de l'espace (`brain/`, `brain-perso/`, `brain-*/`) et sont gérées par Work dans `kit/brain/` ; le `AGENTS.md` de chaque brain ne garde que ses règles propres. Lire aussi le `AGENTS.md` à la racine de l'espace avant toute modification. Sauf mention contraire, les chemins ci-dessous partent de la racine du brain.
+The memory is the index of the brain owner's work; the repos are the territory. Plain Markdown, relative links with the `.md` extension, private Git repository. Reply in the owner's language; what people write stays in their language, while folder names and structural keywords stay in English. These conventions apply to every brain of the workspace (`brain/`, `brain-perso/`, `brain-*/`) and are managed by Work in `kit/brain/`; each brain's own `AGENTS.md` keeps only its own rules. Also read the `AGENTS.md` at the workspace root before any change. Unless stated otherwise, the paths below start at the brain root.
 
-## S'orienter avant d'écrire
+## Get oriented before writing
 
-- Pour les tâches : les registres `state/actions.md` font foi ; `tasks.md` réunit le pilotage quotidien, la liste par projet et le kanban, et ne se lit pas comme un fichier de données. Hors Obsidian : `uv run tools/brain/action.py board` en terminal ou `uv run tools/tasks-web/tasks-web.py` pour l'interface locale.
-- Pour un client : `projects/clients/<client>/<client>.md`, puis `missions/<mission>/<mission>.md` et seulement les fichiers `state/`, `workstreams/` ou `sources/` utiles. Pour l'outillage du brain : `projects/internal/setup/setup.md`. Pour une personne : `people/<prenom-nom>.md`.
-- Avant de rédiger sous le nom du propriétaire, lire la section Voix de `me/about-me.md`, choisir son registre, livrer un brouillon en code block et ne jamais envoyer sans demande explicite.
+- For tasks: the `state/actions.md` registers are the source of truth; `tasks.md` gathers the daily focus, the per-project list and the kanban, and is not read as a data file. Outside Obsidian: `uv run tools/brain/action.py board` in a terminal, or `uv run tools/tasks-web/tasks-web.py` for the local interface.
+- For a client: `projects/clients/<client>/<client>.md`, then `missions/<mission>/<mission>.md`, and only the useful files of `state/`, `workstreams/` or `sources/`. For the brain's own tooling: `projects/internal/setup/setup.md`. For a person: `people/<first-last>.md`.
+- Before drafting in the brain owner's name, read the Voice section of `me/about-me.md`, pick its register, deliver a draft in a code block and never send anything without an explicit request.
 
-## Ce qui fait foi
+## Source of truth
 
-- **Fait historique :** la source datée (CR, mail, message d'équipe) dit ce qui a été dit ou transmis ; elle ne donne pas à elle seule le statut actuel.
-- **Action :** `state/actions.md` est le seul endroit où une action s'écrit : ID, responsable, échéance, statut, source et historique. La ligne garde ID, responsable, intitulé et métadonnées Tasks ; les nuances, la source, les horodatages `créée` et `mise à jour` et l'historique vont en sous-puces. Toute écriture d'action passe par `uv run tools/brain/action.py`. États : `[ ]` à faire, `[/]` en cours, `[w]` en attente, `[x]` faite, `[-]` annulée. Une preuve datée est nécessaire pour fermer une action ; une case cochée par le propriétaire dans le tableau en est une. En cas de divergence, demander et laisser l'écart visible.
-- **Décision :** `state/decisions.md` porte le statut et la source ; il s'écrit avec `uv run tools/brain/decision.py` (`propose`, `validate`, `refuse`, `replace`). Une décision évoquée en réunion reste proposée jusqu'au classement confirmé par le propriétaire ; garder la trace des décisions refusées ou remplacées.
-- **Personne :** `people/` fait foi pour l'identité et les alias ; la mission garde son rôle propre. Ne jamais créer une fiche sans prénom et nom ni inventer de fait. Chaque ajout cite une source datée ou une information datée du propriétaire.
+- **Historical fact:** the dated source (meeting minutes, mail, team message) says what was said or sent; on its own it does not give the current status.
+- **Action:** `state/actions.md` is the only place where an action is written: ID, owner, due date, status, source and history. The line keeps the ID, owner, title and Tasks metadata; nuances, source, the `created` and `updated` timestamps and the history go in sub-bullets. Every action write goes through `uv run tools/brain/action.py`. States: `[ ]` to do, `[/]` in progress, `[w]` waiting, `[x]` done, `[-]` cancelled. Dated evidence is required to close an action; a box ticked by the brain owner in the board counts as evidence. When the two disagree, ask and leave the gap visible.
+- **Decision:** `state/decisions.md` carries the status and the source; it is written with `uv run tools/brain/decision.py` (`propose`, `accept`, `reject`, `supersede`). A decision mentioned in a meeting stays proposed until the brain owner has confirmed how it is filed; keep a trace of rejected or superseded decisions.
+- **Person:** `people/` is the source of truth for identity and aliases; the mission keeps the person's own role there. Never create a person page without a first and last name, and never invent a fact. Every addition cites a dated source or dated information from the brain owner.
 
-## Ranger l'information
+## Where information goes
 
-**Un projet = un dossier qui contient `state/actions.md`** : pour un client, le dossier de la mission (`projects/clients/<client>/missions/<mission>/`) ; en interne, `projects/internal/<projet>/`. Seuls les axes `clients` et `internal` existent dans ce starter. Chaque projet a sa fiche `<projet>.md` et `state/` ; `notes/`, `journal/`, `workstreams/`, `sources/YYYY-MM/`, `handoffs/` et `scripts/` se créent au besoin. Un dossier client ne contient que `<client>.md`, `missions/` et, au besoin, `archive/`. Le tableau ci-dessous est la seule carte « où va quoi » ; les formats détaillés sont dans [`kit/brain/docs/CONVENTIONS.md`](docs/CONVENTIONS.md).
+**A project is a folder that contains `state/actions.md`**: for a client, the mission folder (`projects/clients/<client>/missions/<mission>/`); for internal work, `projects/internal/<project>/`. Only the `clients` and `internal` axes exist in this starter. Each project has its page `<project>.md` and `state/`; `notes/`, `journal/`, `workstreams/`, `sources/YYYY-MM/`, `handoffs/` and `scripts/` are created when needed. A client folder contains only `<client>.md`, `missions/` and, when needed, `archive/`. The table below is the only "what goes where" map; the detailed formats are in [`kit/brain/docs/CONVENTIONS.md`](docs/CONVENTIONS.md).
 
-| Information | Où | Nommage | Règle clé |
+| Information | Where | Naming | Key rule |
 |---|---|---|---|
-| Action | `<projet>/state/actions.md` ; sans mission, `projects/internal/setup/` (`SET`) | `**<ID>**`, préfixe du projet | Seul endroit où une action s'écrit |
-| Décision | `<projet>/state/decisions.md` | Proposées · Validées · Refusées / remplacées | Proposée tant que le propriétaire ne l'a pas classée |
-| Glossaire | `<projet>/state/glossary.md` | — | Facultatif : termes, sigles, erreurs de transcription |
-| Source datée | `<projet>/sources/YYYY-MM/`, listée dans `index.md` | `YYYY-MM-DD-<type>-<slug>.md` | Ce qu'un tiers a dit ou transmis ; jamais réécrite, addendum daté |
-| Note de travail | `<projet>/notes/` | `YYYY-MM-DD-<sujet>.md` | Idée, analyse ou préparation du propriétaire ; modifiable |
-| Leçon réutilisable, config machine | `projects/internal/setup/notes/` | `YYYY-MM-DD-<sujet>.md` | Critères dans les conventions ; une leçon d'une seule mission reste dans son `notes/` |
-| Doc de référence de mission | `<projet>/workstreams/` | `<sujet>.md`, jamais daté | Tenue à jour |
-| Événement du mois | `## Timeline` de `<projet>.md` | `- AAAA-MM-JJ — … (modèle)` | Une ligne par événement, mois en cours seulement |
-| Mois passés | `<projet>/journal/` | `YYYY-MM.md` | Déplacés sans demander ; un événement tardif va dans le journal de son mois |
-| Actions closes depuis plus de 30 jours | `<projet>/state/` | `actions-archive-AAAA.md` | Déplacées sans demander ; ID réservés |
-| Handoff | `<projet>/handoffs/` | `YYYY-MM-DD-handoff-<slug>.md` | Autoportant |
-| Script qui fabrique un livrable | `<projet>/scripts/<sujet>/` | `README.md` obligatoire | Aucun fichier généré ni secret dans Git |
-| Profil et voix | `me/about-me.md` | — | Lu par l'agent ; modifié seulement après proposition |
-| Personne | `people/` à plat | `prenom-nom.md` | Prénom et nom confirmés |
-| Capture brute | `inbox.md` | — | Vidée par tri |
-| Note brute à retraiter | `inbox/` | `YYYY-MM-DD-<slug>.md` | Défaut de toute note sans projet ; supprimée après dispatch |
-| Contenu d'un autre périmètre | l'autre brain, choisi d'après sa `description` (§ Plusieurs brains) | — | Ne pas mélanger les périmètres |
-| Livrable montré à quelqu'un | `../artifacts/` | dossier + `README.md` de provenance | Aucun `build/` dans le brain |
-| Scratch, builds intermédiaires | `../agents/` | — | Jetable |
-| Code et documentation technique | `../repos/` | — | La fiche pointe, ne recopie pas |
+| Action | `<project>/state/actions.md`; without a mission, `projects/internal/setup/` (`SET`) | `**<ID>**`, project prefix | The only place where an action is written |
+| Decision | `<project>/state/decisions.md` | Proposed · Accepted · Rejected / superseded | Proposed until the brain owner has filed it |
+| Glossary | `<project>/state/glossary.md` | — | Optional: terms, acronyms, transcription errors |
+| Dated source | `<project>/sources/YYYY-MM/`, listed in `index.md` | `YYYY-MM-DD-<type>-<slug>.md` | What a third party said or sent; never rewritten, dated addendum instead |
+| Working note | `<project>/notes/` | `YYYY-MM-DD-<topic>.md` | The brain owner's idea, analysis or preparation; editable |
+| Reusable lesson, machine config | `projects/internal/setup/notes/` | `YYYY-MM-DD-<topic>.md` | Criteria in the conventions; a lesson from a single mission stays in its own `notes/` |
+| Mission reference doc | `<project>/workstreams/` | `<topic>.md`, never dated | Kept up to date |
+| Event of the month | `## Timeline` of `<project>.md` | `- YYYY-MM-DD — … (model)` | One line per event, current month only |
+| Past months | `<project>/journal/` | `YYYY-MM.md` | Moved without asking; a late event goes in the journal of its month |
+| Actions closed for more than 30 days | `<project>/state/` | `actions-archive-YYYY.md` | Moved without asking; IDs stay reserved |
+| Handoff | `<project>/handoffs/` | `YYYY-MM-DD-handoff-<slug>.md` | Self-contained |
+| Script that builds a deliverable | `<project>/scripts/<topic>/` | `README.md` required | No generated file or secret in Git |
+| Profile and voice | `me/about-me.md` | — | Read by the agent; changed only after a proposal |
+| Person | `people/`, flat | `first-last.md` | Confirmed first and last name |
+| Raw capture | `inbox/inbox.md` | — | Emptied by triage; formerly `inbox.md` at the brain root |
+| Raw note to process | `inbox/` | `YYYY-MM-DD-<slug>.md` | Default for any note without a project; deleted after dispatch |
+| Content from another scope | the other brain, chosen from its `description` (see [Several brains](#several-brains)) | — | Do not mix scopes |
+| Deliverable shown to someone | `../artifacts/` | folder + provenance `README.md` | No `build/` in the brain |
+| Scratch, intermediate builds | `../agents/` | — | Disposable |
+| Code and technical documentation | `../repos/` | — | The page points, it does not copy |
 
-- **Mouvements mensuels, sans demander.** Dès qu'un agent écrit dans un projet un nouveau mois, ou que le doctor `brain-clean` le signale, il déplace les entrées des mois passés de la timeline dans `journal/YYYY-MM.md`, lance `uv run tools/brain/action.py archive --write` et le mentionne dans son résumé. Tout autre archivage attend une demande explicite du propriétaire.
-- Les conventions et guides sont dans `kit/brain/docs/`, les modèles dans `kit/brain/templates/` (`../kit/brain/` depuis un brain) ; ils ne reçoivent jamais de note de projet, et le `docs/` d'un brain ne garde que `LOCAL-WORKFLOWS.md`. Toute nouvelle fiche part de `kit/brain/templates/_<TYPE>-TEMPLATE.md`. `kit/brain/templates/templater/` contient des commandes Templater, pas des modèles de fiche à copier.
-- Le CR se fait via `cr-reunion`, les messages via `veille-messages`, le tri de `inbox.md` et `inbox/` via `inbox`, avec leurs validations. Si le rattachement est incertain, poser la question dans `inbox.md`.
-- Aucun Markdown ne cite un document situé hors de l'espace de travail : ni chemin local, ni nom de fichier. Les liens web peuvent rester pour la trace. Copier un document qui doit rester cité dans `../artifacts/` avec son README de provenance ; sinon, décrire sa provenance en mots. Les dossiers d'entrée des skills vivent dans `.data/local-paths.json`.
-- Ne pas ingérer de secrets.
-- Dans Obsidian, le brain se lit depuis le coffre ouvert à la racine de l'espace de travail ; ne pas créer de coffre `brain/.obsidian/`.
-- Les liens sont Markdown relatifs avec extension `.md`, sans wikilinks. Après un déplacement, réparer les backlinks et lancer `uv run tools/brain/check-links.py` depuis la racine de l'espace.
+- **Monthly moves, without asking.** As soon as an agent writes in a project in a new month, or the `brain-clean` doctor reports it, it moves the timeline entries of past months into `journal/YYYY-MM.md`, runs `uv run tools/brain/action.py archive --write` and mentions it in its summary. Any other archiving waits for an explicit request from the brain owner.
+- The conventions and guides are in `kit/brain/docs/`, the templates in `kit/brain/templates/` (`../kit/brain/` from a brain); they never receive a project note, and a brain's own `docs/` keeps only `LOCAL-WORKFLOWS.md`. Every new page starts from `kit/brain/templates/_<TYPE>-TEMPLATE.md`. `kit/brain/templates/templater/` holds Templater commands, not page templates to copy.
+- Meeting minutes (CR) go through `cr-reunion`, messages through `veille-messages`, and the triage of `inbox/` (the scratchpad `inbox/inbox.md` and the notes next to it) through `inbox`, each with its validation step. When the filing is uncertain, put the question in `inbox/inbox.md`.
+- No Markdown file cites a document located outside the workspace: no local path, no file name. Web links may stay for traceability. Copy a document that must stay cited into `../artifacts/` with its provenance README; otherwise describe its provenance in words. The input folders of the skills live in `.data/local-paths.json`.
+- Do not ingest secrets.
+- In Obsidian, the brain is read from the vault opened at the workspace root; do not create a `brain/.obsidian/` vault.
+- Links are relative Markdown links with the `.md` extension, no wikilinks. After a move, repair the backlinks and run `uv run tools/brain/check-links.py` from the workspace root.
 
-## Plusieurs brains
+## Several brains
 
-- Chaque brain (`brain/`, `brain-perso/`, `brain-<nom>/`) est un dépôt Git privé distinct et une frontière de confiance, déclarée dans `.data/brain.json` : `scope` (perso, employeur, client…), `description` (ce qu'il contient et ne doit jamais contenir), `remote` et `email` (motifs `fnmatch` vérifiés par le doctor de la machine), `allow` (noms de clients d'un autre brain qui peuvent y figurer). Chaque brain peut avoir ses skills privés (`skills/<nom>/`) et sa config (`.data/work-config.json`). `brain/` est le brain par défaut : il porte aussi les réglages de la personne (`.data/local-paths.json` : brains attendus, dossiers d'entrée).
-- Avant d'écrire du contenu nouveau, lire la `description` de chaque brain (`uv run tools/brain/brain-state.py brains` les liste avec leur `scope`) et choisir le brain d'après elle. Si le contenu peut aller dans deux brains, ou dans aucun, demander au propriétaire.
-- Aucun lien Markdown d'un brain vers un autre, aucun nom de client d'un autre brain (dossiers de son `projects/clients/`) dans le contenu, sauf ceux de `allow`. `check-links.py` et le hook pre-commit du brain refusent les deux.
-- L'état d'un skill s'écrit dans le `.data/` du brain où l'on écrit, jamais dans celui d'un autre.
+- Each brain (`brain/`, `brain-perso/`, `brain-<name>/`) is a separate private Git repository and a trust boundary, declared in `.data/brain.json`: `scope` (personal, employer, client…), `description` (what it contains and must never contain), `remote` and `email` (`fnmatch` patterns checked by the machine doctor), and `allow` (names of clients of another brain that may appear in it). Each brain can have its own private skills (`skills/<name>/`) and its own config (`.data/work-config.json`). `brain/` is the default brain: it also carries the person's settings (`.data/local-paths.json`: expected brains, input folders).
+- Before writing new content, read the `description` of each brain (`uv run tools/brain/brain-state.py brains` lists them with their `scope`) and choose the brain from it. If the content fits two brains, or none, ask the brain owner.
+- No Markdown link from one brain to another, and no client name of another brain (folders of its `projects/clients/`) in the content, except those in `allow`. `check-links.py` and the brain's pre-commit hook refuse both.
+- A skill's state is written in the `.data/` of the brain being written to, never in that of another.
 
-## Finir le travail
+## Finish the work
 
-- Laisser une entrée datée courte dans la timeline du projet, mois en cours seulement, avec le modèle entre parenthèses ; mettre à jour l'action dans son registre. Une session doit laisser une trace utile sans recopier les sources.
-- Vérifier les liens, le diff et l'état Git. Signaler au début les modifications déjà présentes et ne pas les écraser. **Aucun commit ni push sans demande explicite distincte** : proposer les fichiers et un message Conventional Commits ; signaler les commits locaux non poussés. Ne jamais lire un `.env` ni ajouter une mention d'IA à un commit ou une PR. Le brain reste privé.
+- Leave a short dated entry in the project's timeline, current month only, with the model in parentheses; update the action in its register. A session must leave a useful trace without copying the sources.
+- Check the links, the diff and the Git state. Flag any changes already present at the start and do not overwrite them. **No commit or push without a separate explicit request**: propose the files and a Conventional Commits message; flag unpushed local commits. Never read a `.env` or add an AI mention to a commit or a PR. The brain stays private.
 
-## Références à ouvrir au bon moment
+## References to open when needed
 
-- [`kit/brain/docs/CONVENTIONS.md`](docs/CONVENTIONS.md) — formats des sources, registres, décisions, timelines, journal, notes, personnes, handoffs et archives ; tableau `tasks`.
-- [`kit/brain/docs/WORKFLOWS.md`](docs/WORKFLOWS.md) — tri de l'inbox, réconciliation, capitalisation et fin de session.
-- `docs/LOCAL-WORKFLOWS.md`, dans le brain — chemins privés et exceptions locales.
-- [`kit/brain/docs/REPOSITORIES.md`](docs/REPOSITORIES.md) — URLs Git client privées, vérification des remotes et clonage reproductible.
-- [`kit/brain/docs/GIT.md`](docs/GIT.md) — format des commits, sélection des fichiers, remote et règles des repos partagés ; à lire avant toute opération Git qui écrit ou publie.
-- `brain-clean` — audit ou nettoyage global du brain, avec arbitrage du propriétaire sur les ambiguïtés.
+- [`kit/brain/docs/CONVENTIONS.md`](docs/CONVENTIONS.md) — formats of sources, registers, decisions, timelines, journal, notes, people, handoffs and archives; the `tasks` board.
+- [`kit/brain/docs/WORKFLOWS.md`](docs/WORKFLOWS.md) — inbox triage, reconciliation, capitalization and end of session.
+- `docs/LOCAL-WORKFLOWS.md`, in the brain — private paths and local exceptions.
+- [`kit/brain/docs/REPOSITORIES.md`](docs/REPOSITORIES.md) — private client Git URLs, remote checks and reproducible cloning.
+- [`kit/brain/docs/GIT.md`](docs/GIT.md) — commit format, file selection, remotes and rules for shared repos; read it before any Git operation that writes or publishes.
+- `brain-clean` — overall audit or cleanup of the brain, with the brain owner deciding on ambiguities.

@@ -1,35 +1,35 @@
-# agents/ — espace de travail des agents
+# agents/ — agents' working area
 
-> Le scratch des agents IA. Diaries de session, logs, plans, scripts de fabrication, brouillons, notes intermédiaires — tout ce qui sert à l'agent pendant qu'il bosse et qui n'est **pas destiné à être lu par un humain**. Ce n'est ni du contexte durable (→ un brain), ni du code pérenne (→ `repos/`), ni un output pour quelqu'un (→ `artifacts/`).
+> The scratch of the AI agents. Session diaries, logs, plans, build scripts, drafts, intermediate notes — everything the agent uses while it works and that is **not meant to be read by a human**. It is neither durable context (→ a brain), nor lasting code (→ `repos/`), nor an output for someone (→ `artifacts/`).
 
 ## Structure
 
-Un dossier par projet, puis un dossier par session quand la session mérite d'être isolée :
+One folder per project, then one folder per session when the session deserves to be isolated:
 
 ```
 agents/
-├── <projet>/
-│   └── YYYY-MM-DD-<slug-de-session>/
+├── <project>/
+│   └── YYYY-MM-DD-<session-slug>/
 │       ├── diary.md
 │       ├── plan.md
 │       └── …
-└── _cross/          # ce qui n'appartient à aucun projet
+└── _cross/          # whatever belongs to no project
 ```
 
-Le nom de projet suit celui du repo ou du projet de la mémoire concerné, pour que le rapprochement soit évident.
+The project name follows that of the repo or of the memory project concerned, so that the match is obvious.
 
-## Ici ou dans le repo ?
+## Here or in the repo?
 
-- **Par défaut : ici.** Le cas le plus fréquent — le travail touche plusieurs endroits.
-- **Dans le repo** si le WIP est vraiment spécifique à un seul repo : alors un dossier gitignoré **dans** ce repo (`.agents/`, `scratch/`), clairement séparé du code.
-- Les plans, scripts de build et rendus intermédiaires d'un livrable humain restent ici pendant l'itération ; seul le livrable et sa provenance vont dans `artifacts/`. Si le code de génération doit rester reconstructible après nettoyage de `agents/`, le promouvoir dans un repo adapté.
+- **By default: here.** The most frequent case — the work touches several places.
+- **In the repo** if the WIP is really specific to a single repo: then a gitignored folder **inside** that repo (`.agents/`, `scratch/`), clearly separated from the code.
+- The plans, build scripts and intermediate renders of a human deliverable stay here during iteration; only the deliverable and its provenance go to `artifacts/`. If the generation code must remain reconstructible after `agents/` is cleaned up, promote it to a suitable repo.
 
-Dans les deux cas, ne jamais laisser traîner du scratch à la racine de l'espace de travail ni dans un brain.
+In both cases, never leave scratch lying around at the root of the workspace or in a brain.
 
-## Rétention — **promote or lose it**
+## Retention — **promote or lose it**
 
-À part ce README suivi par Git, le contenu de ce dossier est **jetable** : il est ignoré par le dépôt `Work` et n'est pas garanti de survivre à un nettoyage.
+Apart from this README tracked by Git, the content of this folder is **disposable**: it is ignored by the `Work` repository and is not guaranteed to survive a cleanup.
 
-Corollaire, la seule règle qui compte : **si quelque chose écrit ici devient durable, il faut le promouvoir avant la fin de la session** — une décision ou un compte-rendu vers la fiche projet ou un dossier de notes du brain concerné, de la doc technique vers le repo, un livrable vers `artifacts/`. Ce qui reste ici est considéré comme perdu d'avance.
+Corollary, the only rule that matters: **if something written here becomes durable, promote it before the end of the session** — a decision or minutes to the project page or a notes folder of the relevant brain, technical documentation to the repo, a deliverable to `artifacts/`. Whatever stays here is considered lost in advance.
 
-Sans cette règle, cet espace redevient exactement le bordel qu'il est censé absorber — juste rangé dans un dossier.
+Without this rule, this space turns back into exactly the mess it is meant to absorb — just tidied into a folder.

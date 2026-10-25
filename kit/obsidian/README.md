@@ -1,60 +1,60 @@
 # Obsidian
 
-Guide de réglage manuel d'Obsidian pour lire les brains et piloter les actions (`tasks.md`). Le starter ne gère pas `.obsidian/` : le dossier est ignoré par Git, local à chaque machine, et n'est donc pas sauvegardé. À refaire une fois par machine. Ne jamais versionner `workspace.json` ni `workspace-mobile.json` : ils listent les notes ouvertes.
+Manual setup guide for Obsidian, to read the brains and steer the actions (`tasks.md`). The starter does not manage `.obsidian/`: the folder is ignored by Git, local to each machine, and therefore not backed up. Redo it once per machine. Never version `workspace.json` or `workspace-mobile.json`: they list the open notes.
 
-## Coffre
+## Vault
 
-Ouvrir `Work/` comme **seul** coffre. Ne jamais ouvrir un brain (`brain/`, `brain-*/`) comme coffre : les liens relatifs vers `../repos/` et `../artifacts/`, les chemins des modèles et le bouton de `tasks.md` partent de la racine de `Work/`. Les brains y apparaissent comme de simples dossiers.
+Open `Work/` as the **only** vault. Never open a brain (`brain/`, `brain-*/`) as a vault: the relative links to `../repos/` and `../artifacts/`, the template paths and the button of `tasks.md` all start from the root of `Work/`. The brains simply appear in it as folders.
 
-## Plugins communautaires
+## Community plugins
 
-Paramètres → Plugins communautaires → désactiver le mode restreint, puis installer et activer :
+Settings → Community plugins → turn off Restricted mode, then install and enable:
 
-- **Tasks** (`obsidian-tasks-plugin`) : les requêtes de `tasks.md` ;
-- **Meta Bind** (`obsidian-meta-bind-plugin`) : le bouton **Nouvelle action** ;
-- **Templater** (`templater-obsidian`) : le formulaire derrière ce bouton, et le modèle d'une fiche personne ;
-- **Obsidian Git** (`obsidian-git`), facultatif : un seul brain à la fois. Dans ses réglages, mettre le dossier de base (`basePath`) à celui du brain (par exemple `brain`) ; prudence suggérée : push désactivé, pas de pull au démarrage, pas de sauvegarde automatique après modification.
+- **Tasks** (`obsidian-tasks-plugin`): the queries of `tasks.md`;
+- **Meta Bind** (`obsidian-meta-bind-plugin`): the **New action** button;
+- **Templater** (`templater-obsidian`): the form behind that button, and the person page template;
+- **Obsidian Git** (`obsidian-git`), optional: one brain at a time. In its settings, set the base path (`basePath`) to that of the brain (for example `brain`); suggested caution: push disabled, no pull at startup, no automatic backup after changes.
 
-Ne pas activer l'exécution de JavaScript dans Tasks ni dans Meta Bind.
+Do not enable JavaScript execution in Tasks or in Meta Bind.
 
-## Réglages à poser à la main
+## Settings to apply by hand
 
-| Où | Réglage | Valeur |
+| Where | Setting | Value |
 | --- | --- | --- |
-| Fichiers et liens | Utiliser les [[Wikiliens]] | désactivé (liens Markdown, qui gardent l'extension `.md`) |
-| Fichiers et liens | Format des nouveaux liens | Chemin relatif au fichier |
-| Fichiers et liens | Mettre à jour automatiquement les liens internes | activé (les liens suivent un déplacement ou un renommage) |
-| Fichiers et liens | Fichiers exclus | `repos/`, `agents/`, `kit/brain/seed/` (hors recherche et graphe) |
-| Fichiers et liens | Emplacement des nouvelles notes, facultatif | dans le dossier `brain/inbox` |
-| Fichiers et liens | Emplacement des nouvelles pièces jointes, facultatif | dossier du fichier courant |
-| Plugins de base → Modèles | Dossier des modèles | `kit/brain/templates` |
-| Plugins de base → Modèles | Format de date | `YYYY-MM-DD` |
-| Templater | Dossier des modèles | `kit/brain/templates` |
-| Templater | Modèles de dossier (activés) | dossier `brain/people` → `kit/brain/templates/_PERSON-TEMPLATE.md` |
-| Meta Bind | Dossiers exclus | `templates` |
+| Files and links | Use [[Wikilinks]] | off (Markdown links, which keep the `.md` extension) |
+| Files and links | New link format | Relative path to file |
+| Files and links | Automatically update internal links | on (links follow a move or a rename) |
+| Files and links | Excluded files | `repos/`, `agents/`, `kit/brain/seed/` (out of search and graph) |
+| Files and links | Default location for new notes, optional | In the folder specified below: `brain/inbox` |
+| Files and links | Default location for new attachments, optional | Same folder as current file |
+| Core plugins → Templates | Template folder location | `kit/brain/templates` |
+| Core plugins → Templates | Date format | `YYYY-MM-DD` |
+| Templater | Template folder location | `kit/brain/templates` |
+| Templater | Folder templates (enabled) | folder `brain/people` → `kit/brain/templates/_PERSON-TEMPLATE.md` |
+| Meta Bind | Excluded folders | `templates` |
 
-Adapter `brain/inbox` et `brain/people` si le brain porte un autre nom. Les plugins de base Modèles, Signets et Propriétés doivent être activés. Le formulaire d'ajout d'action est lancé par le bouton de `tasks.md`, ou par `Cmd+P` → `nouvelle-action` → **Templater: Insert** ; ne pas l'insérer avec le plugin Modèles de base, qui recopierait son code.
+Adapt `brain/inbox` and `brain/people` if the brain has another name. The core plugins Templates, Bookmarks and Properties must be enabled. The form that adds an action is launched by the button of `tasks.md`, or by `Cmd+P` → `new-action` → **Templater: Insert**; do not insert it with the core Templates plugin, which would copy its code.
 
-### Statuts des actions (Tasks)
+### Action statuses (Tasks)
 
-Paramètres → Tasks → Statuts personnalisés. Les registres utilisent cinq états, dont trois à ajouter :
+Settings → Tasks → Custom statuses. The registers use five states, three of which must be added:
 
-| Symbole | Nom | Statut suivant | Type |
+| Symbol | Name | Next status | Type |
 | --- | --- | --- | --- |
-| `/` | In Progress (en cours) | `x` | IN_PROGRESS |
-| `w` | En attente | `x` | TODO |
-| `-` | Cancelled (annulée) | espace | CANCELLED |
+| `/` | In Progress | `x` | IN_PROGRESS |
+| `w` | Waiting | `x` | ON_HOLD |
+| `-` | Cancelled | space | CANCELLED |
 
-`[ ]` à faire et `[x]` faite sont les statuts de base de Tasks. Le nom du statut `w` doit contenir « attente » : les requêtes de `tasks.md` s'appuient dessus pour séparer les actions en attente des actions à faire.
+`[ ]` to do and `[x]` done are the base statuses of Tasks. The queries of `tasks.md` rely on the type `ON_HOLD` of the `w` status (Tasks 7 or later), not on its name: that is how they separate waiting actions from actions to do. Name it as you like, but keep the type. A brain whose `tasks.md` still filters on the status name (`status.name includes attente`, written before the English formats) needs the former setting instead: `w` named `En attente`, type `TODO`.
 
-### Extrait CSS
+### CSS snippet
 
-Copier `kit/obsidian/tasks-board.css` dans `.obsidian/snippets/` (à la racine de `Work/`), puis Paramètres → Apparence → Extraits CSS → activer `tasks-board`. Il dessine les états `[/]` et `[w]`, le kanban et la mise en page de `tasks.md`.
+Copy `kit/obsidian/tasks-board.css` into `.obsidian/snippets/` (at the root of `Work/`), then Settings → Appearance → CSS snippets → enable `tasks-board`. It draws the `[/]` and `[w]` states, the kanban and the layout of `tasks.md`.
 
-## Signets (suggestion)
+## Bookmarks (suggestion)
 
-Plugin de base Signets : épingler `<brain>/tasks.md` et `<brain>/inbox.md`, un groupe par brain si plusieurs sont présents.
+Bookmarks core plugin: pin `<brain>/tasks.md` and `<brain>/inbox/inbox.md`, one group per brain if several are present.
 
-## Graphe (facultatif)
+## Graph (optional)
 
-Un groupe de couleur par brain, avec la requête `path:<brain>/`.
+One color group per brain, with the query `path:<brain>/`.

@@ -1,6 +1,6 @@
 # .claude/
 
-Configuration Claude Code du projet `Work/`.
+Claude Code configuration of the `Work/` project.
 
-- `settings.json` — réglages partagés et suivis par Git (permissions, hooks) ; vide dans le starter. Les réglages personnels vont dans `settings.local.json`, ignoré.
-- `skills/` — entièrement généré et ignoré par Git : liens vers les skills des brains (`<brain>/skills/<nom>/`) et vers les skills tiers installés dans `../.agents/skills/`, copies des skills marqués `.install-as-copy`. Le starter ne livre aucun skill. Régénérer avec `tools/machine/update.sh` ; ne rien y éditer.
+- `settings.json` — shared settings tracked by Git (permissions, hooks); empty in the starter. Personal settings go in `settings.local.json`, which is ignored.
+- `skills/` — entirely generated and ignored by Git: links to the skills of the brains (`<brain>/skills/<name>/`) and to the third-party skills installed in `../.agents/skills/`, copies of the skills marked `.install-as-copy`. The starter ships no skill. Regenerate with `tools/machine/update.sh`; edit nothing in it.

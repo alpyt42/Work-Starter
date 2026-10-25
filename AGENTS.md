@@ -8,7 +8,7 @@ Portable agent instructions and tools for a `Work/` workspace. Reply in the user
 - `kit/brain/` holds what every brain shares, managed here and updated by `git pull starter main`: `AGENTS.md` (conventions), `docs/` (guides), `templates/` (note models), and `seed/` (files copied once into a new brain by `uv run tools/brain/new-brain.py <dir>`). Never place real client or person data in `kit/`. `kit/obsidian/` is the manual Obsidian setup guide.
 - `brain/` (default), `brain-perso/`, and `brain-<name>/` at the Work root are the private memories: context, actions, decisions, people, own skills, and skill state. Each is a separate private Git repository and one trust boundary, declared in its `.data/brain.json`. This repository neither tracks nor references their content.
 - Before editing a brain, read `kit/brain/AGENTS.md`, then the brain's own `AGENTS.md`. For client work, start with `<brain>/projects/clients/<client>/<client>.md`, then the mission page.
-- Several brains: choose the brain from its `description` (`uv run tools/brain/brain-state.py brains`) and ask when the content fits two or none. No link from one brain to another, no client name of another brain (`kit/brain/AGENTS.md`, section « Plusieurs brains »).
+- Several brains: choose the brain from its `description` (`uv run tools/brain/brain-state.py brains`) and ask when the content fits two or none. No link from one brain to another, no client name of another brain (`kit/brain/AGENTS.md`, section « Several brains »).
 - `repos/` contains code repositories. Read a repository's own `AGENTS.md` before editing it. Respect client-specific gate decisions recorded in the private brain; do not re-propose an option already declined for that client.
 - `artifacts/` contains human-readable outputs and received large files, each folder with a provenance `README.md`. Its contents are local and are not backed up by this repository.
 - `agents/` is disposable scratch. Promote durable information to the right brain, durable code to a repository, and durable outputs to `artifacts/`.
@@ -29,6 +29,7 @@ Portable agent instructions and tools for a `Work/` workspace. Reply in the user
 
 ## Hard rules
 
+- Write every change to this workspace in English — code, comments, messages, documentation, templates, skills and commit messages — even when the conversation is in another language. Reply to the user in their language. A brain may keep content written in its owner's language (notes, minutes, people pages): edit that content in the language it is written in.
 - Never commit or push without a separate explicit request for each action. Stage only paths touched for that action, inspect the staged diff, and use Conventional Commits without AI attribution. The hooks installed by `bootstrap.sh` refuse staged secrets and non-conforming messages.
 - Do not read, print, or copy the contents of `.env`, private keys, or credentials. `tools/.env` is ignored; `tools/.env.example` contains names only.
 - Do not edit home-directory configuration, SSH files, cloud configuration, or keychains without explicit user confirmation.

@@ -1,91 +1,96 @@
-# Outil des actions
+# Action tool
 
-`tools/brain/action.py` est le seul outil qui écrit dans les registres d'actions (`projects/**/state/actions.md`). Les agents l'appellent en ligne de commande. L'interface locale `tasks-web` le lance pour chacune de ses écritures et importe son code pour lire. Une action s'écrit donc toujours de la même façon :
+`tools/brain/action.py` is the only tool that writes to the action registers (`projects/**/state/actions.md`). Agents call it from the command line. The local `tasks-web` interface runs it for each of its writes and imports its code to read. An action is therefore always written the same way:
 
 ```markdown
-- [ ] **DEM-101** — Propriétaire — Intitulé ⏫ ➕ 2026-10-13 📅 2026-10-20
-    - source: [CR du 13/10](../sources/2026-10/2026-10-13-cr-demo.md)
-    - créée : 2026-10-13 14:32
-    - mise à jour : 2026-10-14 09:05
-    - 14/10 : entrée d'historique
+- [ ] **DEM-101** — Owner — Title ⏫ ➕ 2026-10-13 📅 2026-10-20
+    - source: [Minutes of 13/10](../sources/2026-10/2026-10-13-cr-demo.md)
+    - created: 2026-10-13 14:32
+    - updated: 2026-10-14 09:05
+    - 14/10: history entry
 ```
 
-- **Création** : `➕ AAAA-MM-JJ` sur la ligne (lu par le plugin Tasks, qui ne connaît que les dates) et `créée : AAAA-MM-JJ HH:MM` en sous-puce (heure de Paris, à la minute, sans secondes). Posées une fois, à la création.
-- **Mise à jour** : `mise à jour : AAAA-MM-JJ HH:MM`, réécrite par chaque modification faite avec l'outil (champs, statut, ajout ou suppression d'historique).
-- **Échéance** : `📅 AAAA-MM-JJ` sur la ligne quand elle est connue ; une échéance nuancée (« avant… ») va en sous-puce `échéance:`.
-- **Groupe (lot)** : étiquette facultative, pas une tâche parente. Au plus un tag `#lot/<slug>` à la fin de l'intitulé, juste avant les emojis Tasks : `- [ ] **DEM-097** — Propriétaire — Planifier l'atelier #lot/atelier-demo ➕ 2026-10-12 📅 2026-10-20`. Slug `[a-z0-9]+(-[a-z0-9]+)*`, 40 caractères au plus ; l'interface l'affiche « Atelier demo ». Une action sans tag reste valide et n'est jamais modifiée par la réécriture d'un autre champ. Le tag s'écrit avec `--group`, pas à la main dans `--title`.
-- Les sous-puces `source`, `créée` et `mise à jour` ne se suppriment pas avec `history remove`. Les actions antérieures au 2026-10-13 n'ont pas ces dates : elles ne sont pas inventées.
+(`cr` in a source file name means meeting minutes: `YYYY-MM-DD-cr-<slug>.md`.) States: `[ ]` to do, `[/]` in progress, `[w]` waiting, `[x]` done, `[-]` cancelled. Sections: `## Open`, `## Done`, `## Cancelled`.
 
-## Commandes
+A brain written with the earlier French labels is converted once with `uv run tools/brain/migrate-english.py` (dry run by default, `--write` to apply it).
 
-Depuis la racine de Work ; la sortie est du JSON (codes de sortie : 0 fait, 2 requête invalide, 3 introuvable, 4 conflit).
+- **Creation**: `➕ YYYY-MM-DD` on the line (read by the Tasks plugin, which only knows dates) and `created: YYYY-MM-DD HH:MM` as a sub-bullet (Paris time, to the minute, no seconds). Set once, at creation.
+- **Update**: `updated: YYYY-MM-DD HH:MM`, rewritten by every change made with the tool (fields, status, adding or removing history).
+- **Due date**: `📅 YYYY-MM-DD` on the line when it is known; a nuanced due date ("before…") goes in a `due:` sub-bullet.
+- **Closure**: `✅ YYYY-MM-DD` (done) or `❌ YYYY-MM-DD` (cancelled) on the line; the evidence goes in a `done: <evidence>` sub-bullet, or `cancelled: YYYY-MM-DD by <person> — [source](…)`.
+- **Group**: an optional label, not a parent task. At most one `#group/<slug>` tag at the end of the title, just before the Tasks emojis: `- [ ] **DEM-097** — Owner — Plan the workshop #group/demo-workshop ➕ 2026-10-12 📅 2026-10-20`. Slug `[a-z0-9]+(-[a-z0-9]+)*`, 40 characters at most; the interface displays it as "Demo workshop". An action without a tag stays valid and is never modified when another field is rewritten. The tag is written with `--group`, not by hand in `--title`.
+- The `source`, `created` and `updated` sub-bullets cannot be removed with `history remove`. Actions older than 2026-10-13 do not have these dates: they are not invented.
+
+## Commands
+
+From the Work root; the output is JSON (exit codes: 0 done, 2 invalid request, 3 not found, 4 conflict).
 
 ```sh
 uv run tools/brain/action.py list --project acme/demo --table
-uv run tools/brain/action.py board                    # vue complète par projet (terminal)
-uv run tools/brain/action.py board --write --watch    # agents/tasks-board.md tenu à jour (aperçu VS Code)
+uv run tools/brain/action.py board                    # complete view by project (terminal)
+uv run tools/brain/action.py board --write --watch    # agents/tasks-board.md kept up to date (VS Code preview)
 uv run tools/brain/action.py show DEM-099
-uv run tools/brain/action.py create --project acme/demo --title "Relancer le contact" \
-    --owner Propriétaire --source "[CR du 13/10](../sources/2026-10/2026-10-13-cr-demo.md)" --due 2026-10-20
+uv run tools/brain/action.py create --project acme/demo --title "Follow up with the contact" \
+    --owner Owner --source "[Minutes of 13/10](../sources/2026-10/2026-10-13-cr-demo.md)" --due 2026-10-20
 uv run tools/brain/action.py update DEM-099 --state done --closed-on 2026-10-14
-uv run tools/brain/action.py update DEM-099 --group atelier-demo   # --group "" retire le groupe
-uv run tools/brain/action.py history add DEM-099 --text "relancé par mail" --date 2026-10-14
-uv run tools/brain/action.py history edit DEM-099 --index 3 --text "relancé par mail et par chat"
+uv run tools/brain/action.py update DEM-099 --group demo-workshop   # --group "" removes the group
+uv run tools/brain/action.py history add DEM-099 --text "followed up by mail" --date 2026-10-14
+uv run tools/brain/action.py history edit DEM-099 --index 3 --text "followed up by mail and chat"
 uv run tools/brain/action.py history remove DEM-099 --index 3
-uv run tools/brain/action.py move DEM-099 --to acme/autre-mission
-uv run tools/brain/action.py check                    # format des registres (code 1 si erreur)
+uv run tools/brain/action.py move DEM-099 --to acme/other-mission
+uv run tools/brain/action.py check                    # register format (exit code 1 on error)
 uv run tools/brain/action.py delete DEM-099
-uv run tools/brain/action.py sweep --write            # range chaque action sous la section de son état
-uv run tools/brain/action.py archive --write          # archive les clôtures de plus de 30 jours
-uv run tools/brain/action.py sweep --archive --write  # les deux, rangement d'abord
+uv run tools/brain/action.py sweep --write            # puts each action under the section of its state
+uv run tools/brain/action.py archive --write          # archives closures older than 30 days
+uv run tools/brain/action.py sweep --archive --write  # both, sweep first
 ```
 
-- `--project` accepte le chemin du registre, le dossier du projet, `client/mission`, le nom d'un projet interne ou le libellé du tableau (`acme / demo`).
-- `create` : ID suivant du plus grand trouvé dans tout le dossier du client ou du projet, sources comprises ; ajout à la fin de `Ouvertes` ; `--source` obligatoire ; options `--state` (todo, en-cours, en-attente), `--priority` (haute, moyenne, basse), `--due`, `--scheduled`, `--due-note`, `--group` (slug du groupe), `--prefix` (registre encore vide).
-- `update` : seuls les champs donnés changent ; une valeur vide efface `--due`, `--scheduled` ou `--group` (option absente : groupe inchangé). Un changement d'état range l'action dans sa section ; une clôture prend `✅`/`❌` à la date du jour, ou `--closed-on` pour la date de la preuve ; une réouverture retire la date de clôture.
-- `--group` : slug validé (message `Groupe invalide…`, code 2). Un `--title` qui se termine lui-même par un tag `#lot/<slug>` valide est refusé (code 2) : passer le groupe par `--group`. Un tag invalide, en double ou placé au milieu du titre reste dans l'intitulé tel quel (rien n'est perdu à la réécriture) et `check` le signale. `list --table` ajoute `[lot: slug]` ; le JSON de `list` et `show` porte `group`, et `title`/`raw_title` sont sans le tag. `sweep`, `archive`, `move`, `delete` et `history` déplacent la ligne telle quelle et gardent le tag.
-- `history add` : sous-puce `JJ/MM : texte` à la fin du bloc (`--date` pour la date de l'événement). `history edit --index N --text T` réécrit une entrée en gardant sa date (ou `--date`) et ses sous-lignes. `history remove --index N` la supprime. Le rang N est donné par `show`.
-- `move --to P` : déplace l'action et son bloc vers un autre registre du même client ou projet interne (l'ID ne change pas, les liens relatifs sont réécrits, une entrée « déplacée depuis … » est ajoutée).
-- `check [--register R]` : erreurs bloquantes (ligne d'action mal formée, ID en double dans tout le client archives comprises, date invalide, action ouverte avec une date de clôture, marque de clôture incohérente) et avertissements (close sans date, pas de sous-puce source, slug de groupe invalide, plusieurs tags `#lot/`, tag qui n'est pas en fin d'intitulé).
-- Toute écriture accepte `--dry-run`, et les verrous `--expect-version` (ligne) et `--expect-details-version` (bloc) utilisés par l'interface.
-- `--brain CHEMIN` ou `BRAIN_DIR` pour un autre brain ; `ACTION_NOW="AAAA-MM-JJ HH:MM"` fige l'horloge (tests).
+- `--project` accepts the register path, the project folder, `client/mission`, the name of an internal project or the board label (`acme / demo`).
+- `create`: ID following the highest found in the whole client or project folder, sources included; appended at the end of `Open`; `--source` required; options `--state` (`todo`, `in-progress`, `waiting`), `--priority` (`high`, `medium`, `low`), `--due`, `--scheduled`, `--due-note`, `--group` (group slug), `--prefix` (register still empty).
+- `update`: only the given fields change; an empty value clears `--due`, `--scheduled` or `--group` (option absent: group unchanged). A state change files the action in its section; a closure gets `✅`/`❌` with today's date, or `--closed-on` for the date of the evidence; a reopening removes the closing date.
+- `--group`: a validated slug (invalid: exit code 2). A `--title` that itself ends with a valid `#group/<slug>` tag is refused (exit code 2): pass the group through `--group`. An invalid, duplicate or mid-title tag stays in the title as is (nothing is lost on rewrite) and `check` reports it. `list --table` shows the group; the JSON of `list` and `show` carries `group`, and `title`/`raw_title` are without the tag. `sweep`, `archive`, `move`, `delete` and `history` move the line as is and keep the tag.
+- `history add`: a `DD/MM: text` sub-bullet at the end of the block (`--date` for the date of the event). `history edit --index N --text T` rewrites an entry keeping its date (or `--date`) and its sub-lines. `history remove --index N` deletes it. The rank N is given by `show`.
+- `move --to P`: moves the action and its block to another register of the same client or internal project (the ID does not change, relative links are rewritten, a history entry records where it came from).
+- `check [--register R]`: blocking errors (malformed action line, duplicate ID across the whole client archives included, invalid date, open action with a closing date, inconsistent closure mark) and warnings (closed without a date, no source sub-bullet, invalid group slug, several `#group/` tags, tag not at the end of the title).
+- Every write accepts `--dry-run`, and the `--expect-version` (line) and `--expect-details-version` (block) locks used by the interface.
+- `--brain PATH` or `BRAIN_DIR` for another brain; `ACTION_NOW="YYYY-MM-DD HH:MM"` freezes the clock (tests).
 
-## Tableau (`board`)
+## Board (`board`)
 
-Vue complète, en lecture seule, de tous les registres par projet : À faire du propriétaire (`BRAIN_OWNER` ou `owner` de `brain/.data/doctor.json`), En cours et En attente de tous, triés par ID, puis les 15 clôtures les plus récentes. Chaque ligne renvoie à sa ligne du registre. `--write [CHEMIN]` écrit aussi le tableau (défaut `agents/tasks-board.md`) ; `--watch` le réécrit quand un registre change (tâche VS Code du brain, au lancement du dossier).
+Complete, read-only view of all the registers by project: the owner's To do actions (`BRAIN_OWNER` or `owner` in `brain/.data/doctor.json`), the In progress and Waiting actions of everyone, sorted by ID, then the 15 most recent closures. Each line links to its line in the register. `--write [PATH]` also writes the board (default `agents/tasks-board.md`); `--watch` rewrites it when a register changes (VS Code task of the brain, when the folder opens).
 
-## Rangement (`sweep`)
+## Sweep (`sweep`)
 
-| État | Section |
+| State | Section |
 |---|---|
-| `[ ]` `[/]` `[w]` | `## Ouvertes` (en fin de section) |
-| `[x]` | `## Terminées` (clôture la plus récente d'abord) |
-| `[-]` | `## Annulées` (idem) |
+| `[ ]` `[/]` `[w]` | `## Open` (at the end of the section) |
+| `[x]` | `## Done` (most recent closure first) |
+| `[-]` | `## Cancelled` (same) |
 
-Cas couverts : une action cochée dans le tableau Tasks d'Obsidian (elle reste dans Ouvertes), une action rouverte, une action rangée dans la mauvaise section close. Le rangement ne crée ni date, ni état, ni ID : une action close sans `✅`/`❌` est déplacée et signalée. Il laisse en place, avec un avertissement, un état inconnu ou une section inconnue ou absente.
+Cases covered: an action ticked in the Obsidian Tasks board (it stays in Open), a reopened action, an action filed in the wrong closed section. The sweep creates no date, state or ID: a closed action without `✅`/`❌` is moved and reported. It leaves in place, with a warning, an unknown state or an unknown or missing section.
 
 ## Archive (`archive`)
 
-Une action `[x]` ou `[-]` datée, sous `## Terminées` ou `## Annulées`, dont la clôture est strictement antérieure à `aujourd'hui - --days` (30 par défaut), passe avec ses sous-puces dans `state/actions-archive-AAAA.md` (année de clôture), section de son état, clôture la plus récente d'abord. Son ID reste réservé. Un ID déjà archivé arrête ce registre sans rien écrire.
+A dated `[x]` or `[-]` action, under `## Done` or `## Cancelled`, whose closure is strictly earlier than `today - --days` (30 by default), moves with its sub-bullets to `state/actions-archive-YYYY.md` (year of closure), under the section of its state, most recent closure first. Its ID stays reserved. An ID that is already archived stops that register without writing anything.
 
-Options communes à `sweep` et `archive` : `--dry-run` (défaut) / `--write` / `--check` (code 1 si quelque chose est à déplacer), `--register CHEMIN` (répétable), `--days N`, `--today AAAA-MM-JJ` (ou `ARCHIVE_TODAY`), `--quiet`.
+Options shared by `sweep` and `archive`: `--dry-run` (default) / `--write` / `--check` (exit code 1 if anything is to be moved), `--register PATH` (repeatable), `--days N`, `--today YYYY-MM-DD` (or `ARCHIVE_TODAY`), `--quiet`.
 
-## Hooks Git
+## Git hooks
 
-Versionnés dans `tools/machine/hooks/` et installés par `tools/machine/bootstrap.sh` dans chaque brain présent ; ils valident sans jamais écrire :
+Versioned in `tools/machine/hooks/` and installed by `tools/machine/bootstrap.sh` in every brain present; they validate and never write:
 
-- **brain, `pre-commit`** : sur une copie exacte de l'index (ce que le commit contiendra, pas le dossier de travail) : actions mal rangées (`sweep --check`) et format des registres stagés (`check`), liens Markdown morts ou pointant vers un autre brain si un `.md` est stagé, noms de clients d'un autre brain (`check-no-client.py --brain … --staged`, hors liste `allow` du `.data/brain.json`) ; puis secrets dans les ajouts stagés.
-- **Work, `pre-commit`** : secrets dans les ajouts stagés.
-- **Work et brain, `commit-msg`** : sujet Conventional Commits (types de `kit/brain/docs/GIT.md`, minuscule, sans point final, 100 caractères au plus, avertissement au-delà de 72) et aucune mention d'IA.
-- **Secrets** (`check-staged-secrets.py`) : noms de fichiers d'identifiants et lignes ajoutées qui ressemblent à une clé ou un jeton ; valeurs jamais affichées ; `secret-scan: ignore` sur la ligne neutralise un faux positif.
+- **brain, `pre-commit`**: on an exact copy of the index (what the commit will contain, not the working folder): misfiled actions (`sweep --check`) and format of the staged registers (`check`), dead Markdown links or links to another brain if a `.md` is staged, client names of another brain (`check-no-client.py --brain … --staged`, outside the `allow` list of `.data/brain.json`); then secrets in the staged additions.
+- **Work, `pre-commit`**: secrets in the staged additions.
+- **Work and brain, `commit-msg`**: Conventional Commits subject (types of `kit/brain/docs/GIT.md`, lowercase, no trailing period, 100 characters at most, warning beyond 72) and no AI mention.
+- **Secrets** (`check-staged-secrets.py`): credential file names and added lines that look like a key or token; values are never displayed; `secret-scan: ignore` on the line neutralizes a false positive.
 
-## Quand l'agent l'utilise
+## When the agent uses it
 
-- Pour créer, modifier, compléter l'historique ou supprimer une action : toujours cet outil, jamais une édition à la main du registre.
-- Quand le doctor de `brain-clean` signale des actions à archiver, ou au début d'un nouveau mois : `archive --write`, sans demander si les conventions du brain le prévoient. Après une passe sur les registres : `sweep --write`.
+- To create, edit, complete the history of or delete an action: always this tool, never a hand edit of the register.
+- When the `brain-clean` doctor reports actions to archive, or at the start of a new month: `archive --write`, without asking if the brain's conventions provide for it. After a pass over the registers: `sweep --write`.
 
-## Garanties
+## Guarantees
 
-- Écritures atomiques ; refus si le registre a changé entre la lecture et l'écriture ; l'archive est écrite avant le registre et restaurée si l'écriture du registre échoue.
-- Fins de ligne et retour final conservés ; idempotent pour `sweep` et `archive`.
-- Les liens symboliques et tout ce qui sort du brain sont ignorés.
+- Atomic writes; refused if the register changed between the read and the write; the archive is written before the register and restored if the register write fails.
+- Line endings and final newline preserved; `sweep` and `archive` are idempotent.
+- Symbolic links and anything outside the brain are ignored.
