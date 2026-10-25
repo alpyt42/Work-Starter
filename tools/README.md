@@ -22,7 +22,7 @@ Les outils agissent sur le brain par défaut `brain/`, ou sur un autre brain ave
 
 | Commande | Rôle | Guide |
 |---|---|---|
-| `uv run tools/tasks-web/tasks-web.py [--port N]` | Interface web locale des actions (Liste, Kanban, Outils, Git, Recherche) sur `http://127.0.0.1:8765/` ; l'onglet Outils lance des commandes prédéfinies (liens, brains, transcriptions, actions, dépôts) | [README.md](tasks-web/README.md) |
+| `uv run tools/tasks-web/tasks-web.py [--port N] [--brain DOSSIER]` | Interface web locale des actions (Liste, Kanban, Outils, Git, Recherche) sur `http://127.0.0.1:8765/` ; un sélecteur en haut à gauche passe d'un brain de l'espace à l'autre sans redémarrer (`?brain=<nom>`, `GET /api/brains` ; `--brain` fixe le brain par défaut) ; l'onglet Outils lance des commandes prédéfinies (liens, brains, transcriptions, actions, dépôts) | [README.md](tasks-web/README.md) |
 | `./tools/tasks-web/build-dock-app.sh` | Construit l'application macOS « Actions Brain » à poser dans le Dock (macOS) | [README.md](tasks-web/README.md) |
 | `tools/tasks-web/launcher.sh` | Lanceur appelé par l'application : démarre le serveur si besoin et ouvre la page | [README.md](tasks-web/README.md) |
 

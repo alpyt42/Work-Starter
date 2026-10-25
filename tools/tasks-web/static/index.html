@@ -15,7 +15,16 @@
   <a class="skip-link" href="#mainContent">Aller au contenu</a>
   <div class="app-shell">
     <header class="site-header">
-      <div class="brand"><span class="brand-mark" aria-hidden="true">▦</span><h1>Brain <span class="brand-muted">/</span> Actions</h1></div>
+      <div class="brand">
+        <span class="brand-mark" aria-hidden="true">▦</span>
+        <div id="brainSwitch" class="brain-switch">
+          <span id="brainStatic" class="brain-static">Brain</span>
+          <button id="brainButton" class="brain-button" type="button" aria-haspopup="listbox" aria-expanded="false" aria-controls="brainMenu" hidden><span class="sr-only">Brain : </span><span id="brainName" class="brain-name"></span><span class="brain-caret" aria-hidden="true">▾</span></button>
+          <ul id="brainMenu" class="brain-menu" role="listbox" aria-label="Choisir le brain" tabindex="-1" hidden></ul>
+        </div>
+        <span class="brand-muted brand-sep" aria-hidden="true">/</span>
+        <h1>Actions</h1>
+      </div>
       <span class="local-badge">Données locales</span>
       <p id="lastSync" class="last-sync" aria-live="polite">Chargement…</p>
       <div class="heading-actions">

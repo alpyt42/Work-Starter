@@ -320,3 +320,36 @@ dialog{max-height:calc(100dvh - 32px);overflow:hidden}dialog[open]{display:flex;
 @media(min-width:1100px){.list-group-stats{width:21rem;flex-wrap:nowrap}}
 @media(max-width:820px){.list-group-stats{flex:1 1 auto}}
 @media(max-width:720px){#filters{row-gap:5px}#filters .filter-reset{min-height:34px}}
+/* Brain switcher: replaces the word « Brain » of the header brand; plain text when the Work has a single brain. */
+.sr-only{position:absolute;width:1px;height:1px;margin:-1px;padding:0;border:0;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap}
+.brand .brand-sep{margin:0 -3px}
+.brain-switch{position:relative;display:flex;align-items:center;flex:0 1 auto;min-width:0}
+.brain-static{white-space:nowrap}
+.brain-button{display:inline-flex;align-items:center;gap:6px;max-width:100%;min-width:0;min-height:30px;padding:2px 9px;border:1px solid var(--line);border-radius:8px;background:var(--surface);color:var(--ink);font-size:1.05rem;font-weight:750;letter-spacing:-.025em;line-height:1.1}
+.brain-button:hover,.brain-button[aria-expanded="true"]{background:var(--surface-3);border-color:var(--accent-border)}
+.brain-name{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brain-caret{flex:none;color:var(--muted);font-size:.8em}
+.brain-menu{position:absolute;z-index:30;top:calc(100% + 6px);left:0;min-width:max(100%,15rem);max-width:min(24rem,calc(100vw - 28px));max-height:min(60vh,22rem);overflow-y:auto;margin:0;padding:4px;list-style:none;background:var(--surface);border:1px solid var(--line);border-radius:10px;box-shadow:0 10px 30px var(--shadow-preview);outline:0}
+.brain-option{display:flex;align-items:baseline;gap:8px;padding:8px 10px;border-radius:7px;color:var(--ink);font-size:.92rem;font-weight:650;letter-spacing:0;cursor:pointer}
+.brain-option:hover{background:var(--surface-3)}
+.brain-option.is-active{background:var(--blue-light);outline:2px solid var(--focus);outline-offset:-2px}
+.brain-check{flex:none;width:1em;color:var(--blue);visibility:hidden}
+.brain-option[aria-selected="true"] .brain-check{visibility:visible}
+.brain-option[aria-selected="true"] .brain-option-name{color:var(--blue)}
+.brain-option-name{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.brain-option-scope{flex:0 1 auto;min-width:0;margin-left:auto;padding-left:10px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted);font-size:.8rem;font-weight:500}
+@media(max-width:680px){
+  .brain-button{min-height:38px;font-size:1rem}
+  .site-header{position:relative}
+  .brain-switch{position:static}
+  .brain-menu{left:0;right:0;max-width:none;min-width:0}
+}
+@media(max-width:520px){.brand .brand-sep{display:none}.brand h1{position:absolute;width:1px;height:1px;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%)}}
+@media(max-width:520px){
+  .site-header .brand{gap:7px}
+  .site-header .heading-actions{gap:4px}.site-header .button{width:38px;min-width:38px;min-height:38px}
+  .brain-button{gap:3px;padding:2px 6px;font-size:.92rem}.brain-caret{font-size:.7em}
+}
+/* Room for the switcher: a long label is cut after 14 characters, and the « Données locales » badge gives way below 1100px. */
+.brain-name{max-width:14ch}
+@media(max-width:1100px){.site-header .local-badge{display:none}}

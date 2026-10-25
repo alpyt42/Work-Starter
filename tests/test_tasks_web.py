@@ -18,6 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest.mock import patch
 from urllib.error import HTTPError
+from urllib.parse import quote
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
@@ -97,7 +98,7 @@ class TasksWebTest(unittest.TestCase):
         self.assertFalse(any("client-repos.py clone" in command for command in commands))
         self.assertEqual({tool["group"] for tool in catalog["tools"]}, {"Mémoire", "Actions", "Dépôts"})
         for tool_id, (_group, _label, _description, script, _args) in tasks_web.TOOLS.items():
-            self.assertTrue((tasks_web.WORK / "tools" / script).is_file(), f"{tool_id}: tools/{script} est introuvable")
+            self.assertTrue((tasks_web.TOOLS_ROOT / "tools" / script).is_file(), f"{tool_id}: tools/{script} est introuvable")
         status, _ = self.request("POST", "/api/tools/run", {"id": "links"}, token=False)
         self.assertEqual(status, 403)
         status, _ = self.request("POST", "/api/tools/run", {"id": "links"}, origin=False)
@@ -1478,6 +1479,363 @@ class DocsTest(unittest.TestCase):
             self.assertEqual((other["note"], other["version"]), (False, None), doc_id)
         self.assertEqual(self.render("context/glossaire.md")["project"], None)
         self.assertEqual(self.render(f"{self.CLIENT}/migration.md")["register"], self.register)
+
+
+def load_script(relative, work):
+    """Import a tools/ script as a module while WORK_DIR points to a temporary Work."""
+    path = Path(__file__).resolve().parents[1] / relative
+    spec = importlib.util.spec_from_file_location(path.stem.replace("-", "_"), path)
+    module = importlib.util.module_from_spec(spec)
+    with patch.dict(os.environ, {"WORK_DIR": str(work)}):
+        spec.loader.exec_module(module)
+    return module
+
+
+class BrainSwitchTest(unittest.TestCase):
+    """Several brains in one Work: discovery, `brain=` selection, isolated stores."""
+    DEFAULT_PROJECT = "projects/internal/alpha"
+    OTHER_PROJECT = "projects/internal/perso"
+
+    def make_brain(self, name, prefix=None, title=None, boundary=None, agents=True, data=True):
+        brain = self.root / name
+        brain.mkdir(parents=True, exist_ok=True)
+        if agents:
+            (brain / "AGENTS.md").write_text("# Brain\n", encoding="utf-8")
+        if data:
+            (brain / ".data").mkdir(exist_ok=True)
+        if boundary is not None:
+            (brain / ".data/brain.json").write_text(boundary, encoding="utf-8")
+        if prefix:
+            project = self.DEFAULT_PROJECT if name == "brain" else self.OTHER_PROJECT
+            (brain / project / "state").mkdir(parents=True)
+            (brain / project / "state/actions.md").write_text(f"# Actions\n\n## Ouvertes\n- [ ] **{prefix}-001** — Jane — {title}\n", encoding="utf-8")
+        else:
+            (brain / "projects").mkdir(exist_ok=True)
+        return brain
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)  # last: the servers are stopped first
+        self.root = Path(self.temp.name) / "work"
+        self.root.mkdir()
+        self.default = self.make_brain("brain", "ALP", "Action du brain par défaut")
+        self.other = self.make_brain("brain-perso", "PER", "Action perso",
+                                     boundary='{"scope": "Personnel", "description": "Notes  et\\ncarrière", "version": 1}')
+        self.make_brain("brain-acme", boundary='{"scope": 3, "description": ["x"]}')
+        # Not brains: no AGENTS.md, no .data/, or a name outside `brain` / `brain-<name>`.
+        self.make_brain("brain-vide", agents=False)
+        self.make_brain("brain-sans-data", data=False)
+        self.make_brain("brain_old")
+        self.make_brain("brain-Majuscule")
+        self.make_brain("brains")
+        (self.root / "brain-fichier").write_text("pas un dossier", encoding="utf-8")
+        self.server = self.start(tasks_web.Store(self.default))
+        self.registers = {
+            "default": self.default / self.DEFAULT_PROJECT / "state/actions.md",
+            "other": self.other / self.OTHER_PROJECT / "state/actions.md",
+        }
+
+    def start(self, store, work=None):
+        """Serve `store` as the default brain of a Work; the requests of the test then go to this server."""
+        server = tasks_web.TaskServer(("127.0.0.1", 0), store, work=work or self.root)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(self.stop, server, thread)
+        self.server = server
+        self.base = f"http://127.0.0.1:{server.server_port}"
+        return server
+
+    @staticmethod
+    def stop(server, thread):
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    def request(self, method, path, payload=None):
+        return TasksWebTest.request(self, method, path, payload)
+
+    def actions(self, query=""):
+        status, data = self.request("GET", "/api/actions" + query)
+        self.assertEqual(status, 200, data)
+        return data
+
+    def new_action(self, title="Nouvelle action", register=None, query=""):
+        action = {"title": title, "owner": "Jane", "state": " ", "priority": "", "due": "", "scheduled": ""}
+        return self.request("POST", "/api/actions" + query, {"register": register, "action": action})
+
+    def test_brains_endpoint_lists_discovered_brains_with_scope_and_description(self):
+        status, data = self.request("GET", "/api/brains")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["default"], "brain")
+        self.assertEqual(data["brains"], [
+            {"name": "brain", "label": "Brain", "scope": "", "description": "", "default": True},
+            {"name": "brain-acme", "label": "Acme", "scope": "", "description": "", "default": False},
+            {"name": "brain-perso", "label": "Perso", "scope": "Personnel", "description": "Notes et carrière", "default": False},
+        ])
+        # No Store is built just to list the brains.
+        self.assertEqual(self.server._stores, {})
+
+    def test_brains_carry_a_short_label_but_keep_the_folder_name_as_value(self):
+        self.make_brain("brain-acme-corp", "ACC", "Action du lot")
+        by_name = {brain["name"]: brain for brain in self.request("GET", "/api/brains")[1]["brains"]}
+        self.assertEqual({name: brain["label"] for name, brain in by_name.items()},
+                         {"brain": "Brain", "brain-acme": "Acme", "brain-acme-corp": "Acme-corp", "brain-perso": "Perso"})
+        # The label is only displayed: the folder name is what selects the brain.
+        self.assertEqual(self.actions("?brain=brain-acme-corp")["actions"][0]["id"], "ACC-001")
+        self.assertEqual(self.request("GET", "/api/actions?brain=Acme-corp")[0], 400)
+        self.assertEqual(self.request("GET", "/api/actions?brain=Perso")[0], 400)
+        self.assertEqual([tasks_web.brain_label(name) for name in ("brain", "brain-perso", "brain-studio", "brain-acme-corp", "brain-", "solo")],
+                         ["Brain", "Perso", "Studio", "Acme-corp", "Brain-", "Solo"])
+
+    def test_brains_are_rediscovered_on_each_call(self):
+        self.make_brain("brain-nouveau", "NEW", "Arrivé après le démarrage")
+        names = [brain["name"] for brain in self.request("GET", "/api/brains")[1]["brains"]]
+        self.assertEqual(names, ["brain", "brain-acme", "brain-nouveau", "brain-perso"])
+        self.assertEqual(self.actions("?brain=brain-nouveau")["actions"][0]["id"], "NEW-001")
+        (self.root / "brain-nouveau/AGENTS.md").unlink()
+        names = [brain["name"] for brain in self.request("GET", "/api/brains")[1]["brains"]]
+        self.assertNotIn("brain-nouveau", names)
+        self.assertEqual(self.request("GET", "/api/actions?brain=brain-nouveau")[0], 400)
+
+    def test_discovery_rule_is_the_one_of_the_other_tools(self):
+        expected = [path.name for path in tasks_web.discover_brains(self.root)]
+        self.assertEqual(expected, ["brain", "brain-acme", "brain-perso"])
+        self.assertEqual([path.name for path in load_script("tools/brain/brain-state.py", self.root).discover()], expected)
+        self.assertEqual([path.name for path in load_script("tools/machine/work_config.py", self.root).discover_brains()], expected)
+
+    def test_default_brain_without_parameter_and_selected_brain_with_it(self):
+        default = self.actions()
+        self.assertEqual([action["id"] for action in default["actions"]], ["ALP-001"])
+        self.assertEqual([register["path"] for register in default["registers"]], [f"{self.DEFAULT_PROJECT}/state/actions.md"])
+        self.assertEqual(self.actions("?brain=brain"), default)
+        other = self.actions("?brain=brain-perso")
+        self.assertEqual([action["id"] for action in other["actions"]], ["PER-001"])
+        self.assertEqual(other["actions"][0]["title"], "Action perso")
+        self.assertEqual([register["path"] for register in other["registers"]], [f"{self.OTHER_PROJECT}/state/actions.md"])
+        self.assertEqual(self.actions("?brain=brain-perso&x=1"), other)
+        details = self.request("GET", "/api/actions/PER-001/details?brain=brain-perso")
+        self.assertEqual(details[0], 200)
+        self.assertEqual(self.request("GET", "/api/actions/PER-001/details")[0], 404)
+
+    def test_stores_are_built_lazily_and_kept(self):
+        self.assertEqual(self.server._stores, {})
+        self.actions("?brain=brain-perso")
+        store = self.server._stores["brain-perso"]
+        self.assertIs(self.server.store_for("brain-perso"), store)
+        self.assertIs(self.server.store_for(None), self.server.store)
+        self.assertIs(self.server.store_for("brain"), self.server.store)
+        self.assertEqual(store.brain, self.other.resolve())
+
+    def test_unknown_brain_is_a_400_on_every_route(self):
+        gets = ["/api/actions", "/api/actions/ALP-001/details", "/api/tools", "/api/notes", "/api/notes/content?id=x.md",
+                "/api/search?q=alpha", "/api/docs/render?id=x.md", "/api/docs/recent", "/api/git", "/api/git/diff?repo=work&path=a",
+                "/api/git/commit?repo=work&hash=" + "0" * 40, "/api/undo"]
+        for path in gets:
+            joiner = "&" if "?" in path else "?"
+            status, data = self.request("GET", f"{path}{joiner}brain=brain-inconnu")
+            self.assertEqual((path, status), (path, 400))
+            self.assertEqual(data, {"error": "Brain inconnu."})
+        before = {key: register.read_bytes() for key, register in self.registers.items()}
+        with patch.object(tasks_web, "run_tool") as runner:
+            for method, path, payload in (
+                ("POST", "/api/actions?brain=brain-inconnu", {"register": f"{self.DEFAULT_PROJECT}/state/actions.md", "action": {}}),
+                ("POST", "/api/actions/ALP-001/notes?brain=brain-inconnu", {"details_version": "x", "note": "n"}),
+                ("POST", "/api/notes?brain=brain-inconnu", {"title": "t", "register": "inbox", "content": "c"}),
+                ("PATCH", "/api/notes?brain=brain-inconnu", {"id": "a.md", "version": "x", "content": "c"}),
+                ("PATCH", "/api/actions/ALP-001?brain=brain-inconnu", {"version": "x", "action": {}}),
+                ("DELETE", "/api/actions/ALP-001?brain=brain-inconnu", {"version": "x", "details_version": "y"}),
+                ("POST", "/api/undo?brain=brain-inconnu", {"label": "x"}),
+                ("POST", "/api/tools/run?brain=brain-inconnu", {"id": "links"}),
+            ):
+                status, data = self.request(method, path, payload)
+                self.assertEqual((method, path, status), (method, path, 400))
+                self.assertEqual(data, {"error": "Brain inconnu."})
+            runner.assert_not_called()
+        self.assertEqual({key: register.read_bytes() for key, register in self.registers.items()}, before)
+        self.assertFalse((self.default / "inbox").exists() or (self.other / "inbox").exists())
+
+    def test_only_discovered_names_are_accepted_never_paths(self):
+        values = ["../x", "brain/../brain", "./brain", "brain/", "/brain", str(self.other), str(self.other.resolve()),
+                  "brain-perso/../brain", "..", ".", "", " brain", "brain ", "BRAIN", "brain\x00", "brain-vide", "brain-sans-data",
+                  "brain_old", "brain-Majuscule", "brains", "brain-fichier", "%2e%2e%2fx"]
+        for value in values:
+            status, data = self.request("GET", "/api/actions?brain=" + quote(value, safe=""))
+            self.assertEqual((value, status), (value, 400))
+            self.assertEqual(data, {"error": "Brain inconnu."})
+        # A repeated parameter is ambiguous: refused too.
+        status, data = self.request("GET", "/api/actions?brain=brain&brain=brain-perso")
+        self.assertEqual((status, data), (400, {"error": "Paramètre brain invalide."}))
+        status, _ = self.request("POST", "/api/actions?brain=../brain", {"register": f"{self.DEFAULT_PROJECT}/state/actions.md", "action": {}})
+        self.assertEqual(status, 400)
+
+    def test_a_brain_without_projects_folder_is_listed_but_not_served(self):
+        empty = self.root / "brain-vide-de-projets"
+        (empty / ".data").mkdir(parents=True)
+        (empty / "AGENTS.md").write_text("# Brain\n", encoding="utf-8")
+        self.assertIn("brain-vide-de-projets", [brain["name"] for brain in self.request("GET", "/api/brains")[1]["brains"]])
+        status, data = self.request("GET", "/api/actions?brain=brain-vide-de-projets")
+        self.assertEqual(status, 404)
+        self.assertIn("projects", data["error"])
+        self.assertNotIn(str(empty), data["error"])
+        self.assertNotIn("brain-vide-de-projets", self.server._stores)
+
+    def test_undo_stacks_are_isolated_per_brain(self):
+        status, created = self.new_action("Dans le défaut", f"{self.DEFAULT_PROJECT}/state/actions.md")
+        self.assertEqual((status, created["id"]), (201, "ALP-002"))
+        self.assertEqual(created["undo"]["depth"], 1)
+        status, created = self.new_action("Dans le perso", f"{self.OTHER_PROJECT}/state/actions.md", "?brain=brain-perso")
+        self.assertEqual((status, created["id"]), (201, "PER-002"))
+        self.assertEqual(created["undo"]["depth"], 1)
+        self.new_action("Encore dans le perso", f"{self.OTHER_PROJECT}/state/actions.md", "?brain=brain-perso")
+        self.assertEqual(self.request("GET", "/api/undo")[1]["depth"], 1)
+        self.assertEqual(self.request("GET", "/api/undo")[1]["label"], self.request("GET", "/api/undo?brain=brain")[1]["label"])
+        state = self.request("GET", "/api/undo?brain=brain-perso")[1]
+        self.assertEqual((state["available"], state["depth"]), (True, 2))
+        default_before = self.registers["default"].read_bytes()
+        status, undone = self.request("POST", "/api/undo?brain=brain-perso", {"label": state["label"]})
+        self.assertEqual(status, 200, undone)
+        self.assertEqual(undone["undo"]["depth"], 1)
+        self.assertEqual(self.registers["default"].read_bytes(), default_before)
+        self.assertEqual([action["id"] for action in self.actions("?brain=brain-perso")["actions"]], ["PER-001", "PER-002"])
+        self.assertEqual(self.request("GET", "/api/undo")[1]["depth"], 1)
+        # An undo asked on the default brain only touches the default brain.
+        perso_before = self.registers["other"].read_bytes()
+        status, _ = self.request("POST", "/api/undo", {"label": self.request("GET", "/api/undo")[1]["label"]})
+        self.assertEqual(status, 200)
+        self.assertEqual([action["id"] for action in self.actions()["actions"]], ["ALP-001"])
+        self.assertEqual(self.registers["other"].read_bytes(), perso_before)
+        self.assertEqual(self.request("GET", "/api/undo")[1]["available"], False)
+        self.assertEqual(self.request("GET", "/api/undo?brain=brain-perso")[1]["depth"], 1)
+
+    def test_create_with_brain_writes_only_into_that_brain(self):
+        default_before = self.registers["default"].read_bytes()
+        status, created = self.new_action("Appel de la banque", f"{self.OTHER_PROJECT}/state/actions.md", "?brain=brain-perso")
+        self.assertEqual((status, created["id"]), (201, "PER-002"))
+        self.assertEqual(self.registers["default"].read_bytes(), default_before)
+        self.assertIn("**PER-002**", self.registers["other"].read_text(encoding="utf-8"))
+        self.assertIn("Appel de la banque", self.registers["other"].read_text(encoding="utf-8"))
+        self.assertNotIn("PER-002", [action["id"] for action in self.actions()["actions"]])
+        # A register of another brain is not a register of the selected one.
+        other_before = self.registers["other"].read_bytes()
+        status, data = self.new_action("Mauvais brain", f"{self.OTHER_PROJECT}/state/actions.md")
+        self.assertEqual((status, data), (400, {"error": "Projet inconnu."}))
+        status, data = self.new_action("Mauvais brain", f"{self.DEFAULT_PROJECT}/state/actions.md", "?brain=brain-perso")
+        self.assertEqual((status, data), (400, {"error": "Projet inconnu."}))
+        self.assertEqual(self.registers["other"].read_bytes(), other_before)
+        self.assertEqual(self.registers["default"].read_bytes(), default_before)
+        # The ID counter and the notes belong to the selected brain too.
+        status, detail = self.request("GET", "/api/actions/PER-002/details?brain=brain-perso")
+        self.assertEqual(status, 200)
+        status, _ = self.request("POST", "/api/actions/PER-002/notes?brain=brain-perso", {"details_version": detail["details_version"], "note": "Rappelé"})
+        self.assertEqual(status, 201)
+        self.assertIn("Rappelé", self.registers["other"].read_text(encoding="utf-8"))
+        self.assertNotIn("Rappelé", self.registers["default"].read_text(encoding="utf-8"))
+
+    def test_notes_and_search_follow_the_selected_brain(self):
+        note = self.other / self.OTHER_PROJECT / "notes/2026-10-01-banque.md"
+        note.parent.mkdir()
+        note.write_text("# Rendez-vous banque\n\nCompte épargne personnel.\n", encoding="utf-8")
+        status, created = self.request("POST", "/api/notes?brain=brain-perso", {"title": "Idée vélo", "register": f"{self.OTHER_PROJECT}/state/actions.md", "content": "Texte"})
+        self.assertEqual(status, 201, created)
+        perso_notes = {item["id"] for item in self.request("GET", "/api/notes?brain=brain-perso")[1]["notes"]}
+        self.assertIn(f"{self.OTHER_PROJECT}/notes/2026-10-01-banque.md", perso_notes)
+        self.assertEqual(len(perso_notes), 2)
+        self.assertEqual(self.request("GET", "/api/notes")[1]["notes"], [])
+        found = self.request("GET", "/api/search?q=%C3%A9pargne&brain=brain-perso")[1]
+        self.assertEqual([item["id"] for item in found["results"]], [f"{self.OTHER_PROJECT}/notes/2026-10-01-banque.md"])
+        self.assertEqual(self.request("GET", "/api/search?q=%C3%A9pargne")[1]["results"], [])
+        rendered = self.request("GET", f"/api/docs/render?id={quote(self.OTHER_PROJECT, safe='')}%2Fnotes%2F2026-10-01-banque.md&brain=brain-perso")
+        self.assertEqual(rendered[0], 200)
+        self.assertEqual(self.request("GET", f"/api/docs/render?id={quote(self.OTHER_PROJECT, safe='')}%2Fnotes%2F2026-10-01-banque.md")[0], 404)
+        self.assertFalse((self.default / "inbox").exists())
+
+    def test_tool_runs_receive_the_selected_brain(self):
+        result = {"id": "links", "ok": True, "output": "OK", "truncated": False}
+        with patch.object(tasks_web, "run_tool", return_value=result) as runner:
+            self.assertEqual(self.request("POST", "/api/tools/run?brain=brain-perso", {"id": "links"})[0], 200)
+            runner.assert_called_once_with("links", self.other.resolve())
+            runner.reset_mock()
+            self.assertEqual(self.request("POST", "/api/tools/run", {"id": "links"})[0], 200)
+            runner.assert_called_once_with("links", self.default.resolve())
+            runner.reset_mock()
+            self.assertEqual(self.request("POST", "/api/tools/run?brain=brain", {"id": "links"})[0], 200)
+            runner.assert_called_once_with("links", self.default.resolve())
+
+    def test_run_tool_sets_brain_dir_for_the_command(self):
+        completed = tasks_web.subprocess.CompletedProcess([], 0, stdout="ok\n", stderr="")
+        with patch.object(tasks_web.shutil, "which", return_value="/usr/bin/uv"), \
+                patch.object(tasks_web.subprocess, "run", return_value=completed) as runner:
+            tasks_web.run_tool("links", self.other.resolve())
+        self.assertEqual(runner.call_args.kwargs["env"]["BRAIN_DIR"], str(self.other.resolve()))
+        self.assertEqual(runner.call_args.args[0][2], str(tasks_web.TOOLS_ROOT / "tools/brain/check-links.py"))
+
+    def test_git_repositories_follow_the_selected_brain(self):
+        store = self.server.store_for("brain-perso")
+        self.assertEqual(self.server.git_repos_for(store), [("work", "Work", self.root.resolve()), ("brain", "brain-perso", self.other.resolve())])
+        self.assertEqual(self.server.git_repos_for(self.server.store), [("work", "Work", self.root.resolve()), ("brain", "brain", self.default.resolve())])
+        status, data = self.request("GET", "/api/git?brain=brain-perso")
+        self.assertEqual(status, 200)
+        self.assertEqual([(repo["id"], repo["label"]) for repo in data["repos"]], [("work", "Work"), ("brain", "brain-perso")])
+        data = self.request("GET", "/api/git")[1]
+        self.assertEqual([(repo["id"], repo["label"]) for repo in data["repos"]], [("work", "Work"), ("brain", "brain")])
+
+    def test_default_brain_can_be_another_discovered_brain(self):
+        server = self.start(tasks_web.Store(self.other))
+        status, data = self.request("GET", "/api/brains")
+        self.assertEqual(status, 200)
+        self.assertEqual(data["default"], "brain-perso")
+        self.assertEqual([(brain["name"], brain["default"]) for brain in data["brains"]],
+                         [("brain", False), ("brain-acme", False), ("brain-perso", True)])
+        self.assertEqual([action["id"] for action in self.actions()["actions"]], ["PER-001"])
+        self.assertEqual([action["id"] for action in self.actions("?brain=brain")["actions"]], ["ALP-001"])
+        self.assertIs(server.store_for("brain-perso"), server.store)
+
+    def test_default_brain_outside_work_is_offered_first(self):
+        elsewhere = Path(self.temp.name) / "ailleurs/brain-externe"
+        (elsewhere / "projects/internal/ext/state").mkdir(parents=True)
+        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Ouvertes\n- [ ] **EXT-001** — Jane — Hors de Work\n", encoding="utf-8")
+        self.start(tasks_web.Store(elsewhere))
+        data = self.request("GET", "/api/brains")[1]
+        self.assertEqual(data["default"], "brain-externe")
+        self.assertEqual([(brain["name"], brain["default"]) for brain in data["brains"]],
+                         [("brain-externe", True), ("brain", False), ("brain-acme", False), ("brain-perso", False)])
+        self.assertEqual([action["id"] for action in self.actions()["actions"]], ["EXT-001"])
+        self.assertEqual([action["id"] for action in self.actions("?brain=brain-externe")["actions"]], ["EXT-001"])
+        self.assertEqual([action["id"] for action in self.actions("?brain=brain")["actions"]], ["ALP-001"])
+        self.assertEqual([action["id"] for action in self.actions("?brain=brain-perso")["actions"]], ["PER-001"])
+
+    def test_default_brain_outside_work_is_offered_alone_when_work_has_none(self):
+        elsewhere = Path(self.temp.name) / "ailleurs/solo"
+        (elsewhere / "projects/internal/ext/state").mkdir(parents=True)
+        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Ouvertes\n- [ ] **EXT-001** — Jane — Seul\n", encoding="utf-8")
+        empty_work = Path(self.temp.name) / "work-vide"
+        empty_work.mkdir()
+        self.start(tasks_web.Store(elsewhere), work=empty_work)
+        data = self.request("GET", "/api/brains")[1]
+        self.assertEqual(data, {"brains": [{"name": "solo", "label": "Solo", "scope": "", "description": "", "default": True}], "default": "solo"})
+        self.assertEqual(self.request("GET", "/api/actions?brain=brain-perso")[0], 400)
+        self.assertEqual(self.request("GET", "/api/actions?brain=solo")[0], 200)
+
+    def test_default_brain_shadows_a_discovered_brain_of_the_same_name(self):
+        elsewhere = Path(self.temp.name) / "ailleurs/brain"
+        (elsewhere / "projects/internal/ext/state").mkdir(parents=True)
+        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Ouvertes\n- [ ] **EXT-001** — Jane — Autre dossier\n", encoding="utf-8")
+        self.start(tasks_web.Store(elsewhere))
+        data = self.request("GET", "/api/brains")[1]
+        self.assertEqual([brain["name"] for brain in data["brains"]], ["brain", "brain-acme", "brain-perso"])
+        self.assertEqual(data["default"], "brain")
+        self.assertEqual([action["id"] for action in self.actions("?brain=brain")["actions"]], ["EXT-001"])
+
+    def test_brain_list_refuses_foreign_hosts_and_the_page_carries_the_switcher(self):
+        request = Request(self.base + "/api/brains", headers={"Host": "evil.example"})
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=3)
+        self.assertEqual(caught.exception.code, 403)
+        caught.exception.close()
+        with urlopen(self.base + "/?brain=brain-perso", timeout=3) as response:
+            page = response.read().decode("utf-8")
+        for fragment in ('id="brainSwitch"', 'id="brainButton"', 'id="brainMenu"', 'id="brainStatic"'):
+            self.assertIn(fragment, page)
 
 
 if __name__ == "__main__":

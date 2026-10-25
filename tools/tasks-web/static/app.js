@@ -19,7 +19,8 @@ const ids = Object.fromEntries([
   'docPaneMeta', 'docPanePath', 'docBack', 'docEdit', 'docCancel', 'docSave', 'docPaneEmpty', 'docPaneError',
   'docArticle', 'docEditor', 'newNoteButton',
   'newNoteDialog', 'newNoteForm', 'closeNewNote', 'cancelNewNote', 'newNoteTitle', 'newNoteProject',
-  'newNoteContent', 'newNoteWhere', 'newNoteError', 'saveNewNote'
+  'newNoteContent', 'newNoteWhere', 'newNoteError', 'saveNewNote',
+  'brainSwitch', 'brainStatic', 'brainButton', 'brainName', 'brainMenu'
 ].map(id => [id, document.getElementById(id)]));
 const UI_STATE_KEY = 'actions-brain-ui-v1';
 function readUIState() {
@@ -79,7 +80,8 @@ function saveUIState() {
     sessionStorage.setItem(UI_STATE_KEY, JSON.stringify({
       view, search: ids.searchInput.value, project: ids.projectFilter.value, group: ids.groupFilter.value || pendingGroup,
       owner: ids.ownerFilter.value, scope: ids.scopeFilter.value, toolSearch: ids.toolSearch.value,
-      docQuery: ids.docQuery.value, docProject: ids.docProject.value, gitRepo: gitCurrent, foldedGroups: [...foldedGroups]
+      docQuery: ids.docQuery.value, docProject: ids.docProject.value, gitRepo: gitCurrent, foldedGroups: [...foldedGroups],
+      brain: currentBrain
     }));
   } catch { /* The interface remains usable when browser storage is unavailable. */ }
 }
@@ -719,16 +721,238 @@ function showGroupField(focus = false) {
     `${(register?.groups || []).includes(slug) ? 'Groupe existant' : 'Nouveau groupe enregistré'} : ${slug}`;
   if (focus && choice.fresh) ids.editorGroupNew.focus();
 }
+// Brains: the server serves every brain of the Work; the page picks one and sends it as `brain=<name>` with every /api/ request.
+const BRAIN_STORAGE_KEY = 'actions-brain-current-v1';
+// Routes that do not depend on the selected brain: their answers are never dropped when the brain changes.
+const BRAIN_NEUTRAL = new Set(['/api/brains', '/api/tools', '/api/shutdown']);
+let brains = [];
+let currentBrain = '';
+let brainEpoch = 0;
+let brainMenuIndex = -1;
+let pendingWrites = 0;
+function brainUrl(url) {
+  if (!currentBrain || !url.startsWith('/api/')) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}brain=${encodeURIComponent(currentBrain)}`;
+}
+// A read that answers after a brain change belongs to the previous brain: it is dropped (error.stale) instead of overwriting the new views.
+// Writes are never dropped: the brain switch waits for them (switchBrain).
 async function request(url, options = {}) {
-  const response = await fetch(url, options);
-  let payload;
-  try { payload = await response.json(); } catch { throw new Error('Réponse locale illisible.'); }
-  if (!response.ok) {
-    const error = new Error(payload.error || 'Opération impossible.');
-    error.status = response.status;
-    throw error;
+  const epoch = brainEpoch;
+  const write = (options.method || 'GET').toUpperCase() !== 'GET';
+  if (write) pendingWrites += 1;
+  try {
+    const response = await fetch(brainUrl(url), options);
+    if (!write && epoch !== brainEpoch && !BRAIN_NEUTRAL.has(url.split('?')[0])) {
+      const stale = new Error('Réponse d’un autre brain ignorée.');
+      stale.stale = true;
+      throw stale;
+    }
+    let payload;
+    try { payload = await response.json(); } catch { throw new Error('Réponse locale illisible.'); }
+    if (!response.ok) {
+      const error = new Error(payload.error || 'Opération impossible.');
+      error.status = response.status;
+      throw error;
+    }
+    return payload;
+  } finally {
+    if (write) pendingWrites -= 1;
   }
-  return payload;
+}
+function readStoredBrain() {
+  try { return localStorage.getItem(BRAIN_STORAGE_KEY) || ''; } catch { return ''; }
+}
+function storeBrain(name) {
+  try { localStorage.setItem(BRAIN_STORAGE_KEY, name); } catch { /* The choice is simply not remembered. */ }
+}
+function brainFromUrl() {
+  try { return new URL(location.href).searchParams.get('brain') || ''; } catch { return ''; }
+}
+function syncBrainUrl() {
+  try {
+    const url = new URL(location.href);
+    url.searchParams.set('brain', currentBrain);
+    history.replaceState(history.state, '', url.href);
+  } catch { /* The address bar keeps its value. */ }
+}
+// What the page shows for a brain: the short label of the server (`Perso` for `brain-perso`); the folder name stays the technical value.
+function brainLabel(name) {
+  return brains.find(brain => brain.name === name)?.label || name;
+}
+function brainOption(brain, index) {
+  const option = element('li', 'brain-option');
+  option.id = `brainOption${index}`;
+  option.setAttribute('role', 'option');
+  option.setAttribute('aria-selected', String(brain.name === currentBrain));
+  option.dataset.brain = brain.name;
+  const check = element('span', 'brain-check', '✓');
+  check.setAttribute('aria-hidden', 'true');
+  option.append(check, element('span', 'brain-option-name', brain.label || brain.name));
+  if (brain.scope) option.append(element('span', 'brain-option-scope', brain.scope));
+  option.title = [brain.name, brain.description].filter(Boolean).join(' — ');
+  option.addEventListener('click', () => chooseBrain(brain.name));
+  return option;
+}
+// The switcher: the brain's name as plain text when the Work has one brain, otherwise a button that opens the list.
+function renderBrainSwitch() {
+  const several = brains.length > 1;
+  const known = brains.find(brain => brain.name === currentBrain);
+  const active = ids.brainMenu.children[brainMenuIndex]?.dataset.brain || currentBrain;
+  ids.brainStatic.hidden = several;
+  ids.brainStatic.textContent = brainLabel(currentBrain) || 'Brain';
+  ids.brainButton.hidden = !several;
+  ids.brainName.textContent = brainLabel(currentBrain);
+  ids.brainButton.title = known ? [known.name, known.scope, known.description].filter(Boolean).join(' — ') : '';
+  ids.brainMenu.replaceChildren(...brains.map(brainOption));
+  if (!several) closeBrainMenu(false);
+  else if (brainMenuOpen()) setBrainActive(Math.max(0, brains.findIndex(brain => brain.name === active)));
+  document.title = several && currentBrain ? `Actions · ${brainLabel(currentBrain)}` : 'Actions · Brain local';
+}
+function brainMenuOpen() { return !ids.brainMenu.hidden; }
+function setBrainActive(index) {
+  const options = [...ids.brainMenu.children];
+  if (!options.length) return;
+  brainMenuIndex = Math.max(0, Math.min(index, options.length - 1));
+  options.forEach((option, position) => option.classList.toggle('is-active', position === brainMenuIndex));
+  ids.brainMenu.setAttribute('aria-activedescendant', options[brainMenuIndex].id);
+  options[brainMenuIndex].scrollIntoView({block: 'nearest'});
+}
+function openBrainMenu() {
+  if (brains.length < 2 || brainMenuOpen()) return;
+  ids.brainMenu.hidden = false;
+  ids.brainButton.setAttribute('aria-expanded', 'true');
+  setBrainActive(brains.findIndex(brain => brain.name === currentBrain));
+  ids.brainMenu.focus();
+  loadBrains(); // A brain added since the page was opened shows up.
+}
+function closeBrainMenu(refocus = true) {
+  if (!brainMenuOpen()) return;
+  ids.brainMenu.hidden = true;
+  ids.brainButton.setAttribute('aria-expanded', 'false');
+  ids.brainMenu.removeAttribute('aria-activedescendant');
+  brainMenuIndex = -1;
+  if (refocus) ids.brainButton.focus();
+}
+function chooseBrain(name) {
+  closeBrainMenu();
+  if (name) switchBrain(name);
+}
+function adoptBrain(name) {
+  currentBrain = name;
+  brainEpoch += 1;
+  storeBrain(name);
+  syncBrainUrl();
+  renderBrainSwitch();
+}
+// What a brain owns: project filters, group folds, selections, open documents and Git detail, tool output, undo button.
+// The text typed in the search boxes and the owner and scope filters are not tied to a brain: they stay.
+function resetBrainState() {
+  pendingProject = '';
+  pendingGroup = '';
+  pendingDocProject = '';
+  ids.projectFilter.value = '';
+  ids.groupFilter.value = '';
+  ids.docProject.value = '';
+  ids.editorProject.replaceChildren();
+  foldedGroups.clear();
+  snapshot = {actions: [], registers: [], owner: '', today: ''};
+  detailCache.clear();
+  detailCurrent = null;
+  hidePreview();
+  gitLoadId += 1;
+  gitDiffRequest += 1;
+  gitLoading = null;
+  gitLoaded = false;
+  gitRepos = [];
+  gitSelected = null;
+  gitScrolls.clear();
+  ids.gitRepos.replaceChildren();
+  showGitDetail({message: 'Choisis un fichier modifié ou un commit pour voir ses différences ici.'});
+  clearTimeout(docTimer);
+  notesRequest += 1;
+  docSearchRequest += 1;
+  docRenderRequest += 1;
+  notesData = [];
+  recentDocs = [];
+  notesLoaded = false;
+  docMode = 'recent';
+  docResults = [];
+  docTotal = 0;
+  docTerms = [];
+  docError = '';
+  docSelectedId = null;
+  docCurrent = null;
+  docHistory = [];
+  docMarks = [];
+  docEditing = false;
+  docNote = null;
+  ids.docPaneEmpty.textContent = 'Choisis un document pour le lire.';
+  ids.docList.replaceChildren();
+  ids.docArticle.replaceChildren();
+  ids.docEditor.value = '';
+  setDocError('');
+  setDocStatus('');
+  renderDocPane();
+  ids.toolResult.classList.remove('has-result');
+  ids.toolResultTitle.textContent = 'Résultat';
+  ids.toolResultStatus.textContent = 'Prêt';
+  ids.toolResultStatus.className = '';
+  ids.toolResultEmpty.hidden = false;
+  ids.toolResultOutput.hidden = true;
+  ids.toolResultOutput.textContent = '';
+  setUndo(null);
+  ids.errorBanner.hidden = true;
+  ids.lastSync.textContent = 'Chargement…';
+  populateProjects();
+  ids.dueCount.textContent = '—';
+  ids.waitingCount.textContent = '—';
+  render();
+  saveUIState();
+}
+function enterBrain(name) {
+  adoptBrain(name);
+  resetBrainState();
+  refresh();
+}
+// A change waits for the writes in flight (their answer would land in the new brain) and keeps a note being edited unless the user lets it go.
+function switchBrain(name) {
+  if (name === currentBrain) return false;
+  if (pendingWrites > 0) {
+    showToast('Une opération est en cours : attends sa fin pour changer de brain.');
+    return false;
+  }
+  if (docDirty() && !confirm('Abandonner les modifications non enregistrées de cette note ?')) return false;
+  enterBrain(name);
+  showToast(`Brain : ${brainLabel(name)}`);
+  return true;
+}
+// Reads the brains of the Work (rediscovered by the server each time). Startup: the brain comes from the URL, then the browser's memory,
+// then the server's default. Later: a brain that disappeared sends the page back to the default one. Returns true when it reloaded the views.
+async function loadBrains({initial = false} = {}) {
+  let data;
+  try { data = await request('/api/brains'); } catch { return false; }
+  if (!Array.isArray(data.brains)) return false;
+  const previousLabel = brainLabel(currentBrain);
+  brains = data.brains;
+  const names = brains.map(brain => brain.name);
+  const fallback = names.includes(data.default) ? data.default : names[0];
+  if (initial) {
+    const choice = [brainFromUrl(), readStoredBrain()].find(name => names.includes(name)) || fallback;
+    if (choice) adoptBrain(choice);
+    // Filters kept by this tab belong to the brain they were saved with.
+    if (savedUI.brain && savedUI.brain !== currentBrain) {
+      pendingProject = '';
+      pendingGroup = '';
+      pendingDocProject = '';
+      foldedGroups.clear();
+    }
+  } else if (fallback && !names.includes(currentBrain)) {
+    if (currentBrain) showToast(`Le brain ${previousLabel} n’existe plus : retour à ${brainLabel(fallback)}.`);
+    enterBrain(fallback);
+    return true;
+  }
+  renderBrainSwitch();
+  return false;
 }
 async function loadTools() {
   ids.toolsCatalog.textContent = 'Chargement des outils…';
@@ -822,6 +1046,7 @@ let gitRepos = [];
 let gitLoaded = false;
 let gitCurrent = typeof savedUI.gitRepo === 'string' ? savedUI.gitRepo : 'work';
 let gitLoading = null;
+let gitLoadId = 0; // bumped when the brain changes: a load started before it no longer owns `gitLoading`
 let gitSelected = null;
 let gitDiffRequest = 0;
 const gitRowSelections = new WeakMap();
@@ -1016,6 +1241,7 @@ function loadGit() {
   ids.gitStatus.textContent = gitLoaded ? 'Actualisation…' : 'Chargement…';
   ids.gitStatus.classList.remove('git-status-error');
   if (!gitLoaded) ids.gitRepos.textContent = 'Chargement des dépôts…';
+  const loadId = gitLoadId;
   gitLoading = (async () => {
     try {
       gitRepos = (await request('/api/git')).repos;
@@ -1027,6 +1253,7 @@ function loadGit() {
         showGitDetail({message: 'Ce changement n\'est plus présent. Choisis un autre fichier ou commit.'});
       } else if (gitSelected) loadGitDiff();
     } catch (error) {
+      if (error.stale || loadId !== gitLoadId) return;
       ids.gitStatus.textContent = 'Échec';
       ids.gitStatus.classList.add('git-status-error');
       if (!gitLoaded) {
@@ -1035,7 +1262,7 @@ function loadGit() {
         ids.gitRepos.replaceChildren(message);
       } else showToast(`Git : ${error.message}`);
     } finally {
-      gitLoading = null;
+      if (loadId === gitLoadId) gitLoading = null;
     }
   })();
   return gitLoading;
@@ -1179,6 +1406,7 @@ async function refresh() {
     render();
     restoreListScrolls(scrolls);
   } catch (error) {
+    if (error.stale) return;
     ids.errorBanner.textContent = error.message;
     ids.errorBanner.hidden = false;
   }
@@ -1513,7 +1741,7 @@ async function startDocEdit() {
     renderDocPane();
     ids.docEditor.focus();
   } catch (error) {
-    setDocError(error.status === 404 ? 'Cette note n’existe plus.' : error.message);
+    if (!error.stale) setDocError(error.status === 404 ? 'Cette note n’existe plus.' : error.message);
   } finally {
     ids.docEdit.disabled = false;
   }
@@ -1934,7 +2162,38 @@ ids.resetFilters.addEventListener('click', () => {
   ids.searchInput.focus();
 });
 ids.toolSearch.addEventListener('input', () => { filterTools(); saveUIState(); });
-document.getElementById('refreshButton').addEventListener('click', refresh);
+document.getElementById('refreshButton').addEventListener('click', async () => {
+  if (!await loadBrains()) refresh();
+});
+ids.brainButton.addEventListener('click', () => { if (brainMenuOpen()) closeBrainMenu(); else openBrainMenu(); });
+ids.brainButton.addEventListener('keydown', event => {
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openBrainMenu(); }
+});
+ids.brainMenu.addEventListener('keydown', event => {
+  const key = event.key;
+  if (key === 'ArrowDown') setBrainActive(brainMenuIndex + 1);
+  else if (key === 'ArrowUp') setBrainActive(brainMenuIndex - 1);
+  else if (key === 'Home') setBrainActive(0);
+  else if (key === 'End') setBrainActive(brains.length - 1);
+  else if (key === 'Enter' || key === ' ') chooseBrain(ids.brainMenu.children[brainMenuIndex]?.dataset.brain);
+  else if (key === 'Escape') closeBrainMenu();
+  else if (key === 'Tab') closeBrainMenu(false);
+  else if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
+    // Type-ahead: the next brain whose name starts with the typed letter.
+    const letter = key.toLocaleLowerCase('fr');
+    const ordered = [...brains.keys()].map(offset => (brainMenuIndex + 1 + offset) % brains.length);
+    const next = ordered.find(position => (brains[position].label || brains[position].name).toLocaleLowerCase('fr').startsWith(letter));
+    if (next !== undefined) setBrainActive(next);
+    return;
+  } else return;
+  event.preventDefault();
+});
+ids.brainMenu.addEventListener('focusout', event => {
+  if (!ids.brainSwitch.contains(event.relatedTarget)) closeBrainMenu(false);
+});
+document.addEventListener('pointerdown', event => {
+  if (brainMenuOpen() && !ids.brainSwitch.contains(event.target)) closeBrainMenu(false);
+});
 ids.undoButton.addEventListener('click', undoLast);
 document.getElementById('quitButton').addEventListener('click', async () => {
   const button = document.getElementById('quitButton');
@@ -1988,5 +2247,8 @@ ids.ownerFilter.value = savedUI.owner === 'mine' ? 'mine' : '';
 ids.scopeFilter.value = ['active', 'all', 'closed'].includes(savedUI.scope) ? savedUI.scope : 'active';
 ids.toolSearch.value = typeof savedUI.toolSearch === 'string' ? savedUI.toolSearch : '';
 ids.docQuery.value = typeof savedUI.docQuery === 'string' ? savedUI.docQuery : '';
-setView(view, false);
-refresh();
+// The brain is known before anything is requested, so that no view starts on the wrong one.
+loadBrains({initial: true}).finally(() => {
+  setView(view, false);
+  refresh();
+});

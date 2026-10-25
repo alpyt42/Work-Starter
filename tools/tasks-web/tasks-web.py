@@ -9,6 +9,10 @@
 
 Run from Work with: uv run tools/tasks-web/tasks-web.py
 Only listens on 127.0.0.1. The Markdown registers remain the source of truth.
+
+A Work can hold several brains (`brain`, `brain-<name>`): the page switches between them without a
+restart, and every /api route takes an optional `brain=<name>` (a discovered name, never a path).
+`--brain` only chooses the default brain. WORK_DIR points to another Work root.
 """
 
 from __future__ import annotations
@@ -40,10 +44,15 @@ from zoneinfo import ZoneInfo
 from markdown_it import MarkdownIt
 from markdown_it.common.utils import escapeHtml
 
-WORK = Path(__file__).resolve().parents[2]
+# The checkout that holds tools/ (the scripts run from here), and the Work root whose brains are served:
+# WORK_DIR when set (like the other tools), else the same checkout.
+TOOLS_ROOT = Path(__file__).resolve().parents[2]
+WORK = Path(os.environ.get("WORK_DIR", TOOLS_ROOT)).resolve()
+DEFAULT_BRAIN = "brain"
+BRAIN_NAME_RE = re.compile(r"^brain(-[a-z0-9][a-z0-9-]*)?$")
 # Every write to an action register goes through tools/brain/action.py, run as a command (the same tool
 # the agents use); reads import it, so the parsing is shared too.
-ACTION_SCRIPT = WORK / "tools/brain/action.py"
+ACTION_SCRIPT = TOOLS_ROOT / "tools/brain/action.py"
 _spec = importlib.util.spec_from_file_location("brain_action", ACTION_SCRIPT)
 assert _spec and _spec.loader
 action_tool = importlib.util.module_from_spec(_spec)
@@ -107,7 +116,7 @@ def run_tool(tool_id: str, brain: Path) -> dict:
     environment["BRAIN_DIR"] = str(brain)
     try:
         result = subprocess.run(
-            [uv, "run", str(WORK / "tools" / script), *args], cwd=WORK, env=environment,
+            [uv, "run", str(TOOLS_ROOT / "tools" / script), *args], cwd=WORK, env=environment,
             capture_output=True, text=True, errors="replace", timeout=90, check=False,
         )
     except subprocess.TimeoutExpired:
@@ -227,6 +236,45 @@ def note_summary(text: str, fallback: str) -> tuple[str, str]:
 parse_action = action_tool.parse_action
 
 
+def discover_brains(work: Path) -> list[Path]:
+    """Brains at the Work root, `brain/` first then by name.
+
+    Same rule as tools/brain/brain-state.py and tools/machine/work_config.py: a folder named `brain` or
+    `brain-<name>` that holds an AGENTS.md and a .data/ folder (a test compares the three).
+    """
+    try:
+        entries = list(work.iterdir())
+    except OSError:
+        return []
+    found = [path for path in entries if BRAIN_NAME_RE.fullmatch(path.name) and path.is_dir()
+             and (path / "AGENTS.md").is_file() and (path / ".data").is_dir()]
+    return sorted(found, key=lambda path: (path.name != DEFAULT_BRAIN, path.name))
+
+
+def brain_label(name: str) -> str:
+    """Short name shown in the page: `brain-perso` -> `Perso`, `brain-acme-corp` -> `Acme-corp`, `brain` -> `Brain`.
+
+    The folder name stays the technical value (`brain=`, local storage, API); only the label is displayed.
+    A name outside the `brain` / `brain-<name>` convention (a default brain given with --brain) just gets an initial capital.
+    """
+    short = name.removeprefix(DEFAULT_BRAIN + "-") or name
+    return short[:1].upper() + short[1:]
+
+
+def brain_boundary(brain: Path) -> dict[str, str]:
+    """`scope` and `description` of <brain>/.data/brain.json; empty strings when the file is missing or unreadable."""
+    values = {"scope": "", "description": ""}
+    try:
+        declared = json.loads((brain / ".data/brain.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return values
+    if isinstance(declared, dict):
+        for key in values:
+            if isinstance(declared.get(key), str):
+                values[key] = " ".join(declared[key].split())
+    return values
+
+
 GIT_OUTPUT_LIMIT = 300_000
 GIT_COMMIT_LIMIT = 2
 GIT_READ_CAP = 1_000_000
@@ -236,8 +284,9 @@ GIT_SENSITIVE = (".env", ".env.*", "*.pem", "*.key", "*.p12", "*.pfx", "id_rsa*"
 GIT_STRIPPED_ENV = ("GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_OBJECT_DIRECTORY", "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_COMMON_DIR", "GIT_NAMESPACE")
 
 
-def default_git_repos(brain: Path) -> list[tuple[str, str, Path]]:
-    return [("work", "Work", WORK), ("brain", "brain", brain)]
+def default_git_repos(brain: Path, work: Path | None = None, label: str | None = None) -> list[tuple[str, str, Path]]:
+    # The second repository keeps the id `brain` whichever brain is selected; its label is the brain's name.
+    return [("work", "Work", work if work is not None else WORK), ("brain", label or brain.name, brain)]
 
 
 def is_sensitive(path: str) -> bool:
@@ -1327,19 +1376,38 @@ class Handler(BaseHTTPRequestHandler):
     def _host_ok(self) -> bool:
         return self.headers.get("Host") in {f"127.0.0.1:{self.server.server_port}", f"localhost:{self.server.server_port}"}
 
+    def _store(self) -> Store:
+        """The brain selected by the optional `brain=<name>` query parameter (default brain when absent)."""
+        values = parse_qs(urlsplit(self.path).query, keep_blank_values=True).get("brain")
+        if values is None:
+            return self.server.store
+        if len(values) != 1:
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Paramètre brain invalide.")
+        return self.server.store_for(values[0])
+
     def do_GET(self) -> None:
         if not self._host_ok():
             self._json(HTTPStatus.FORBIDDEN, {"error": "Hôte refusé."})
             return
         path = urlsplit(self.path).path
+        if path == "/api/brains":
+            self._json(HTTPStatus.OK, self.server.brain_list())
+            return
+        store = self.server.store
+        if path.startswith("/api/"):
+            try:
+                store = self._store()
+            except TaskError as error:
+                self._json(error.status, {"error": error.message})
+                return
         if path == "/api/actions":
-            self._json(HTTPStatus.OK, self.server.store.snapshot())
+            self._json(HTTPStatus.OK, store.snapshot())
             return
         match = re.fullmatch(r"/api/actions/([A-Z]{2,5}-\d{3})/details", path)
         if match:
             try:
                 with WRITE_LOCK:
-                    result = self.server.store.details(match.group(1))
+                    result = store.details(match.group(1))
                 self._json(HTTPStatus.OK, result)
             except TaskError as error:
                 self._json(error.status, {"error": error.message})
@@ -1348,17 +1416,17 @@ class Handler(BaseHTTPRequestHandler):
             self._json(HTTPStatus.OK, {"tools": tool_catalog()})
             return
         if path in {"/api/notes", "/api/notes/content"}:
-            self._notes_request(path)
+            self._notes_request(path, store)
             return
         if path in {"/api/search", "/api/docs/render", "/api/docs/recent"}:
-            self._docs_request(path)
+            self._docs_request(path, store)
             return
         if path in {"/api/git", "/api/git/diff", "/api/git/commit"}:
-            self._git_request(path)
+            self._git_request(path, store)
             return
         if path == "/api/undo":
             with WRITE_LOCK:
-                self._json(HTTPStatus.OK, self.server.store.undo_state())
+                self._json(HTTPStatus.OK, store.undo_state())
             return
         assets = {"/": ("index.html", "text/html; charset=utf-8"), "/app.css": ("app.css", "text/css; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8")}
         if path not in assets:
@@ -1370,23 +1438,23 @@ class Handler(BaseHTTPRequestHandler):
             data = data.replace(b"__CSRF_TOKEN__", self.server.token.encode("ascii"))
         self._send(HTTPStatus.OK, data, mime)
 
-    def _notes_request(self, path: str) -> None:
+    def _notes_request(self, path: str, store: Store) -> None:
         try:
             with WRITE_LOCK:
                 if path == "/api/notes":
-                    result = self.server.store.notes()
+                    result = store.notes()
                 else:
                     values = parse_qs(urlsplit(self.path).query, keep_blank_values=True).get("id", [])
                     if len(values) != 1:
                         raise TaskError(HTTPStatus.BAD_REQUEST, "Paramètre id invalide.")
-                    result = self.server.store.note_content(values[0])
+                    result = store.note_content(values[0])
             self._json(HTTPStatus.OK, result)
         except TaskError as error:
             self._json(error.status, {"error": error.message})
         except OSError:
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Lecture des notes impossible."})
 
-    def _docs_request(self, path: str) -> None:
+    def _docs_request(self, path: str, store: Store) -> None:
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
 
         def one(name: str, default: str | None = None) -> str:
@@ -1396,18 +1464,18 @@ class Handler(BaseHTTPRequestHandler):
             return values[0]
         try:
             if path == "/api/search":
-                result = self.server.store.search(one("q", ""), one("project", ""))
+                result = store.search(one("q", ""), one("project", ""))
             elif path == "/api/docs/recent":
-                result = self.server.store.recent_docs(one("project", ""))
+                result = store.recent_docs(one("project", ""))
             else:
-                result = self.server.store.render_doc(one("id"))
+                result = store.render_doc(one("id"))
             self._json(HTTPStatus.OK, result)
         except TaskError as error:
             self._json(error.status, {"error": error.message})
         except OSError:
             self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Lecture des documents impossible."})
 
-    def _git_request(self, path: str) -> None:
+    def _git_request(self, path: str, store: Store) -> None:
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
         try:
             def one(name: str) -> str:
@@ -1415,7 +1483,7 @@ class Handler(BaseHTTPRequestHandler):
                 if len(values) != 1:
                     raise TaskError(HTTPStatus.BAD_REQUEST, f"Paramètre {name} invalide.")
                 return values[0]
-            repos = self.server.git_repos
+            repos = self.server.git_repos_for(store)
             if path == "/api/git":
                 result = git_overview(repos)
             elif path == "/api/git/diff":
@@ -1450,8 +1518,8 @@ class Handler(BaseHTTPRequestHandler):
                 raise TaskError(HTTPStatus.BAD_REQUEST, "Objet JSON requis.")
             path = urlsplit(self.path).path
             status = HTTPStatus.OK
+            store = self._store()
             with WRITE_LOCK:
-                store = self.server.store
                 if kind == "create":
                     status, result = HTTPStatus.CREATED, store.create(payload)
                 elif kind == "update":
@@ -1536,10 +1604,11 @@ class Handler(BaseHTTPRequestHandler):
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict) or set(payload) != {"id"} or not isinstance(payload["id"], str):
                 raise TaskError(HTTPStatus.BAD_REQUEST, "Outil invalide.")
+            brain = self._store().brain
             if not TOOL_LOCK.acquire(blocking=False):
                 raise TaskError(HTTPStatus.CONFLICT, "Un outil est déjà en cours d'exécution.")
             try:
-                result = run_tool(payload["id"], self.server.store.brain)
+                result = run_tool(payload["id"], brain)
             finally:
                 TOOL_LOCK.release()
             self._json(HTTPStatus.OK, result)
@@ -1557,16 +1626,71 @@ class Handler(BaseHTTPRequestHandler):
 
 
 class TaskServer(ThreadingHTTPServer):
-    def __init__(self, address: tuple[str, int], store: Store, git_repos: list[tuple[str, str, Path]] | None = None) -> None:
+    """One server, several brains: `store` is the default brain's Store, the others are built on first use.
+
+    `work` is the Work root whose brains are offered (default: WORK). `git_repos` replaces the Git
+    repositories of the default brain only (tests); the other brains get Work and their own folder.
+    """
+
+    def __init__(self, address: tuple[str, int], store: Store, git_repos: list[tuple[str, str, Path]] | None = None,
+                 work: Path | None = None) -> None:
         super().__init__(address, Handler)
+        self.work = (work if work is not None else WORK).resolve()
         self.store = store
-        self.git_repos = git_repos if git_repos is not None else default_git_repos(store.brain)
+        self._git_repos = git_repos
+        self._stores: dict[str, Store] = {}
+        self._stores_lock = threading.Lock()
         self.token = secrets.token_urlsafe(32)
+
+    def _catalog(self) -> tuple[dict[str, Path], str]:
+        """(brain name -> folder, name of the default brain), rediscovered on every call.
+
+        The default brain (`--brain`) is the discovered brain with the same folder; when it is none of them it
+        is offered first, and it hides a discovered brain that has the same name.
+        """
+        found = {path.name: path for path in discover_brains(self.work)}
+        default = self.store.brain
+        for name, path in found.items():
+            if path.resolve() == default:
+                return found, name
+        return {default.name: default, **{name: path for name, path in found.items() if name != default.name}}, default.name
+
+    def brain_list(self) -> dict:
+        brains, default = self._catalog()
+        return {"brains": [{"name": name, "label": brain_label(name), **brain_boundary(path), "default": name == default}
+                           for name, path in brains.items()],
+                "default": default}
+
+    def store_for(self, name: str | None) -> Store:
+        """The Store of a discovered brain name; None is the default brain. Anything else (a path included) is refused."""
+        if name is None:
+            return self.store
+        brains, default = self._catalog()
+        if name == default:
+            return self.store
+        path = brains.get(name)
+        if path is None:
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Brain inconnu.")
+        with self._stores_lock:
+            store = self._stores.get(name)
+            if store is None or store.brain != path.resolve():
+                try:
+                    store = self._stores[name] = Store(path)
+                except ValueError:
+                    raise TaskError(HTTPStatus.NOT_FOUND, "Ce brain n'a pas de dossier projects.") from None
+            return store
+
+    def git_repos_for(self, store: Store) -> list[tuple[str, str, Path]]:
+        if store is self.store:
+            return self._git_repos if self._git_repos is not None else default_git_repos(store.brain, self.work, self._catalog()[1])
+        label = next((name for name, path in self._catalog()[0].items() if path.resolve() == store.brain), None)
+        return default_git_repos(store.brain, self.work, label)
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--brain", type=Path, default=WORK / "brain", help="dossier brain local (défaut : Work/brain)")
+    parser.add_argument("--brain", type=Path, default=WORK / DEFAULT_BRAIN,
+                        help="brain par défaut (défaut : Work/brain) ; les autres brains de Work se choisissent dans la page")
     parser.add_argument("--port", type=int, default=8765, help="port local (défaut : 8765)")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
