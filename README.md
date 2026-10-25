@@ -15,7 +15,7 @@ The industrialisation and release-update roadmap is tracked in [`MIGRATION-TODO.
 | `tests/`                                  | Tests of the tools                                                            | This repository                      |
 | `work-config.example.json`                | Public defaults of the skill configuration                                    | This repository                      |
 | `.claude/`                                | Claude Code settings (`settings.json`, empty); `skills/` is generated         | This repository (`skills/` ignored)  |
-| `brain/`, `brain-perso/`, `brain-<name>/` | Private memories, one trust boundary each (`brain/` is the default)           | One separate private repository each |
+| `brain/`, `brain-perso/`, `brain-<name>/` | Private memories, one trust boundary each (see the default brain below)       | One separate private repository each |
 | `repos/`                                  | Code clones                                                                   | Each clone has its own repository    |
 | `artifacts/`                              | Human-readable outputs and large inputs                                       | Local files, ignored                 |
 | `agents/`                                 | Disposable scratch                                                            | Local files, ignored                 |
@@ -39,8 +39,8 @@ Without `--brain`, a blank brain is created locally from `kit/brain/seed/` with 
 2. Clone this repository as `Work/` (or copy it with a fresh history) using the Git identity meant for your personal tooling.
 3. Get your private brain: create a blank one with `uv run tools/brain/new-brain.py brain` (from `kit/brain/seed/`) and give it a private remote yourself, or clone an existing one into `brain/` (bootstrap does it when `BRAIN_REMOTE=<private-brain-git-url>` is set). Other brains are created the same way (see [Brains](#brains-and-trust-boundaries)).
 4. Run `./tools/machine/bootstrap.sh` from `Work/` (with `BRAIN_REMOTE` set when `brain/` is not cloned yet), then check that each brain is the intended private repository and that `./tools/machine/check-links.sh` passes.
-5. Clone each other brain listed under `brains` in `brain/.data/local-paths.json` yourself, with the identity of its own boundary; bootstrap clones only `brain/`. Run `bootstrap.sh` again to install the Git hooks in it.
-6. Adjust the input folders in `brain/.data/local-paths.json` (relative to the home directory) if this machine stores transcripts or recordings elsewhere.
+5. Clone each other brain listed under `brains` in the default brain's `.data/local-paths.json` yourself, with the identity of its own boundary; bootstrap clones only `brain/`, and only when no brain exists yet. Run `bootstrap.sh` again to install the Git hooks in it.
+6. Adjust the input folders in the default brain's `.data/local-paths.json` (relative to the home directory) if this machine stores transcripts or recordings elsewhere.
 7. Restore `artifacts/` from your own backup if you need past deliverables.
 8. Run `uv run tools/machine/doctor.py`: it reports, read-only and without network access, missing commands and brains, repositories without upstream or with unpushed commits, brains whose remote or e-mail leaves their declared boundary, a skill configuration changed since the last update, skills not adopted or not installed, broken skill links, missing input folders, unreadable `.data/*.json` states, and the number of files in the unbacked `artifacts/`.
 
@@ -48,7 +48,7 @@ Without `--brain`, a blank brain is created locally from `kit/brain/seed/` with 
 
 ## Brains and trust boundaries
 
-A brain is a private Git repository at the Work root named `brain` (the default) or `brain-<name>` (for example `brain-perso`). Each one is a trust boundary: personal data goes in a brain pushed to a personal Git account, employer or client data in a brain pushed to the employer's Git. Create one from the seed and declare its boundary at once:
+A brain is a private Git repository at the Work root named `brain` or `brain-<name>` (for example `brain-perso`). The default brain, the one the tools act on when none is named, is the brain named by `"defaultBrain"` in the ignored `work-config.local.json`, else `brain/`, else the only brain at the root (`uv run tools/machine/work_config.py default-brain` prints it). Each one is a trust boundary: personal data goes in a brain pushed to a personal Git account, employer or client data in a brain pushed to the employer's Git. Create one from the seed and declare its boundary at once:
 
 ```bash
 uv run tools/brain/new-brain.py brain-perso \
@@ -71,10 +71,10 @@ Where data goes: each brain holds its own projects, people, actions, sources and
 This repository ships no skill. Each brain holds its own:
 
 - **Own skills** live in `<brain>/skills/<name>/` (`SKILL.md`, optional `scripts/`, `references/`, `assets/`). A skill folder containing an empty `.install-as-copy` file is installed as a copy; the others are linked. A private skill sits in the private brain whose data it touches, and its state goes in that brain's `.data/`.
-- **Third-party skills**: install one with `npx skills add <source>`, then run `uv run tools/machine/work_config.py adopt [--brain <name>]`. It records the skill in that brain's `.data/work-config.json` (`brain` by default), so that it follows the brain to your other machines. Commit and push the brain yourself.
+- **Third-party skills**: install one with `npx skills add <source>`, then run `uv run tools/machine/work_config.py adopt [--brain <name>]`. It records the skill in that brain's `.data/work-config.json` (the default brain unless named), so that it follows the brain to your other machines. Commit and push the brain yourself.
 - **Disable a skill on one machine** in the ignored `work-config.local.json`: `{"version": 1, "skills": {"disabled": ["<skill>"]}}`, then run `tools/machine/update.sh`. The local file may also override a third-party entry.
 
-Configuration layers, the last one winning: `work-config.example.json` (public defaults), each brain's `.data/work-config.json` (`brain/` first, then the others by name), `work-config.local.json`. Disabled names are the union of all layers; the same own-skill name in two brains, or a name both own and third-party, is an error. `work_config.py` also offers `check`, `list-brains`, `list-own`, `list-third-party`, `list-catalog`, `lock`, `stamp`, and `status`. Codex discovers skills in `.agents/skills/` and Claude in `.claude/skills/`; both are generated by `tools/machine/update.sh` (links to brain skills, copies for `.install-as-copy`, third-party skills installed from the generated `skills-lock.json`) and never edited by hand.
+Configuration layers, the last one winning: `work-config.example.json` (public defaults), each brain's `.data/work-config.json` (the default brain first, then the others by name), `work-config.local.json` (the only layer that accepts `"defaultBrain"`). Disabled names are the union of all layers; the same own-skill name in two brains, or a name both own and third-party, is an error. `work_config.py` also offers `check`, `list-brains`, `default-brain`, `list-own`, `list-third-party`, `list-catalog`, `lock`, `stamp`, and `status`. Codex discovers skills in `.agents/skills/` and Claude in `.claude/skills/`; both are generated by `tools/machine/update.sh` (links to brain skills, copies for `.install-as-copy`, third-party skills installed from the generated `skills-lock.json`) and never edited by hand.
 
 Client-specific configuration belongs in the `.data/` of the brain it concerns. Credentials never go in a brain or in this repository: use the environment or an ignored `.env`.
 
@@ -92,7 +92,7 @@ In `Work/`, run `git pull starter main` (the `starter` remote is set by `install
 
 ## Repositories
 
-Client clone URLs are versioned in the private `brain/.data/client-repos.json`. Use `uv run tools/repos/client-repos.py list` to see them, `check` to compare existing `origin` URLs and show each clone's effective author and key, and `clone <client>` to recreate a client's clones. `clone` is a plain `git clone`: author and key come from the home rules of step 1, and the command refuses to clone when no rule gives an author for the destination. `--identity` and `--author-*` remain available for a one-off override written to the clone. This repository stores only the generic tool.
+Client clone URLs are versioned in the private `.data/client-repos.json` of the default brain. Use `uv run tools/repos/client-repos.py list` to see them, `check` to compare existing `origin` URLs and show each clone's effective author and key, and `clone <client>` to recreate a client's clones. `clone` is a plain `git clone`: author and key come from the home rules of step 1, and the command refuses to clone when no rule gives an author for the destination. `--identity` and `--author-*` remain available for a one-off override written to the clone. This repository stores only the generic tool.
 
 ## Obsidian
 

@@ -11,14 +11,21 @@ holding an AGENTS.md and a .data/ folder) is a trust boundary that can hold:
   "skillPath": ..., "computedHash": ...}}, "disabled": []}}`.
 
 Layers, the later one wins: (1) `work-config.example.json` (public defaults),
-(2) each brain's work-config.json, `brain/` first then the others by name,
+(2) each brain's work-config.json, the default brain first then the others by name,
 (3) the ignored `work-config.local.json` (same schema, machine-specific).
 A third-party name defined in two layers must have identical entries, except that
 the local layer may override. An own-skill name found in two brains is an error.
 `disabled` names, unioned over all layers, are not exposed to agents.
 
-Commands: check, list-brains, list-own, list-third-party, list-catalog, lock, adopt,
-stamp, status. `lock` writes the ignored skills-lock.json and refuses to overwrite
+The default brain, the one the tools act on when none is named, is chosen by
+`default_brain(root)`, the single place of the rule: (1) `"defaultBrain": "<name>"` in
+`work-config.local.json` (the only layer that accepts it; an invalid name, or a brain
+absent from the root, is an error), else (2) `brain/` when it is a brain, else (3) the
+only brain at the root, else none. The other tools reuse this function.
+
+Commands: check, list-brains, default-brain, list-own, list-third-party, list-catalog,
+lock, adopt, stamp, status. `default-brain` prints the folder name of the default brain
+(nothing and exit 1 when there is none). `lock` writes the ignored skills-lock.json and refuses to overwrite
 entries that no layer knows (installed with `npx skills add`): `adopt` records them
 in a brain first. `stamp` writes .work-state.json with a hash of the resolved
 configuration (third-party entries, disabled names, own skills with brain and mode);
@@ -91,14 +98,48 @@ def emit(lines: list[str]) -> None:
         print("\n".join(lines))
 
 
-def discover_brains() -> list[Path]:
-    """Brains at the Work root (same rule as tools/brain/brain-state.py), `brain/` first."""
-    found = [
-        path
-        for path in ROOT.iterdir()
-        if path.is_dir() and BRAIN_NAME.fullmatch(path.name) and (path / "AGENTS.md").is_file() and (path / ".data").is_dir()
-    ]
-    return sorted(found, key=lambda path: (path.name != DEFAULT_BRAIN, path.name))
+def check_brain_name(name: Any, label: str) -> str:
+    if not isinstance(name, str) or not BRAIN_NAME.fullmatch(name):
+        raise ConfigError(f"{label}: invalid brain name {name!r} (`brain` or `brain-<name>`: lowercase letters, digits and -)")
+    return name
+
+
+def is_brain(path: Path) -> bool:
+    """A folder named `brain` or `brain-<name>` that holds an AGENTS.md and a .data/ folder."""
+    return BRAIN_NAME.fullmatch(path.name) is not None and path.is_dir() and (path / "AGENTS.md").is_file() and (path / ".data").is_dir()
+
+
+def find_brains(root: Path) -> list[Path]:
+    """Every brain at the Work root, by name."""
+    return sorted((path for path in root.iterdir() if is_brain(path)), key=lambda path: path.name)
+
+
+def default_brain(root: Path) -> Path | None:
+    """The brain the tools act on when none is named; None when the root has none, or several and no choice.
+
+    1. `"defaultBrain": "<name>"` in `<root>/work-config.local.json`: that brain (ConfigError if the
+       name is invalid or is not a brain at the root);
+    2. else `<root>/brain` when it is a brain;
+    3. else the only brain at the root;
+    4. else None.
+    """
+    local = root / LOCAL.name
+    data = read_json(local) if local.is_file() else None
+    if isinstance(data, dict) and "defaultBrain" in data:
+        name = check_brain_name(data["defaultBrain"], f"{LOCAL.name}: defaultBrain")
+        if not is_brain(root / name):
+            raise ConfigError(f"{LOCAL.name}: defaultBrain {name} is not a brain at the Work root (a folder holding AGENTS.md and .data/)")
+        return root / name
+    if is_brain(root / DEFAULT_BRAIN):
+        return root / DEFAULT_BRAIN
+    found = find_brains(root)
+    return found[0] if len(found) == 1 else None
+
+
+def discover_brains(root: Path = ROOT) -> list[Path]:
+    """Brains at the Work root: the default brain first, then the others by name."""
+    default = default_brain(root)
+    return sorted(find_brains(root), key=lambda path: (path != default, path.name))
 
 
 def check_name(name: Any, label: str) -> str:
@@ -116,11 +157,18 @@ def check_entry(entry: Any, label: str) -> dict[str, Any]:
     return entry
 
 
-def parse_layer(data: Any, label: str) -> tuple[dict[str, dict[str, Any]], list[str]]:
-    """Validate one layer; return its third-party entries and disabled names."""
+def parse_layer(data: Any, label: str, local: bool = False) -> tuple[dict[str, dict[str, Any]], list[str]]:
+    """Validate one layer; return its third-party entries and disabled names.
+
+    `defaultBrain` is a choice of one machine: only the local layer accepts it.
+    """
     if not isinstance(data, dict) or data.get("version") != 1:
         raise ConfigError(f"{label}: must be an object with version 1")
-    unknown = sorted(set(data) - {"version", "skills"})
+    if "defaultBrain" in data:
+        if not local:
+            raise ConfigError(f"{label}: defaultBrain is only accepted in {LOCAL.name}")
+        check_brain_name(data["defaultBrain"], f"{label}: defaultBrain")
+    unknown = sorted(set(data) - {"version", "skills"} - ({"defaultBrain"} if local else set()))
     if unknown:
         raise ConfigError(f"{label}: unknown key(s): {', '.join(unknown)}")
     skills = data.get("skills", {})
@@ -150,7 +198,7 @@ def parse_layer(data: Any, label: str) -> tuple[dict[str, dict[str, Any]], list[
 def layer_files() -> list[tuple[str, Path]]:
     """Existing configuration files in precedence order (the last one wins)."""
     files = [(rel(EXAMPLE), EXAMPLE)]
-    files += [(rel(b / ".data/work-config.json"), b / ".data/work-config.json") for b in discover_brains()]
+    files += [(rel(b / ".data/work-config.json"), b / ".data/work-config.json") for b in discover_brains(ROOT)]
     files.append((rel(LOCAL), LOCAL))
     return [(label, path) for label, path in files if path.is_file()]
 
@@ -158,7 +206,7 @@ def layer_files() -> list[tuple[str, Path]]:
 def own_skills() -> dict[str, dict[str, Any]]:
     """Skills found in `<brain>/skills/`, by name; the same name in two brains is an error."""
     own: dict[str, dict[str, Any]] = {}
-    for brain in discover_brains():
+    for brain in discover_brains(ROOT):
         folder = brain / "skills"
         if not folder.is_dir():
             continue
@@ -178,7 +226,7 @@ def resolve() -> dict[str, Any]:
     origin: dict[str, str] = {}
     disabled: set[str] = set()
     for label, path in layer_files():
-        layer_third_party, layer_disabled = parse_layer(read_json(path), label)
+        layer_third_party, layer_disabled = parse_layer(read_json(path), label, local=path == LOCAL)
         for name, entry in layer_third_party.items():
             if name in third_party and third_party[name] != entry and path != LOCAL:
                 raise ConfigError(f"third-party skill {name} is defined differently in {origin[name]} and {label}")
@@ -236,8 +284,15 @@ def lock(config: dict[str, Any]) -> None:
     print(f"{rel(LOCK)} written: {len(skills)} third-party skill(s)")
 
 
-def adopt(config: dict[str, Any], brain_name: str) -> None:
-    brains = {brain.name: brain for brain in discover_brains()}
+def adopt(config: dict[str, Any], brain_name: str | None) -> None:
+    brains = {brain.name: brain for brain in discover_brains(ROOT)}
+    if brain_name is None:
+        default = default_brain(ROOT)
+        if default is None:
+            raise ConfigError(
+                f"no default brain (found: {', '.join(brains) or 'none'}): pass --brain NAME or set defaultBrain in {rel(LOCAL)}"
+            )
+        brain_name = default.name
     if brain_name not in brains:
         raise ConfigError(f"no brain named {brain_name} (found: {', '.join(brains) or 'none'})")
     unknown = unknown_lock_entries(config)
@@ -283,7 +338,8 @@ def main() -> int:
     sub = parser.add_subparsers(dest="command", required=True)
     for name, text in (
         ("check", "validate every layer and the skill names"),
-        ("list-brains", "brains present at the Work root"),
+        ("list-brains", "brains present at the Work root, the default brain first"),
+        ("default-brain", "folder name of the default brain (nothing and exit 1 when there is none)"),
         ("list-own", "enabled own skills: name, brain, link|copy"),
         ("list-third-party", "enabled third-party skills"),
         ("list-catalog", "every known third-party skill, enabled or not"),
@@ -293,12 +349,18 @@ def main() -> int:
     ):
         sub.add_parser(name, help=text)
     adopt_parser = sub.add_parser("adopt", help="record the skills of skills-lock.json unknown to every layer")
-    adopt_parser.add_argument("--brain", default=DEFAULT_BRAIN, help="brain that receives them (default: brain)")
+    adopt_parser.add_argument("--brain", default=None, help="brain that receives them (default: the default brain)")
     args = parser.parse_args()
 
     try:
         if args.command == "list-brains":
-            emit([brain.name for brain in discover_brains()])
+            emit([brain.name for brain in discover_brains(ROOT)])
+            return 0
+        if args.command == "default-brain":
+            brain = default_brain(ROOT)
+            if brain is None:
+                return 1
+            print(brain.name)
             return 0
         config = resolve()
         if args.command == "check":

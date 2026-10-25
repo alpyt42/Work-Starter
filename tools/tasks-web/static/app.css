@@ -158,8 +158,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: .6; }
 .brain-button:hover, .brain-button[aria-expanded="true"] { background: var(--bg-sunken); }
 .brain-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .brain-name { font-size: var(--fs-brain); font-weight: 600; line-height: 1.3; letter-spacing: -.005em; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.brain-scope { font-size: var(--fs-xs); color: var(--text-muted); line-height: 1.35; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.brain-scope:empty { display: none; }
 .brain-caret { color: var(--text-muted); }
 .brain-menu {
   position: absolute; z-index: 50; top: calc(100% + 6px); left: 0; right: -32px; max-height: min(60vh, 22rem); overflow-y: auto;
@@ -172,7 +170,6 @@ input:disabled, select:disabled, textarea:disabled { opacity: .6; }
 .brain-swatch { flex: none; width: 4px; height: 26px; border-radius: 2px; background: var(--accent); }
 .brain-option-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; }
 .brain-option-name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.brain-option-scope { font-size: var(--fs-xs); color: var(--text-muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .brain-check { flex: none; width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.8; stroke-linecap: round; stroke-linejoin: round; visibility: hidden; }
 .brain-option[aria-selected="true"] .brain-check { visibility: visible; }
 

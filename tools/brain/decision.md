@@ -35,11 +35,11 @@ uv run tools/brain/decision.py supersede "Workshop schedule" --by "Corrected sch
 - `REF`: number from the `list` of that project, or a case-insensitive substring of the title. Several decisions match: exit code 4 with the list of candidates; none: exit code 3.
 - `propose`: `--title`, `--decision`, `--source` required; `--context`, `--consequences`, `--date` (default: today, Paris time) optional. Creates `state/decisions.md` (title, quote, three sections) if it is missing. Refuses a title that is already present.
 - `accept`: only a proposed decision. Status `accepted` in the title (added if it was missing), line `- **Accepted:** OWNER, DATE.` (`--by`, `--note`).
-- `reject`: only a proposed decision. Status `rejected`, line `- **Rejected:** OWNER, DATE (reason).` (`--by`, `--reason`). Without `--by`, the name comes from `BRAIN_OWNER` or from `owner` in `brain/.data/doctor.json`.
+- `reject`: only a proposed decision. Status `rejected`, line `- **Rejected:** OWNER, DATE (reason).` (`--by`, `--reason`). Without `--by`, the name comes from `BRAIN_OWNER` or from `owner` in `<brain>/.data/doctor.json`.
 - `supersede OLD --by NEW`: OLD (proposed or accepted) moves to the top of `Rejected / superseded`, status `superseded`, line `- **Superseded by:** “title of NEW” (DATE).`; NEW stays in place.
 - `--project` accepts the same forms as `action.py` (register path, project folder, `client/mission`, label).
 - Every write accepts `--dry-run` and returns a readable `label` with the resulting block.
-- `--brain PATH` or `BRAIN_DIR` for another brain; `ACTION_NOW="YYYY-MM-DD HH:MM"` freezes the clock (tests).
+- `--brain PATH` or `BRAIN_DIR` for another brain than the default brain of Work (see [tools/README.md](../README.md)); `ACTION_NOW="YYYY-MM-DD HH:MM"` freezes the clock (tests).
 
 ## When the agent uses it
 

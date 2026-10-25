@@ -96,6 +96,42 @@ class BrainStateTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0)
         self.assertIn("brain-asso", result.stderr)
 
+    def test_default_brain_is_the_one_of_the_setting_and_carries_the_shared_config(self) -> None:
+        self.make_brain("brain-initech", {})
+        (self.work / "work-config.local.json").write_text(json.dumps({"version": 1, "defaultBrain": "brain-initech"}), encoding="utf-8")
+        result = self.run_tool("brains")
+        self.assertEqual([line.split("\t")[0] for line in result.stdout.splitlines()], ["brain-initech", "brain", "brain-perso"])
+        # Only the default brain's local-paths.json counts: the one of `brain` is ignored, the expected brain of the other is missing.
+        (self.work / "brain/.data/local-paths.json").write_text(json.dumps({"brains": ["brain-ghost"]}), encoding="utf-8")
+        self.assertEqual(self.run_tool("brains").returncode, 0)
+        (self.work / "brain-initech/.data/local-paths.json").write_text(json.dumps({"brains": ["brain-asso"]}), encoding="utf-8")
+        result = self.run_tool("brains")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("brain-asso", result.stderr)
+
+    def test_renamed_default_brain_is_found_without_a_setting(self) -> None:
+        (self.work / "brain").rename(self.work / "brain-initech")
+        (self.work / "brain-perso").rename(self.work / "brain-other")  # two brains and no `brain/`: no default, by name
+        env = {key: value for key, value in self.env.items() if key != "TRANSCRIPTS_DIR"}
+        self.env = env
+        result = self.run_tool("brains")
+        self.assertEqual([line.split("\t")[0] for line in result.stdout.splitlines()], ["brain-initech", "brain-other"])
+        result = self.run_tool("transcripts", "--new")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("defaultBrain", result.stderr)
+        (self.work / "brain-other").rename(self.work / "gone")  # a single brain: it is the default
+        (self.work / "brain-initech/.data/local-paths.json").write_text(json.dumps({"brains": ["brain-initech"]}), encoding="utf-8")
+        result = self.run_tool("transcripts", "--new")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("transcripts_dir missing from brain-initech/.data/local-paths.json", result.stderr)
+
+    def test_invalid_setting_stops_with_a_clear_message(self) -> None:
+        (self.work / "work-config.local.json").write_text(json.dumps({"version": 1, "defaultBrain": "brain-nope"}), encoding="utf-8")
+        result = self.run_tool("brains")
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("defaultBrain brain-nope is not a brain", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
     def test_unreadable_transcript_folder_reports_access_error(self) -> None:
         spec = importlib.util.spec_from_file_location("brain_state", TOOL)
         module = importlib.util.module_from_spec(spec)

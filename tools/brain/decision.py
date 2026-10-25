@@ -339,7 +339,7 @@ def decision_owner(brain: Path, by: str = "") -> str:
     except (OSError, json.JSONDecodeError, SystemExit):
         raise ActionError(
             "bad_request",
-            "Unknown owner: use --by, BRAIN_OWNER or “owner” in brain/.data/doctor.json.",
+            f"Unknown owner: use --by, BRAIN_OWNER or “owner” in {brain.name}/.data/doctor.json.",
         ) from None
 
 
@@ -383,7 +383,7 @@ def supersede(brain: Path, project: str, old: str, new: str, on: str = "", dry_r
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Propose, read and settle the decisions of the brain's registers (JSON output).")
-    parser.add_argument("--brain", action="append", type=Path, metavar="PATH", help="brain to use (default: Work/brain or BRAIN_DIR)")
+    parser.add_argument("--brain", action="append", type=Path, metavar="PATH", help="brain to use (default: BRAIN_DIR, else the default brain of Work)")
     sub = parser.add_subparsers(dest="command", required=True)
     project_help = "register, project folder, client/mission or label"
 

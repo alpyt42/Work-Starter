@@ -196,6 +196,37 @@ class DefaultScanTest(unittest.TestCase):
         self.assertEqual(self.scan().returncode, 2)
         self.assertEqual(self.scan("--staged", "--worktree").returncode, 2)
 
+    def test_without_brain_dir_the_default_brain_of_the_work_root_provides_the_names(self) -> None:
+        work = Path(self._tmp.name).resolve() / "Work"
+        (work / "tools/machine").mkdir(parents=True)
+        for name in ("check-no-client.py", "work_config.py"):  # a copy, so that the Work root is the temporary one
+            shutil.copy(REPO / "tools/machine" / name, work / "tools/machine" / name)
+        git(work, "init", "-q")
+        write(work / ".gitignore", "brain*/\n")
+        for brain, client in (("brain", "acme-corp"), ("brain-initech", "globex")):
+            write(work / brain / "AGENTS.md", "# test\n")
+            (work / brain / ".data").mkdir()
+            write(work / brain / f"projects/clients/{client}/{client}.md", f"# {client}\n")
+            (work / brain / "people").mkdir()
+        write(work / "notes.md", "Meeting with Globex.\n")
+
+        def scan() -> subprocess.CompletedProcess:
+            env = {key: value for key, value in GIT_ENV.items() if key != "BRAIN_DIR"}
+            return subprocess.run([sys.executable, str(work / "tools/machine/check-no-client.py"), "--worktree"],
+                                  env=env, capture_output=True, text=True)
+
+        result = scan()  # `brain/` is the default: its clients are acme-corp
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        write(work / "work-config.local.json", '{"version": 1, "defaultBrain": "brain-initech"}')
+        result = scan()  # the setting wins: its clients are globex
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Blocked known name in notes.md: globex", result.stderr)
+        (work / "work-config.local.json").unlink()
+        shutil.rmtree(work / "brain")  # the only brain left is the default
+        result = scan()
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("Blocked known name in notes.md: globex", result.stderr)
+
 
 def hook_path_has_uv() -> bool:
     extra = [str(Path.home() / ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"]

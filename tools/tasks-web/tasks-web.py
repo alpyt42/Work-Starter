@@ -12,7 +12,8 @@ Only listens on 127.0.0.1. The Markdown registers remain the source of truth.
 
 A Work can hold several brains (`brain`, `brain-<name>`): the page switches between them without a
 restart, and every /api route takes an optional `brain=<name>` (a discovered name, never a path).
-`--brain` only chooses the default brain. WORK_DIR points to another Work root.
+`--brain` only chooses the default brain (otherwise the default brain of Work, see tools/machine/work_config.py).
+WORK_DIR points to another Work root.
 """
 
 from __future__ import annotations
@@ -48,8 +49,6 @@ from markdown_it.common.utils import escapeHtml
 # WORK_DIR when set (like the other tools), else the same checkout.
 TOOLS_ROOT = Path(__file__).resolve().parents[2]
 WORK = Path(os.environ.get("WORK_DIR", TOOLS_ROOT)).resolve()
-DEFAULT_BRAIN = "brain"
-BRAIN_NAME_RE = re.compile(r"^brain(-[a-z0-9][a-z0-9-]*)?$")
 # Every write to an action register goes through tools/brain/action.py, run as a command (the same tool
 # the agents use); reads import it, so the parsing is shared too.
 ACTION_SCRIPT = TOOLS_ROOT / "tools/brain/action.py"
@@ -58,6 +57,11 @@ assert _spec and _spec.loader
 action_tool = importlib.util.module_from_spec(_spec)
 sys.modules["brain_action"] = action_tool
 _spec.loader.exec_module(action_tool)
+# The rule of what a brain is and which one is the default lives in tools/machine/work_config.py.
+_config_spec = importlib.util.spec_from_file_location("work_config", TOOLS_ROOT / "tools/machine/work_config.py")
+assert _config_spec and _config_spec.loader
+work_config = importlib.util.module_from_spec(_config_spec)
+_config_spec.loader.exec_module(work_config)
 ACTION_STATUS = {"bad_request": HTTPStatus.BAD_REQUEST, "not_found": HTTPStatus.NOT_FOUND, "conflict": HTTPStatus.CONFLICT}
 ASSETS = Path(__file__).resolve().parent / "static"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
@@ -242,27 +246,36 @@ parse_action = action_tool.parse_action
 
 
 def discover_brains(work: Path) -> list[Path]:
-    """Brains at the Work root, `brain/` first then by name.
+    """Brains at the Work root, the default brain first then by name.
 
-    Same rule as tools/brain/brain-state.py and tools/machine/work_config.py: a folder named `brain` or
-    `brain-<name>` that holds an AGENTS.md and a .data/ folder (a test compares the three).
+    The rule is the one of tools/machine/work_config.py (a folder named `brain` or `brain-<name>` that holds an
+    AGENTS.md and a .data/ folder, a test compares the tools). A `defaultBrain` setting that cannot be applied
+    leaves them by name; tools/machine/doctor.py reports the setting.
     """
     try:
-        entries = list(work.iterdir())
+        try:
+            return work_config.discover_brains(work)
+        except work_config.ConfigError:
+            return work_config.find_brains(work)
     except OSError:
         return []
-    found = [path for path in entries if BRAIN_NAME_RE.fullmatch(path.name) and path.is_dir()
-             and (path / "AGENTS.md").is_file() and (path / ".data").is_dir()]
-    return sorted(found, key=lambda path: (path.name != DEFAULT_BRAIN, path.name))
+
+
+def default_brain_dir() -> Path:
+    """The default brain of Work (the `--brain` default); `Work/brain` when there is none. ConfigError if the setting is invalid."""
+    try:
+        return work_config.default_brain(WORK) or WORK / "brain"
+    except OSError:
+        return WORK / "brain"
 
 
 def brain_label(name: str) -> str:
-    """Short name shown in the page: `brain-perso` -> `Perso`, `brain-acme-corp` -> `Acme-corp`, `brain` -> `Brain`.
+    """Short name shown in the page: `brain-initech` -> `Initech`, `brain-acme-corp` -> `Acme-corp`, `brain` -> `Brain`.
 
     The folder name stays the technical value (`brain=`, local storage, API); only the label is displayed.
     A name outside the `brain` / `brain-<name>` convention (a default brain given with --brain) just gets an initial capital.
     """
-    short = name.removeprefix(DEFAULT_BRAIN + "-") or name
+    short = name.removeprefix("brain-") or name
     return short[:1].upper() + short[1:]
 
 
@@ -1696,13 +1709,21 @@ class TaskServer(ThreadingHTTPServer):
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--brain", type=Path, default=WORK / DEFAULT_BRAIN,
-                        help="default brain (default: Work/brain); the other brains of Work are chosen in the page")
+    parser.add_argument("--brain", type=Path, default=None,
+                        help="default brain (default: the default brain of Work); the other brains of Work are chosen in the page")
     parser.add_argument("--port", type=int, default=8765, help="local port (default: 8765)")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
         parser.error("invalid port")
-    with TaskServer(("127.0.0.1", args.port), Store(args.brain)) as server:
+    try:
+        brain = args.brain or default_brain_dir()
+    except work_config.ConfigError as error:
+        parser.error(f"work config error: {error}")
+    try:
+        store = Store(brain)
+    except ValueError as error:
+        parser.error(f"{error}" + ("" if args.brain else " (no default brain: set \"defaultBrain\" in work-config.local.json, or pass --brain)"))
+    with TaskServer(("127.0.0.1", args.port), store) as server:
         print(f"Actions: http://127.0.0.1:{server.server_port}/ (Ctrl+C to stop)", flush=True)
         try:
             server.serve_forever()

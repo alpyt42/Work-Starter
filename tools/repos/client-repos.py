@@ -5,8 +5,8 @@
 # ///
 """List, check, or clone client repositories from the private brain catalog.
 
-Run from the Work root: brain/ is found at the Work root, two levels above this script. Set WORK_DIR or
-BRAIN_DIR only to use another location. The catalog contains URLs only;
+Run from the Work root: the default brain (see tools/machine/work_config.py) is found at the Work root, two levels
+above this script. Set WORK_DIR or BRAIN_DIR only to use another location. The catalog contains URLs only;
 credentials and key paths stay local.
 
 Author and SSH key come from the user's ~/.gitconfig rules (by folder and by
@@ -16,6 +16,7 @@ remote URL, see tools/machine/gitconfig.example); `check` shows what each clone 
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
 import re
@@ -28,7 +29,23 @@ from pathlib import Path
 
 
 WORK = Path(os.environ.get("WORK_DIR", Path(__file__).resolve().parents[2])).resolve()
-BRAIN = Path(os.environ.get("BRAIN_DIR", WORK / "brain")).resolve()
+
+
+def default_brain_dir() -> Path:
+    """The default brain of WORK (rule of tools/machine/work_config.py); `WORK/brain` when there is none."""
+    spec = importlib.util.spec_from_file_location("work_config", Path(__file__).resolve().parents[1] / "machine/work_config.py")
+    assert spec and spec.loader
+    work_config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(work_config)
+    try:
+        return work_config.default_brain(WORK) or WORK / "brain"
+    except work_config.ConfigError as error:
+        raise SystemExit(f"work config error: {error}") from None
+    except OSError:
+        return WORK / "brain"
+
+
+BRAIN = Path(os.environ["BRAIN_DIR"] if "BRAIN_DIR" in os.environ else default_brain_dir()).resolve()
 CATALOG = BRAIN / ".data/client-repos.json"
 PART = re.compile(r"^[a-z0-9][a-z0-9_-]*$")
 SSH_URL = re.compile(r"^[A-Za-z0-9._-]+@[A-Za-z0-9.-]+:[A-Za-z0-9._/-]+\.git$")

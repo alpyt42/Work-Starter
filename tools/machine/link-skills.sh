@@ -8,9 +8,12 @@ mkdir -p "$ROOT/.agents/skills" "$ROOT/.agents/skills-disabled" "$ROOT/.claude/s
 
 ensure_link() {
   local link="$1" target="$2"
-  # Link of the previous layout (house skills in Work/skills/): managed, replaced by the current one.
-  if [[ -L "$link" && "$(readlink "$link")" == "../../skills/${link##*/}" ]]; then
-    rm "$link"
+  # Managed link of the previous layout (house skills in Work/skills/), or into a brain that no longer holds
+  # the skill (brain renamed, skill moved to another brain): replaced by the current one.
+  if [[ -L "$link" && "$(readlink "$link")" != "$target" ]]; then
+    case "$(readlink "$link")" in
+      ../../skills/"${link##*/}" | ../../brain/skills/"${link##*/}" | ../../brain-*/skills/"${link##*/}") rm "$link" ;;
+    esac
   fi
   if [[ -e "$link" || -L "$link" ]]; then
     [[ -L "$link" && "$(readlink "$link")" == "$target" && -f "$link/SKILL.md" ]] || {

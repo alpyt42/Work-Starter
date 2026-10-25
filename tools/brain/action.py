@@ -58,6 +58,7 @@ from __future__ import annotations
 
 import argparse
 import hashlib
+import importlib.util
 import json
 import os
 import re
@@ -70,7 +71,23 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 WORK = Path(os.environ.get("WORK_DIR", Path(__file__).resolve().parents[2])).resolve()
-BRAIN = Path(os.environ.get("BRAIN_DIR", WORK / "brain")).resolve()
+
+
+def default_brain_dir() -> Path:
+    """The default brain of WORK (rule of tools/machine/work_config.py); `WORK/brain` when there is none."""
+    spec = importlib.util.spec_from_file_location("work_config", Path(__file__).resolve().parents[1] / "machine/work_config.py")
+    assert spec and spec.loader
+    work_config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(work_config)
+    try:
+        return work_config.default_brain(WORK) or WORK / "brain"
+    except work_config.ConfigError as error:
+        raise SystemExit(f"work config error: {error}") from None
+    except OSError:
+        return WORK / "brain"
+
+
+BRAIN = Path(os.environ["BRAIN_DIR"] if "BRAIN_DIR" in os.environ else default_brain_dir()).resolve()
 
 # --- Registers: sections and archive (formerly manage-action.py) -------------------------------------
 
@@ -807,7 +824,7 @@ def resolve_register(brain: Path, project: str) -> Path:
         relative = path.relative_to(brain).as_posix()
         folder = path.parent.parent.relative_to(brain / "projects").parts
         short = f"{folder[1]}/{folder[3]}" if folder[0] == "clients" and len(folder) >= 4 else folder[-1]
-        candidates = {relative, f"brain/{relative}", path.parent.parent.relative_to(brain).as_posix(),
+        candidates = {relative, f"{brain.name}/{relative}", path.parent.parent.relative_to(brain).as_posix(),
                       "/".join(folder), short, project_label(path, brain)}
         if wanted in candidates:
             matches.append(path)
@@ -1194,7 +1211,7 @@ def board_owner(brain: Path) -> str:
     if not name and config.is_file():
         name = str(json.loads(config.read_text(encoding="utf-8")).get("owner", "")).strip()
     if not name:
-        raise SystemExit("unknown owner: set BRAIN_OWNER or 'owner' in brain/.data/doctor.json")
+        raise SystemExit(f"unknown owner: set BRAIN_OWNER or 'owner' in {brain.name}/.data/doctor.json")
     return name
 
 
@@ -1299,7 +1316,7 @@ def board(args: argparse.Namespace) -> int:
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Create, read and edit the actions of the brain's registers (JSON output).")
-    parser.add_argument("--brain", action="append", type=Path, metavar="PATH", help="brain to process (default: Work/brain or BRAIN_DIR; repeatable for sweep and archive)")
+    parser.add_argument("--brain", action="append", type=Path, metavar="PATH", help="brain to process (default: BRAIN_DIR, else the default brain of Work; repeatable for sweep and archive)")
     sub = parser.add_subparsers(dest="command", required=True)
 
     def writable(p: argparse.ArgumentParser) -> None:

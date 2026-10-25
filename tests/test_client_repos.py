@@ -83,6 +83,27 @@ class ClientReposTest(unittest.TestCase):
         with self.gitconfig.open("a", encoding="utf-8") as handle:
             handle.write(f'[url "file://{bare}"]\n  insteadOf = {url}\n')
 
+    def test_catalog_is_read_from_the_default_brain_unless_brain_dir_is_set(self) -> None:
+        catalog = json.dumps({"schema_version": 1, "repositories": [{"path": "repos/acme/app", "url": URL_A}]})
+        brain = self.work / "brain-initech"
+        (brain / ".data").mkdir(parents=True)
+        (brain / "AGENTS.md").write_text("# test\n", encoding="utf-8")
+        (brain / ".data/client-repos.json").write_text(catalog, encoding="utf-8")
+        self.write_catalog([{"path": "repos/other/api", "url": URL_B}])  # in `brain/`, which is not a brain (no AGENTS.md)
+        self.env.pop("BRAIN_DIR")
+        self.assertEqual(self.run_tool("list").stdout.strip(), f"repos/acme/app  {URL_A}")  # the only brain
+        (self.work / "brain/AGENTS.md").write_text("# test\n", encoding="utf-8")
+        self.assertEqual(self.run_tool("list").stdout.strip(), f"repos/other/api  {URL_B}")  # `brain/` is a brain again
+        (self.work / "work-config.local.json").write_text('{"version": 1, "defaultBrain": "brain-initech"}', encoding="utf-8")
+        self.assertEqual(self.run_tool("list").stdout.strip(), f"repos/acme/app  {URL_A}")  # the setting
+        self.env["BRAIN_DIR"] = str(self.work / "brain")
+        self.assertEqual(self.run_tool("list").stdout.strip(), f"repos/other/api  {URL_B}")  # BRAIN_DIR wins
+        (self.work / "work-config.local.json").write_text('{"version": 1, "defaultBrain": "brain-nope"}', encoding="utf-8")
+        self.env.pop("BRAIN_DIR")
+        result = self.run_tool("list")
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("defaultBrain brain-nope is not a brain", result.stderr)
+
     def test_list_filters_by_client_or_path(self) -> None:
         self.write_catalog([
             {"path": "repos/acme/app", "url": URL_A},

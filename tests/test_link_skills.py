@@ -114,6 +114,16 @@ class LinkSkillsTest(unittest.TestCase):
         self.assertEqual(self.names(".agents"), [])
         self.assertEqual(self.names(".claude"), [])
 
+    def test_link_into_a_renamed_brain_or_another_brain_is_replaced(self) -> None:
+        self.ok(self.link_skills())
+        (self.root / "brain").rename(self.root / "brain-initech")
+        shutil.move(self.root / "brain-perso/skills/beta", self.root / "brain-initech/skills/beta")
+        self.ok(self.link_skills())
+        for agent in (".agents", ".claude"):
+            for name in ("alpha", "beta"):
+                self.assertEqual(os.readlink(self.link(agent, name)), f"../../brain-initech/skills/{name}")
+                self.assertTrue((self.link(agent, name) / "SKILL.md").is_file())
+
     def test_unmanaged_paths_are_refused_or_left_alone(self) -> None:
         self.link(".claude", "alpha").mkdir(parents=True)
         self.assertIn("Conflicting skill path", self.fails(self.link_skills()))

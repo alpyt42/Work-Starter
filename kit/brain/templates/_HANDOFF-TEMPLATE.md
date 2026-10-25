@@ -33,7 +33,7 @@
 **Launch message to deliver with this file, in a code block:**
 
 ```
-Read and run the handoff `brain/projects/clients/<client>/missions/<mission>/handoffs/YYYY-MM-DD-handoff-<slug>.md` — it is self-contained.
+Read and run the handoff `<brain>/projects/clients/<client>/missions/<mission>/handoffs/YYYY-MM-DD-handoff-<slug>.md` — it is self-contained.
 Mission: <one sentence>.
 Start with <expected first action>; only ask for the validations still listed in the handoff.
 ```

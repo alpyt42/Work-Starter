@@ -3,7 +3,7 @@
 const token = document.querySelector('meta[name="csrf-token"]').content;
 const ids = Object.fromEntries([
   'app', 'sidebar', 'scrim', 'sidebarToggle', 'brainMini', 'sidebarClose', 'mainContent',
-  'brainSwitch', 'brainStatic', 'brainStaticName', 'brainStaticScope', 'brainButton', 'brainName', 'brainScope', 'brainMenu',
+  'brainSwitch', 'brainStatic', 'brainStaticName', 'brainButton', 'brainName', 'brainMenu',
   'todayButton', 'listButton', 'boardButton', 'notesButton', 'searchButton', 'toolsButton', 'gitButton',
   'todayCount', 'openCount', 'gitCount', 'projectNav', 'lastSync',
   'moreButton', 'moreMenu', 'refreshButton', 'undoButton', 'undoLabel', 'shortcutsButton', 'quitButton',
@@ -1464,10 +1464,12 @@ function syncBrainUrl() {
     history.replaceState(history.state, '', url.href);
   } catch { /* The address bar keeps its value. */ }
 }
-// One accent per brain, stable: steel for `brain`, plum for `brain-perso`, then a hash over four more.
+// One accent per brain, stable: steel for the default brain (or `brain` before the list is loaded), plum for
+// `brain-perso`, then a hash over four more.
 const EXTRA_ACCENTS = ['teal', 'olive', 'rust', 'slate'];
 function accentFor(name) {
-  if (!name || name === 'brain') return 'steel';
+  const listed = brains.find(brain => brain.name === name);
+  if (!name || listed?.default || (!listed && name === 'brain')) return 'steel';
   if (name === 'brain-perso') return 'plum';
   let hash = 0;
   for (const char of name) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
@@ -1477,6 +1479,10 @@ function applyAccent(name) { document.documentElement.dataset.accent = accentFor
 // What the page shows for a brain: the short label of the server (`Perso` for `brain-perso`); the folder name stays the technical value.
 function brainLabel(name) {
   return brains.find(brain => brain.name === name)?.label || name;
+}
+// Tooltip of a brain: its folder name and scope, then its description. The scope is not displayed otherwise.
+function brainTitle(brain) {
+  return [brain.scope ? `${brain.name} (${brain.scope})` : brain.name, brain.description].filter(Boolean).join(': ');
 }
 function brainOption(brain, index) {
   const option = element('li', 'brain-option');
@@ -1488,9 +1494,8 @@ function brainOption(brain, index) {
   swatch.dataset.accent = accentFor(brain.name);
   const text = element('span', 'brain-option-text');
   text.append(element('span', 'brain-option-name', brain.label || brain.name));
-  if (brain.scope) text.append(element('span', 'brain-option-scope', brain.scope));
   option.append(swatch, text, svgIcon(ICONS.check, 'brain-check'));
-  option.title = [brain.name, brain.description].filter(Boolean).join(': ');
+  option.title = brainTitle(brain);
   option.addEventListener('click', () => chooseBrain(brain.name));
   return option;
 }
@@ -1501,12 +1506,11 @@ function renderBrainSwitch() {
   const active = ids.brainMenu.children[brainMenuIndex]?.dataset.brain || currentBrain;
   ids.brainStatic.hidden = several;
   ids.brainStaticName.textContent = brainLabel(currentBrain) || 'Brain';
-  ids.brainStaticScope.textContent = known?.scope || '';
+  ids.brainStatic.title = known ? brainTitle(known) : '';
   ids.brainButton.hidden = !several;
   ids.brainName.textContent = brainLabel(currentBrain);
-  ids.brainScope.textContent = known?.scope || '';
   ids.brainMini.textContent = brainLabel(currentBrain) || 'Brain';
-  ids.brainButton.title = known ? [known.name, known.description].filter(Boolean).join(': ') : '';
+  ids.brainButton.title = known ? brainTitle(known) : '';
   ids.brainMenu.replaceChildren(...brains.map(brainOption));
   if (!several) closeBrainMenu(false);
   else if (brainMenuOpen()) setBrainActive(Math.max(0, brains.findIndex(brain => brain.name === active)));

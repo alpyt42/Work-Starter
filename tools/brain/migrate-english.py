@@ -20,13 +20,14 @@ bullets, person pages without front matter) is listed, not changed.
 Running it again finds nothing: every rule only matches the French forms. `--write` refuses a file
 with uncommitted changes (`--allow-dirty` to override); it never commits. `--no-tasks-labels`
 keeps the French titles and help of `tasks.md` (its queries and button are still converted).
-`--brain PATH` or BRAIN_DIR selects the brain (default: Work/brain).
+`--brain PATH` or BRAIN_DIR selects the brain (default: the default brain of Work, see tools/machine/work_config.py).
 """
 
 from __future__ import annotations
 
 import argparse
 import difflib
+import importlib.util
 import json
 import os
 import re
@@ -36,7 +37,23 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 WORK = Path(os.environ.get("WORK_DIR", Path(__file__).resolve().parents[2])).resolve()
-BRAIN = Path(os.environ.get("BRAIN_DIR", WORK / "brain")).resolve()
+
+
+def default_brain_dir() -> Path:
+    """The default brain of WORK (rule of tools/machine/work_config.py); `WORK/brain` when there is none."""
+    spec = importlib.util.spec_from_file_location("work_config", Path(__file__).resolve().parents[1] / "machine/work_config.py")
+    assert spec and spec.loader
+    work_config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(work_config)
+    try:
+        return work_config.default_brain(WORK) or WORK / "brain"
+    except work_config.ConfigError as error:
+        raise SystemExit(f"work config error: {error}") from None
+    except OSError:
+        return WORK / "brain"
+
+
+BRAIN = Path(os.environ["BRAIN_DIR"] if "BRAIN_DIR" in os.environ else default_brain_dir()).resolve()
 NEVER = ("sources", "journal", "notes", "workstreams", "handoffs")  # project folders never written
 
 # --- Action registers ----------------------------------------------------------------------------
@@ -484,7 +501,7 @@ def write(path: Path, text: str) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Convert a brain's French format labels to English (dry run by default).")
-    parser.add_argument("--brain", type=Path, metavar="PATH", help="brain to convert (default: Work/brain or BRAIN_DIR)")
+    parser.add_argument("--brain", type=Path, metavar="PATH", help="brain to convert (default: BRAIN_DIR, else the default brain of Work)")
     mode = parser.add_mutually_exclusive_group()
     mode.add_argument("--write", action="store_true", help="apply the changes")
     mode.add_argument("--check", action="store_true", help="exit 1 when something is left to convert")

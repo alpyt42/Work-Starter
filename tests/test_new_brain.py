@@ -119,12 +119,16 @@ class NewBrainTest(unittest.TestCase):
             self.assertEqual(result.returncode, 0, result.stderr)
             return result.stdout.splitlines()
 
-        expected = [str(self.work), str(self.work / "brain"), str(self.work / "tools")]
-        self.assertEqual(probe(script), expected)  # from the brain
+        expected = [str(self.work), str(self.work / "brain-perso"), str(self.work / "tools")]
+        self.assertEqual(probe(script), expected)  # from the brain that holds the script
         self.assertEqual(probe(self.work / ".claude/skills/demo/scripts/probe.py"), expected)  # through the agent link
         elsewhere = self.work.parent / "Elsewhere"
         self.assertEqual(probe(script, WORK_DIR=str(elsewhere))[0], str(elsewhere))
-        self.assertEqual(probe(script, BRAIN_DIR=str(self.work / "brain-perso"))[1], str(self.work / "brain-perso"))
+        self.assertEqual(probe(script, BRAIN_DIR=str(self.work / "brain-initech"))[1], str(self.work / "brain-initech"))
+        copy = self.work / ".claude/skills/copied/scripts/probe.py"  # a skill installed as a copy, outside its brain
+        copy.parent.mkdir(parents=True)
+        copy.write_text(script.read_text(encoding="utf-8"), encoding="utf-8")
+        self.assertEqual(probe(copy)[1], str(self.work / "brain"))
         # Outside a Work and without WORK_DIR: a clear message, not a traceback.
         stray = self.work.parent / "stray/probe.py"
         stray.parent.mkdir()

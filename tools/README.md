@@ -4,9 +4,9 @@ Reusable scripts of the workspace, organized by domain. Every command runs from 
 
 Shared local configuration, ignored by Git, which stays at the root of this folder: `.env` (optional tokens, created from [.env.example](.env.example); no shipped tool needs one for now). Never read, copy or cite it.
 
-## Memory (`brain/`)
+## Memory (brains)
 
-The tools act on the default brain `brain/`, or on another brain with `BRAIN_DIR` (`--brain` for `action.py` and `decision.py`); `new-brain.py`, `brain-state.py` and `check-links.py` also know the `brain-<name>` brains.
+The tools act on the default brain, or on another brain with `BRAIN_DIR` (`--brain` for `action.py` and `decision.py`); `new-brain.py`, `brain-state.py` and `check-links.py` also know the `brain-<name>` brains. The default brain is the one named by `"defaultBrain"` in the ignored `work-config.local.json`, else `brain/`, else the only brain at the root (`uv run tools/machine/work_config.py default-brain`); it is what lets the default brain folder be renamed, for example `brain-<name>`.
 
 | Command | Role | Guide |
 |---|---|---|
@@ -31,7 +31,7 @@ The tools act on the default brain `brain/`, or on another brain with `BRAIN_DIR
 
 | Command | Role | Guide |
 |---|---|---|
-| `uv run tools/repos/client-repos.py list [<client> \| repos/<client>/<repo>]` | Lists the repositories of the private catalog `brain/.data/client-repos.json` | script header |
+| `uv run tools/repos/client-repos.py list [<client> \| repos/<client>/<repo>]` | Lists the repositories of the private catalog `.data/client-repos.json` of the default brain | script header |
 | `uv run tools/repos/client-repos.py check [<client> \| repos/<client>/<repo>]` | Compares the clones present with the catalog (`origin` URL) and shows the effective author and key of each one, without network | script header |
 | `uv run tools/repos/client-repos.py clone <client> [--identity KEY --author-name N --author-email E]` | Clones a client's repositories; a plain `git clone`, the author and key come from `~/.gitconfig`; the three options are a one-off override | script header |
 
@@ -44,7 +44,7 @@ Installation, update, Git hooks and checks of the workspace on a machine: see [m
 | `tools/machine/install.sh [--brain URL] [--brain-perso URL\|new] [--no-bootstrap]` | Entry point after the clone: clones or creates `brain/` (and `brain-perso/`), then runs `bootstrap.sh` | [README.md](machine/README.md) |
 | `tools/machine/bootstrap.sh` | Prepares a fresh checkout: local folders, Git hooks of Work and of every brain, skills, links, checks | [README.md](machine/README.md) |
 | `tools/machine/update.sh` | Regenerates skills and links from the configuration, records the configuration fingerprint and reports the Git state of Work and of every brain | [README.md](machine/README.md) |
-| `uv run tools/machine/work_config.py <command>` | Skill configuration (`check`, `list-brains`, `list-own`, `list-third-party`, `list-catalog`, `lock`, `adopt [--brain B]`, `stamp`, `status`) | [README.md](machine/README.md) |
+| `uv run tools/machine/work_config.py <command>` | Skill configuration (`check`, `list-brains`, `default-brain`, `list-own`, `list-third-party`, `list-catalog`, `lock`, `adopt [--brain B]`, `stamp`, `status`) | [README.md](machine/README.md) |
 | `uv run tools/machine/doctor.py` | Read-only local diagnosis of the workspace, the brains and their boundaries | [README.md](machine/README.md) |
 | `tools/machine/check-links.sh` | Checks the configuration, the skill links and copies and the Markdown links of every brain | [README.md](machine/README.md) |
 | `tools/machine/check-no-client.sh [--staged \| --worktree]` | Optional manual scan for the client and person names known to the default brain | [README.md](machine/README.md) |

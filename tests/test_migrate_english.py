@@ -287,6 +287,13 @@ class MigrateEnglishTest(unittest.TestCase):
         self.assertIn("## Ouvertes", register.read_text(encoding="utf-8"))
         self.assertIn("## Open", self.read("projects/clients/acme/missions/mission/state/actions.md"))
 
+    def test_default_brain_is_found_under_another_name_without_brain_dir(self) -> None:
+        self.brain.rename(self.work / "brain-initech")  # the only brain of the Work root
+        env = {key: value for key, value in os.environ.items() if key != "BRAIN_DIR"}
+        result = subprocess.run([sys.executable, str(TOOL), "--check"], env={**env, "WORK_DIR": str(self.work)}, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
+        self.assertIn("projects/clients/acme/missions/mission/state/actions.md:", result.stdout)
+
     def test_seed_tasks_page_is_already_english(self) -> None:
         seed = (ROOT / "kit/brain/seed/tasks.md").read_text(encoding="utf-8")
         self.assertNotIn("attente", seed)

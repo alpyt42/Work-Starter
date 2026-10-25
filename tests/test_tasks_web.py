@@ -1692,6 +1692,14 @@ class BrainSwitchTest(unittest.TestCase):
         self.assertEqual([tasks_web.brain_label(name) for name in ("brain", "brain-perso", "brain-studio", "brain-acme-corp", "brain-", "solo")],
                          ["Brain", "Perso", "Studio", "Acme-corp", "Brain-", "Solo"])
 
+    def test_label_strips_the_brain_prefix_whichever_brain_is_the_default(self):
+        self.assertEqual([tasks_web.brain_label(name) for name in ("brain-initech", "brain-perso", "brain")], ["Initech", "Perso", "Brain"])
+        self.make_brain("brain-initech", "INI", "Action du brain renommé")
+        (self.root / "work-config.local.json").write_text('{"version": 1, "defaultBrain": "brain-initech"}', encoding="utf-8")
+        brains = self.request("GET", "/api/brains")[1]["brains"]
+        self.assertEqual([(brain["name"], brain["label"]) for brain in brains],
+                         [("brain-initech", "Initech"), ("brain", "Brain"), ("brain-acme", "Acme"), ("brain-perso", "Perso")])
+
     def test_brains_are_rediscovered_on_each_call(self):
         self.make_brain("brain-nouveau", "NEW", "Arrivé après le démarrage")
         names = [brain["name"] for brain in self.request("GET", "/api/brains")[1]["brains"]]
@@ -1707,6 +1715,35 @@ class BrainSwitchTest(unittest.TestCase):
         self.assertEqual(expected, ["brain", "brain-acme", "brain-perso"])
         self.assertEqual([path.name for path in load_script("tools/brain/brain-state.py", self.root).discover()], expected)
         self.assertEqual([path.name for path in load_script("tools/machine/work_config.py", self.root).discover_brains()], expected)
+
+    def test_default_brain_comes_first_and_follows_the_setting_or_the_rename(self):
+        config = self.root / "work-config.local.json"
+        config.write_text('{"version": 1, "defaultBrain": "brain-perso"}', encoding="utf-8")
+        expected = ["brain-perso", "brain", "brain-acme"]
+        self.assertEqual([path.name for path in tasks_web.discover_brains(self.root)], expected)
+        self.assertEqual([path.name for path in load_script("tools/brain/brain-state.py", self.root).discover()], expected)
+        self.assertEqual([path.name for path in load_script("tools/machine/work_config.py", self.root).discover_brains()], expected)
+        with patch.object(tasks_web, "WORK", self.root):
+            self.assertEqual(tasks_web.default_brain_dir(), self.root / "brain-perso")
+        # A setting that cannot be applied leaves the brains by name instead of breaking the page.
+        config.write_text('{"version": 1, "defaultBrain": "brain-nope"}', encoding="utf-8")
+        self.assertEqual([path.name for path in tasks_web.discover_brains(self.root)], ["brain", "brain-acme", "brain-perso"])
+        self.assertEqual(self.request("GET", "/api/brains")[0], 200)
+        # Without setting, the folder `brain/` renamed: the other brains no longer lead, the choice is explicit.
+        config.unlink()
+        (self.root / "brain").rename(self.root / "brain-initech")
+        self.assertEqual([path.name for path in tasks_web.discover_brains(self.root)], ["brain-acme", "brain-initech", "brain-perso"])
+        config.write_text('{"version": 1, "defaultBrain": "brain-initech"}', encoding="utf-8")
+        self.assertEqual([path.name for path in tasks_web.discover_brains(self.root)], ["brain-initech", "brain-acme", "brain-perso"])
+
+    def test_default_brain_of_the_server_without_brain_option(self):
+        with patch.object(tasks_web, "WORK", self.root):
+            self.assertEqual(tasks_web.default_brain_dir(), self.root / "brain")
+            (self.root / "brain").rename(self.root / "brain-initech")
+            self.assertEqual(tasks_web.default_brain_dir(), self.root / "brain")  # several brains, no default: today's fallback
+            for name in ("brain-perso", "brain-acme"):
+                (self.root / name / "AGENTS.md").unlink()
+            self.assertEqual(tasks_web.default_brain_dir(), self.root / "brain-initech")  # the only brain
 
     def test_default_brain_without_parameter_and_selected_brain_with_it(self):
         default = self.actions()
@@ -1941,6 +1978,19 @@ class BrainSwitchTest(unittest.TestCase):
             page = response.read().decode("utf-8")
         for fragment in ('id="brainSwitch"', 'id="brainButton"', 'id="brainMenu"', 'id="brainStatic"'):
             self.assertIn(fragment, page)
+
+    def test_scope_is_a_tooltip_of_the_brain_entry_not_a_second_line(self):
+        with urlopen(self.base + "/", timeout=3) as response:
+            page = response.read().decode("utf-8")
+        static = TOOL.parent / "static"
+        script, styles = (static / "app.js").read_text(encoding="utf-8"), (static / "app.css").read_text(encoding="utf-8")
+        for text in (page, script, styles):
+            self.assertNotIn("brainScope", text)
+            self.assertNotIn("brainStaticScope", text)
+            self.assertNotIn("brain-scope", text)
+            self.assertNotIn("brain-option-scope", text)
+        self.assertIn("option.title = brainTitle(brain);", script)
+        self.assertIn("brain.scope ? `${brain.name} (${brain.scope})`", script)
 
 
 if __name__ == "__main__":

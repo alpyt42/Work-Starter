@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import os
 import subprocess
@@ -132,6 +133,124 @@ class LayersTest(WorkConfigTestCase):
     def test_own_and_third_party_name_clash_is_refused(self) -> None:
         self.make_brain("brain", own=("alpha",), conf=config({"alpha": entry("alpha")}))
         self.assertIn("both own and third-party: alpha", self.fails("check"))
+
+
+class DefaultBrainTest(WorkConfigTestCase):
+    """`default_brain(root)`: the setting, then `brain/`, then the only brain, else none."""
+
+    def default_brain(self) -> subprocess.CompletedProcess[str]:
+        return self.run_tool("default-brain")
+
+    def test_setting_in_the_local_layer_wins_over_brain(self) -> None:
+        self.make_brain("brain")
+        self.make_brain("brain-initech")
+        self.write_json("work-config.local.json", {"version": 1, "defaultBrain": "brain-initech"})
+        self.assertEqual(self.ok("default-brain"), "brain-initech\n")
+        self.assertIn("Work configuration OK", self.ok("check"))
+
+    def test_brain_is_the_default_when_there_is_no_setting(self) -> None:
+        self.make_brain("brain-perso")
+        self.make_brain("brain")
+        self.make_brain("brain-acme-x")
+        self.assertEqual(self.ok("default-brain"), "brain\n")
+
+    def test_the_only_brain_is_the_default(self) -> None:
+        self.make_brain("brain-initech")
+        (self.root / "brain-nodata").mkdir()  # not a brain: no AGENTS.md and no .data/
+        self.assertEqual(self.ok("default-brain"), "brain-initech\n")
+
+    def test_no_default_brain_prints_nothing_and_exits_with_1(self) -> None:
+        result = self.default_brain()  # no brain at all
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", ""))
+        self.make_brain("brain-perso")
+        self.make_brain("brain-initech")  # several brains, no `brain/`, no setting
+        result = self.default_brain()
+        self.assertEqual((result.returncode, result.stdout, result.stderr), (1, "", ""))
+        self.assertEqual(self.ok("list-brains").split(), ["brain-initech", "brain-perso"])
+
+    def test_list_brains_puts_the_default_brain_first_then_the_others_by_name(self) -> None:
+        for name in ("brain", "brain-acme", "brain-perso", "brain-zed"):
+            self.make_brain(name)
+        self.assertEqual(self.ok("list-brains").split(), ["brain", "brain-acme", "brain-perso", "brain-zed"])
+        self.write_json("work-config.local.json", {"version": 1, "defaultBrain": "brain-perso"})
+        self.assertEqual(self.ok("list-brains").split(), ["brain-perso", "brain", "brain-acme", "brain-zed"])
+
+    def test_invalid_or_absent_setting_is_an_error_naming_the_file(self) -> None:
+        self.make_brain("brain")
+        self.make_brain("brain-perso", own=("alpha",))
+        (self.root / "brain-vide").mkdir()  # a folder, but not a brain
+        cases = [
+            ("brain-nope", "is not a brain at the Work root"),
+            ("brain-vide", "is not a brain at the Work root"),
+            ("Brain-Perso", "invalid brain name"),
+            ("perso", "invalid brain name"),
+            ("../brain", "invalid brain name"),
+            ("", "invalid brain name"),
+            (None, "invalid brain name"),
+            (3, "invalid brain name"),
+        ]
+        for value, message in cases:
+            self.write_json("work-config.local.json", {"version": 1, "defaultBrain": value})
+            for command in ("default-brain", "check", "list-brains", "list-own"):
+                with self.subTest(value=value, command=command):
+                    error = self.fails(command)
+                    self.assertIn("work-config.local.json: defaultBrain", error)
+                    self.assertIn(message, error)
+
+    def test_setting_is_only_accepted_in_the_local_layer(self) -> None:
+        self.write_json("work-config.example.json", {"version": 1, "defaultBrain": "brain", "skills": {}})
+        self.make_brain("brain")
+        error = self.fails("check")
+        self.assertIn("work-config.example.json: defaultBrain is only accepted in work-config.local.json", error)
+        (self.root / "work-config.example.json").unlink()
+        self.make_brain("brain-perso", conf={"version": 1, "defaultBrain": "brain-perso"})
+        error = self.fails("check")
+        self.assertIn("brain-perso/.data/work-config.json: defaultBrain is only accepted in work-config.local.json", error)
+        # The same key is fine in the local layer, next to the other settings of that layer.
+        self.make_brain("brain-perso", conf=config())
+        self.write_json("work-config.local.json", {"version": 1, "defaultBrain": "brain-perso", "skills": {"disabled": ["x"]}})
+        self.assertIn("Work configuration OK", self.ok("check"))
+
+    def test_adopt_goes_to_the_default_brain_unless_a_brain_is_named(self) -> None:
+        self.make_brain("brain")
+        self.make_brain("brain-initech")
+        self.write_json("work-config.local.json", {"version": 1, "defaultBrain": "brain-initech"})
+        self.write_json("skills-lock.json", {"version": 1, "skills": {"added": entry("added")}})
+        self.assertIn("Adopted added into brain-initech/.data/work-config.json", self.ok("adopt"))
+        self.assertFalse((self.root / "brain/.data/work-config.json").exists())
+        self.write_json("skills-lock.json", {"version": 1, "skills": {"added": entry("added"), "more": entry("more")}})
+        self.assertIn("Adopted more into brain/.data/work-config.json", self.ok("adopt", "--brain", "brain"))
+
+    def test_adopt_without_a_default_brain_asks_for_one(self) -> None:
+        self.make_brain("brain-perso")
+        self.make_brain("brain-initech")
+        self.write_json("skills-lock.json", {"version": 1, "skills": {"added": entry("added")}})
+        error = self.fails("adopt")
+        self.assertIn("no default brain", error)
+        self.assertIn("--brain", error)
+        self.assertIn("defaultBrain", error)
+        self.assertFalse((self.root / "brain-initech/.data/work-config.json").exists())
+
+    def test_functions_take_the_root_explicitly(self) -> None:
+        spec = importlib.util.spec_from_file_location("work_config_under_test", TOOL)
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)  # importing has no side effect: nothing is read or written
+        self.assertEqual(list(self.root.iterdir()), [])
+        self.assertIsNone(module.default_brain(self.root))
+        self.make_brain("brain-initech")
+        self.assertEqual(module.default_brain(self.root), self.root / "brain-initech")
+        self.make_brain("brain")
+        self.make_brain("brain-perso")
+        self.assertEqual([path.name for path in module.discover_brains(self.root)], ["brain", "brain-initech", "brain-perso"])
+        self.write_json("work-config.local.json", {"version": 1, "defaultBrain": "brain-perso"})
+        self.assertEqual([path.name for path in module.discover_brains(self.root)], ["brain-perso", "brain", "brain-initech"])
+        other = self.root / "other"
+        other.mkdir()
+        self.assertIsNone(module.default_brain(other))  # another root, not the module's ROOT nor the setting of this one
+        (other / "work-config.local.json").write_text(json.dumps({"version": 1, "defaultBrain": "brain-x"}), encoding="utf-8")
+        with self.assertRaises(module.ConfigError) as caught:
+            module.default_brain(other)
+        self.assertIn("brain-x", str(caught.exception))
 
 
 class ValidationTest(WorkConfigTestCase):

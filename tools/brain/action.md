@@ -53,11 +53,11 @@ uv run tools/brain/action.py sweep --archive --write  # both, sweep first
 - `move --to P`: moves the action and its block to another register of the same client or internal project (the ID does not change, relative links are rewritten, a history entry records where it came from).
 - `check [--register R]`: blocking errors (malformed action line, duplicate ID across the whole client archives included, invalid date, open action with a closing date, inconsistent closure mark) and warnings (closed without a date, no source sub-bullet, invalid group slug, several `#group/` tags, tag not at the end of the title).
 - Every write accepts `--dry-run`, and the `--expect-version` (line) and `--expect-details-version` (block) locks used by the interface.
-- `--brain PATH` or `BRAIN_DIR` for another brain; `ACTION_NOW="YYYY-MM-DD HH:MM"` freezes the clock (tests).
+- `--brain PATH` or `BRAIN_DIR` for another brain than the default brain of Work (see [tools/README.md](../README.md)); `ACTION_NOW="YYYY-MM-DD HH:MM"` freezes the clock (tests).
 
 ## Board (`board`)
 
-Complete, read-only view of all the registers by project: the owner's To do actions (`BRAIN_OWNER` or `owner` in `brain/.data/doctor.json`), the In progress and Waiting actions of everyone, sorted by ID, then the 15 most recent closures. Each line links to its line in the register. `--write [PATH]` also writes the board (default `agents/tasks-board.md`); `--watch` rewrites it when a register changes (VS Code task of the brain, when the folder opens).
+Complete, read-only view of all the registers by project: the owner's To do actions (`BRAIN_OWNER` or `owner` in `<brain>/.data/doctor.json`), the In progress and Waiting actions of everyone, sorted by ID, then the 15 most recent closures. Each line links to its line in the register. `--write [PATH]` also writes the board (default `agents/tasks-board.md`); `--watch` rewrites it when a register changes (VS Code task of the brain, when the folder opens).
 
 ## Sweep (`sweep`)
 

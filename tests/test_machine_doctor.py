@@ -2,6 +2,7 @@
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -35,8 +36,8 @@ class MachineDoctorTest(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def write_config(self, config: dict) -> None:
-        (self.work / "brain/.data/local-paths.json").write_text(json.dumps(config), encoding="utf-8")
+    def write_config(self, config: dict, brain: str = "brain") -> None:
+        (self.work / brain / ".data/local-paths.json").write_text(json.dumps(config), encoding="utf-8")
 
     def run_doctor(self) -> subprocess.CompletedProcess:
         return subprocess.run([sys.executable, str(TOOL)], env=self.env, capture_output=True, text=True)
@@ -64,6 +65,52 @@ class MachineDoctorTest(unittest.TestCase):
         result = self.run_doctor()
         self.assertEqual(result.returncode, 1)
         self.assertIn("expected brain missing: brain-perso/", result.stdout)
+
+    def make_brain(self, name: str) -> Path:
+        brain = self.work / name
+        (brain / ".data").mkdir(parents=True)
+        (brain / "AGENTS.md").write_text("# test\n", encoding="utf-8")
+        subprocess.run(["git", "init", "-q", str(brain)], check=True)
+        return brain
+
+    def test_renamed_default_brain_is_checked_under_its_real_name(self) -> None:
+        (self.work / "brain").rename(self.work / "brain-initech")
+        self.write_config({"transcripts_dir": "inbox/transcripts", "recordings_dir": "inbox/missing"}, "brain-initech")  # no "brains" list
+        result = self.run_doctor()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn("brain-initech: no upstream branch tracked", result.stdout)
+        self.assertIn("brain-initech/.data/brain.json missing", result.stdout)
+        self.assertIn('input folder "recordings_dir" not found on this machine: adjust brain-initech/.data/local-paths.json', result.stdout)
+        self.assertNotIn("brain/", result.stdout.replace("brain-initech/", ""))
+        self.assertNotIn("expected brain missing", result.stdout)
+
+    def test_no_brain_at_all_is_an_error_pointing_to_install(self) -> None:
+        shutil.rmtree(self.work / "brain")
+        result = self.run_doctor()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR: no brain at the Work root: run tools/machine/install.sh", result.stdout)
+
+    def test_several_brains_and_no_default_is_a_warning_naming_the_setting(self) -> None:
+        (self.work / "brain").rename(self.work / "brain-a")
+        self.make_brain("brain-b")
+        result = self.run_doctor()
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        self.assertIn('WARN: several brains (brain-a, brain-b) and no default brain: set "defaultBrain" in work-config.local.json', result.stdout)
+        self.assertNotIn("is present but not in", result.stdout)
+        self.write_local({"version": 1, "defaultBrain": "brain-b"})
+        out = self.run_doctor().stdout
+        self.assertNotIn("no default brain", out)
+        self.assertIn("brain-b/.data/local-paths.json missing", out)  # the shared settings are read from the default brain
+        self.assertIn("brain-a/ is present but not in the \"brains\" list", out)
+        self.assertIn("brain-b: no upstream branch tracked", out)
+
+    def test_invalid_default_brain_setting_is_an_error_with_the_message(self) -> None:
+        self.write_local({"version": 1, "defaultBrain": "brain-nope"})
+        result = self.run_doctor()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("ERROR: work-config.local.json: defaultBrain brain-nope is not a brain at the Work root", result.stdout)
+        self.assertNotIn("no brain at the Work root", result.stdout)
+        self.assertNotIn("no default brain", result.stdout)
 
     def test_invalid_state_json_is_an_error(self) -> None:
         (self.work / "brain/.data/transcripts.json").write_text("{", encoding="utf-8")

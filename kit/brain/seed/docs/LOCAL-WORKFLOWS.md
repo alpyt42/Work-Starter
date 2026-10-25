@@ -4,7 +4,7 @@ The reusable procedures (public scripts and skills) live in the workspace; only 
 
 ## Checkout location
 
-- Workspace root: (to be completed, for example `~/Work/`), with the brain in `brain/`. The workspace scripts find `brain/` next to `tools/`; `BRAIN_DIR` forces another location.
+- Workspace root: (to be completed, for example `~/Work/`), with the brain in `brain/` (or `brain-<name>`). The workspace scripts find the default brain next to `tools/` (`"defaultBrain"` in the ignored `work-config.local.json`, else `brain/`, else the only brain); `BRAIN_DIR` forces another location.
 
 ## Meetings
 

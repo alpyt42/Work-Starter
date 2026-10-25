@@ -2,7 +2,8 @@
 """Reject known client and person names in publishable repository files.
 
 Default mode: scan this Work repository (staged or worktree) against the names of
-the default brain (clients and people).
+the default brain (clients and people): BRAIN_DIR, else the default brain of the Work
+root or of the nearest parent folder that has one (see work_config.py).
 
 Brain mode (`--brain DIR`): scan the Git repository of one brain against the
 client names of the OTHER brains of the same Work root. A brain is a trust
@@ -20,6 +21,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import work_config  # next to this script; owns the default-brain rule
+
 ROOT = Path(__file__).resolve().parents[2]
 BRAIN_NAME = re.compile(r"^brain(-[a-z0-9][a-z0-9-]*)?$")
 USAGE = "usage: check-no-client.sh [--staged|--worktree] | check-no-client.py --brain DIR --staged|--worktree"
@@ -29,8 +32,11 @@ def brain_path() -> Path:
     if "BRAIN_DIR" in os.environ:
         return Path(os.environ["BRAIN_DIR"]).resolve()
     for directory in (ROOT, *ROOT.parents):
-        candidate = directory / "brain"
-        if (candidate / "projects/clients").is_dir() and (candidate / "people").is_dir():
+        try:
+            candidate = work_config.default_brain(directory)
+        except (work_config.ConfigError, OSError):
+            continue  # unreadable parent folder, or an invalid setting there: keep looking
+        if candidate is not None and (candidate / "projects/clients").is_dir() and (candidate / "people").is_dir():
             return candidate
     return ROOT / "brain"
 

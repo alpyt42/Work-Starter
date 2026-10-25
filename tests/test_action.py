@@ -3,6 +3,7 @@
 import importlib.util
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -589,3 +590,69 @@ class EarlierFrenchLabelsTest(unittest.TestCase):
         report = self.act("sweep")
         self.assertIn("GAM-001: filed under 'ouvertes', unknown section, left in place", report)
         self.assertEqual(self.register.read_text(encoding="utf-8"), FRENCH_REGISTER)
+
+
+class DefaultBrainTest(unittest.TestCase):
+    """Without --brain nor BRAIN_DIR, the tools act on the default brain of WORK_DIR (rule of tools/machine/work_config.py)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.work = Path(self._tmp.name).resolve() / "Work"
+        self.make_brain("brain", "GAM")
+        self.make_brain("brain-initech", "INI")
+        self.env = {key: value for key, value in os.environ.items() if key not in ("BRAIN_DIR", "WORK_DIR")}
+        self.env["WORK_DIR"] = str(self.work)
+
+    def make_brain(self, name: str, prefix: str) -> None:
+        brain = self.work / name
+        (brain / ".data").mkdir(parents=True)
+        (brain / "AGENTS.md").write_text("# test\n", encoding="utf-8")
+        register = brain / "projects/clients/acme/missions/gamma/state/actions.md"
+        register.parent.mkdir(parents=True)
+        register.write_text(REGISTER.replace("GAM", prefix), encoding="utf-8")
+
+    def listed(self, **env: str) -> subprocess.CompletedProcess:
+        return subprocess.run([sys.executable, str(TOOL), "list", "--project", "acme/gamma"], env={**self.env, **env},
+                              capture_output=True, text=True)
+
+    def ids(self, **env: str) -> list[str]:
+        result = self.listed(**env)
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        return [item["id"] for item in json.loads(result.stdout)]
+
+    def set_default(self, name: str) -> None:
+        (self.work / "work-config.local.json").write_text(json.dumps({"version": 1, "defaultBrain": name}), encoding="utf-8")
+
+    def test_brain_is_the_default_then_the_setting_then_the_only_brain(self) -> None:
+        self.assertEqual(self.ids(), ["GAM-001"])
+        self.set_default("brain-initech")
+        self.assertEqual(self.ids(), ["INI-001"])
+        (self.work / "work-config.local.json").unlink()
+        (self.work / "brain").rename(self.work / "brain-old")
+        result = self.listed()  # no `brain/` left and two brains: no default, so today's "missing" behaviour on Work/brain
+        self.assertEqual(result.returncode, 3)
+        self.assertIn(str(self.work / "brain/projects"), result.stdout)
+        shutil.rmtree(self.work / "brain-old")
+        self.assertEqual(self.ids(), ["INI-001"])  # the only brain
+
+    def test_brain_dir_and_the_brain_option_still_win(self) -> None:
+        self.set_default("brain-initech")
+        self.assertEqual(self.ids(BRAIN_DIR=str(self.work / "brain")), ["GAM-001"])
+        result = subprocess.run([sys.executable, str(TOOL), "--brain", str(self.work / "brain"), "list", "--project", "acme/gamma"],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual([item["id"] for item in json.loads(result.stdout)], ["GAM-001"])
+
+    def test_invalid_setting_is_reported_not_a_traceback(self) -> None:
+        self.set_default("brain-nope")
+        result = self.listed()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("defaultBrain brain-nope is not a brain", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+        self.assertEqual(self.ids(BRAIN_DIR=str(self.work / "brain")), ["GAM-001"])  # BRAIN_DIR never reads the setting
+
+    def test_the_work_relative_path_of_a_register_names_the_brain_folder(self) -> None:
+        path = "brain-initech/projects/clients/acme/missions/gamma/state/actions.md"
+        result = subprocess.run([sys.executable, str(TOOL), "--brain", str(self.work / "brain-initech"), "list", "--project", path],
+                                env=self.env, capture_output=True, text=True)
+        self.assertEqual([item["id"] for item in json.loads(result.stdout)], ["INI-001"], result.stderr)

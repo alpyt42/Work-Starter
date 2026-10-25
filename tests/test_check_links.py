@@ -120,6 +120,45 @@ class CheckLinksTest(unittest.TestCase):
                 self.assertNotIn("dead (md)", result.stdout)
 
 
+class DefaultBrainTest(unittest.TestCase):
+    """Without BRAIN_DIR, the checked brain is the default one of the Work root (tools/machine/work_config.py)."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.work = Path(self._tmp.name).resolve() / "Work"
+        for name, link in (("brain", "[x](missing-a.md)"), ("brain-initech", "[x](missing-b.md)")):
+            (self.work / name / ".data").mkdir(parents=True)
+            (self.work / name / "AGENTS.md").write_text("# test\n", encoding="utf-8")
+            (self.work / name / "index.md").write_text(link + "\n", encoding="utf-8")
+
+    def check(self, **env: str) -> subprocess.CompletedProcess[str]:
+        base = {key: value for key, value in os.environ.items() if key not in ("BRAIN_DIR", "BRAIN")}
+        return subprocess.run([sys.executable, str(CHECKER)], env={**base, "WORK_DIR": str(self.work), **env},
+                              capture_output=True, text=True, check=False)
+
+    def test_brain_then_the_setting_then_the_only_brain(self) -> None:
+        self.assertIn("DEAD MD LINK (missing-a.md)", self.check().stdout)
+        (self.work / "work-config.local.json").write_text('{"version": 1, "defaultBrain": "brain-initech"}', encoding="utf-8")
+        self.assertIn("DEAD MD LINK (missing-b.md)", self.check().stdout)
+        self.assertIn("DEAD MD LINK (missing-a.md)", self.check(BRAIN_DIR=str(self.work / "brain")).stdout)  # BRAIN_DIR wins
+        (self.work / "work-config.local.json").unlink()
+        shutil.rmtree(self.work / "brain")
+        self.assertIn("DEAD MD LINK (missing-b.md)", self.check().stdout)  # the only brain
+
+    def test_without_any_brain_or_with_an_invalid_setting_it_fails_clearly(self) -> None:
+        shutil.rmtree(self.work / "brain")
+        shutil.rmtree(self.work / "brain-initech")
+        result = self.check()
+        self.assertEqual(result.returncode, 2)
+        self.assertIn("brain not found", result.stderr)
+        (self.work / "work-config.local.json").write_text('{"version": 1, "defaultBrain": "brain-nope"}', encoding="utf-8")
+        result = self.check()
+        self.assertEqual(result.returncode, 1)
+        self.assertIn("defaultBrain brain-nope is not a brain", result.stderr)
+        self.assertNotIn("Traceback", result.stderr)
+
+
 class CrossBrainLinksTest(unittest.TestCase):
     """A brain is a trust boundary: no Markdown link from one brain into another."""
 

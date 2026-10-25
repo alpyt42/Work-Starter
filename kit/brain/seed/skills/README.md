@@ -22,7 +22,8 @@ from pathlib import Path
 here = Path(__file__).resolve()
 found = next((p for p in here.parents if (p / "tools/machine/work_config.py").is_file()), None)
 work = Path(os.environ.get("WORK_DIR") or found or sys.exit("Work root not found: set WORK_DIR"))
-brain, tools = Path(os.environ.get("BRAIN_DIR") or work / "brain"), work / "tools"
+own = next((p for p in here.parents if (p / "AGENTS.md").is_file() and (p / ".data").is_dir()), work / "brain")
+brain, tools = Path(os.environ.get("BRAIN_DIR") or own), work / "tools"
 ```
 
-The default brain is `brain/`; for another brain (`brain-<name>`), the script reads `BRAIN_DIR`, like the tools in `tools/`.
+The script reads the brain that holds it, whatever its name; a skill installed as a copy (`.install-as-copy`) is outside its brain and falls back to `brain/`. `BRAIN_DIR` overrides both, like the tools in `tools/`; `uv run tools/machine/work_config.py default-brain` prints the default brain of the workspace.

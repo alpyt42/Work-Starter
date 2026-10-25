@@ -5,8 +5,8 @@
 # ///
 """Read-only check that this machine can run the Work workspace.
 
-Checks the required commands, the brains expected by brain/.data/local-paths.json
-(present, Git repository, upstream, unpushed commits), the local input folders
+Checks the required commands, the default brain (work_config.py) and the brains expected by its
+.data/local-paths.json (present, Git repository, upstream, unpushed commits), the local input folders
 named there, the JSON state files of every brain, and the local artifacts folder.
 It also checks the skill configuration (valid layers, changed since the last
 update.sh, skills of skills-lock.json no layer knows, enabled third-party skills not
@@ -113,17 +113,32 @@ def boundary_checks(brain: Path) -> None:
 
 
 def brain_checks() -> None:
-    config_file = WORK / "brain/.data/local-paths.json"
-    if not (WORK / "brain").is_dir():
-        report("ERROR", "brain/ missing: run tools/machine/bootstrap.sh with BRAIN_REMOTE")
-        return
-    config = load_json(config_file) if config_file.is_file() else {}
-    if not config_file.is_file():
-        report("WARN", "brain/.data/local-paths.json missing: input folders and expected brains unknown")
+    default = None
+    invalid = False
+    try:
+        default = work_config.default_brain(WORK)
+    except work_config.ConfigError as error:
+        invalid = True
+        report("ERROR", str(error))
+    if default is None and not invalid:
+        brains = [brain.name for brain in work_config.find_brains(WORK)]
+        if not brains:
+            report("ERROR", "no brain at the Work root: run tools/machine/install.sh")
+        else:
+            report("WARN", f"several brains ({', '.join(brains)}) and no default brain: set \"defaultBrain\" in work-config.local.json")
+
+    # The shared settings (input folders, expected brains) live in the default brain.
+    shared = f"{default.name}/.data/local-paths.json" if default else "local-paths.json"
+    config: dict | list | None = {}
+    if default is not None:
+        config_file = default / ".data/local-paths.json"
+        config = load_json(config_file) if config_file.is_file() else {}
+        if not config_file.is_file():
+            report("WARN", f"{shared} missing: input folders and expected brains unknown")
     config = config if isinstance(config, dict) else {}
 
     present = sorted(p.name for p in WORK.iterdir() if p.is_dir() and BRAIN_NAME.fullmatch(p.name))
-    expected = config.get("brains", ["brain"])
+    expected = config.get("brains", [default.name] if default else [])
     for name in expected:
         if name not in present:
             report("ERROR", f"expected brain missing: {name}/ (clone it by hand, see the README section \"Set up a new machine\")")
@@ -132,7 +147,7 @@ def brain_checks() -> None:
         if not (brain / "AGENTS.md").is_file() or not (brain / ".data").is_dir():
             report("WARN", f"{name}/ has no AGENTS.md or .data/: ignored by the tools")
             continue
-        if name not in expected:
+        if default is not None and name not in expected:
             report("INFO", f"{name}/ is present but not in the \"brains\" list of local-paths.json")
         repo_checks(brain)
         boundary_checks(brain)
@@ -146,7 +161,7 @@ def brain_checks() -> None:
             continue
         folder = Path.home() / value
         if not folder.is_dir():
-            report("WARN", f"input folder \"{key}\" not found on this machine: adjust brain/.data/local-paths.json")
+            report("WARN", f"input folder \"{key}\" not found on this machine: adjust {shared}")
 
 
 def skills_checks() -> None:

@@ -10,10 +10,11 @@ an AGENTS.md and a .data/ folder. Each transcript belongs to exactly one brain:
 its state lives only in that brain's .data/transcripts.json. A transcript is
 new when no brain lists it.
 
-`brain/` is the default brain and holds the shared configuration: the input
-folders in .data/local-paths.json and, optionally, the list of brains expected
-on every machine (`"brains": ["brain", "brain-perso"]`). A missing expected
-brain stops the tool, so its transcripts never come back as new elsewhere.
+The default brain (`brain/`, else the only brain, or the one named by `defaultBrain`
+in work-config.local.json: see tools/machine/work_config.py) holds the shared
+configuration: the input folders in .data/local-paths.json and, optionally, the
+list of brains expected on every machine (`"brains": ["brain", "brain-perso"]`).
+A missing expected brain stops the tool, so its transcripts never come back as new elsewhere.
 
 Each brain is a trust boundary declared in its own .data/brain.json (`scope`,
 `description`, ...). `brains` prints the scope and the description next to each
@@ -26,36 +27,45 @@ another workspace and TRANSCRIPTS_DIR to override the transcript folder.
 from __future__ import annotations
 
 import argparse
+import importlib.util
 import json
 import os
-import re
 import sys
 from pathlib import Path
 
 
 WORK = Path(os.environ.get("WORK_DIR", Path(__file__).resolve().parents[2])).resolve()
-DEFAULT = "brain"
-NAME = re.compile(r"^brain(-[a-z0-9][a-z0-9-]*)?$")
+_spec = importlib.util.spec_from_file_location("work_config", Path(__file__).resolve().parents[1] / "machine/work_config.py")
+assert _spec and _spec.loader
+work_config = importlib.util.module_from_spec(_spec)
+_spec.loader.exec_module(work_config)  # owns the rule of what a brain is and which one is the default
 
 
-def is_brain(path: Path) -> bool:
-    return NAME.fullmatch(path.name) is not None and (path / "AGENTS.md").is_file() and (path / ".data").is_dir()
+def default_brain() -> Path | None:
+    """The default brain of the Work root (None: no brain, or several and no `defaultBrain` setting)."""
+    try:
+        return work_config.default_brain(WORK)
+    except work_config.ConfigError as error:
+        raise SystemExit(f"work config error: {error}") from None
 
 
 def discover() -> list[Path]:
     """Brains present at the Work root, the default brain first."""
-    found = sorted((p for p in WORK.iterdir() if p.is_dir() and is_brain(p)), key=lambda p: (p.name != DEFAULT, p.name))
-    return found
+    try:
+        return work_config.discover_brains(WORK)
+    except work_config.ConfigError as error:
+        raise SystemExit(f"work config error: {error}") from None
 
 
 def shared_config() -> dict:
-    path = WORK / DEFAULT / ".data/local-paths.json"
-    return json.loads(path.read_text(encoding="utf-8")) if path.is_file() else {}
+    default = default_brain()
+    path = default / ".data/local-paths.json" if default else None
+    return json.loads(path.read_text(encoding="utf-8")) if path and path.is_file() else {}
 
 
 def check_expected(brains: list[Path]) -> None:
     expected = shared_config().get("brains", [])
-    missing = [name for name in expected if not (WORK / name).is_dir() or not is_brain(WORK / name)]
+    missing = [name for name in expected if not (WORK / name).is_dir() or not work_config.is_brain(WORK / name)]
     if missing:
         raise SystemExit(
             "expected brain(s) missing: " + ", ".join(missing)
@@ -88,7 +98,11 @@ def transcripts_dir() -> Path:
         return Path(os.environ["TRANSCRIPTS_DIR"])
     relative = shared_config().get("transcripts_dir")
     if not relative:
-        raise SystemExit(f"transcripts_dir missing from {DEFAULT}/.data/local-paths.json")
+        default = default_brain()
+        raise SystemExit(
+            f"transcripts_dir missing from {default.name}/.data/local-paths.json" if default
+            else "no default brain (several brains): set defaultBrain in work-config.local.json to read transcripts_dir"
+        )
     return Path.home() / relative
 
 

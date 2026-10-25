@@ -12,7 +12,7 @@
     path = ~/.gitconfig-personal
 [includeIf "gitdir:~/Work/repos/personal/"]
     path = ~/.gitconfig-personal
-[includeIf "gitdir:~/Work/brain/"]
+[includeIf "gitdir:~/Work/brain/"]                 # the default brain: use its folder name if it is brain-<name>
     path = ~/.gitconfig-employer
 [includeIf "gitdir:~/Work/repos/<client-a>/"]
     path = ~/.gitconfig-<client-a>

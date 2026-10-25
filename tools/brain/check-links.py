@@ -8,8 +8,9 @@ The exit status is non-zero when dead links remain. This replaces "being careful
 for a while" with something verifiable.
 
 Usage: `uv run tools/brain/check-links.py` from Work/ (or from anywhere: the
-script finds brain/ at the Work root; set BRAIN_DIR to force another folder,
-like the other tools; BRAIN is still accepted). Fails when the brain is not
+script finds the default brain at the Work root, see tools/machine/work_config.py;
+set BRAIN_DIR to force another folder, like the other tools (BRAIN is still
+accepted), and WORK_DIR to use another Work root). Fails when the brain is not
 found, so that it never reports "0 dead links" for an empty folder.
 `--allow-missing-local` reports separately the missing links to local
 artifacts and repos, which a new checkout does not have. The files of
@@ -22,16 +23,32 @@ separately ("cross-brain link") and fails the check, even if the target exists.
 """
 import argparse
 import collections
+import importlib.util
 import os
 import re
 import subprocess
 import sys
+from pathlib import Path
 
-BRAIN = (
-    os.environ.get("BRAIN_DIR")
-    or os.environ.get("BRAIN")
-    or os.path.join(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))), "brain")
-)
+TOOLS = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))  # tools/
+WORK = os.environ.get("WORK_DIR") or os.path.dirname(TOOLS)
+
+
+def default_brain_dir() -> str:
+    """The default brain of WORK (rule of tools/machine/work_config.py); `<WORK>/brain` when there is none."""
+    spec = importlib.util.spec_from_file_location("work_config", os.path.join(TOOLS, "machine", "work_config.py"))
+    work_config = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(work_config)
+    try:
+        default = work_config.default_brain(Path(WORK))
+    except work_config.ConfigError as error:
+        raise SystemExit(f"work config error: {error}") from None
+    except OSError:
+        default = None
+    return str(default) if default else os.path.join(WORK, "brain")
+
+
+BRAIN = os.environ.get("BRAIN_DIR") or os.environ.get("BRAIN") or default_brain_dir()
 
 BRAIN_NAME = re.compile(r"^brain(-[a-z0-9][a-z0-9-]*)?$")
 SCHEME = re.compile(r"^[a-z][a-z0-9+.-]*:", re.I)

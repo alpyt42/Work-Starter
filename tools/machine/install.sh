@@ -59,8 +59,13 @@ if [[ "$origin" == *Work-Starter* ]] && ! git remote get-url starter >/dev/null 
   echo "Remote 'origin' (Work-Starter) renamed 'starter'. Add your own with: git remote add origin <url>"
 fi
 
-# 2. brain/ and optional brain-perso/
-prepare_brain brain "${BRAIN_URL:-new}"
+# 2. brain/ (unless another default brain is already here and no URL is given) and optional brain-perso/
+existing="$(uv run tools/machine/work_config.py default-brain 2>/dev/null || true)"
+if [[ -z "$BRAIN_URL" && -n "$existing" && "$existing" != brain ]]; then
+  echo "$existing/ is the default brain; brain/ not created."
+else
+  prepare_brain brain "${BRAIN_URL:-new}"
+fi
 [[ -z "$BRAIN_PERSO" ]] || prepare_brain brain-perso "$BRAIN_PERSO"
 
 # 3. Skills, links and checks
