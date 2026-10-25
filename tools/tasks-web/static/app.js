@@ -2,26 +2,27 @@
 
 const token = document.querySelector('meta[name="csrf-token"]').content;
 const ids = Object.fromEntries([
-  'dueCount', 'waitingCount', 'lastSync', 'resultCount', 'searchInput',
-  'projectFilter', 'ownerFilter', 'scopeFilter', 'listButton', 'boardButton', 'toolsButton',
-  'filters', 'resetFilters', 'listView', 'boardView', 'boardHint', 'toolsView', 'toolsCatalog',
-  'toolSearch', 'summaryChips', 'toolResult', 'toolResultTitle', 'toolResultStatus',
-  'toolResultEmpty', 'toolResultOutput', 'gitButton', 'gitView', 'gitStatus', 'gitRepos', 'gitDetail',
-  'gitDetailTitle', 'gitDetailStatus', 'gitDetailEmpty', 'gitDetailNote', 'gitDiff',
-  'errorBanner', 'editor', 'editorForm', 'editorTitle',
-  'editorHint', 'editorProject', 'editorActionTitle', 'editorHistory', 'editorHistoryList',
-  'editorHistoryCount', 'addNoteButton', 'noteForm', 'noteInput', 'submitNote', 'closeNoteForm',
-  'noteError', 'editorOwner', 'editorState',
-  'editorGroup', 'editorGroupNew', 'editorGroupNewLabel', 'editorGroupHint', 'groupFilter', 'editorPriority', 'editorDue', 'editorScheduled', 'editorError', 'saveEditor', 'deleteEditor', 'toast',
-  'detailPreview', 'detailDialog', 'detailTitle', 'detailMeta', 'detailBody', 'closeDetail',
-  'editDetail', 'dismissDetail', 'undoButton',
-  'searchButton', 'searchView', 'docQuery', 'docProject', 'docStatus', 'docList', 'docPane', 'docPaneTitle',
-  'docPaneMeta', 'docPanePath', 'docBack', 'docEdit', 'docCancel', 'docSave', 'docPaneEmpty', 'docPaneError',
-  'docArticle', 'docEditor', 'newNoteButton',
-  'newNoteDialog', 'newNoteForm', 'closeNewNote', 'cancelNewNote', 'newNoteTitle', 'newNoteProject',
-  'newNoteContent', 'newNoteWhere', 'newNoteError', 'saveNewNote',
-  'brainSwitch', 'brainStatic', 'brainButton', 'brainName', 'brainMenu'
+  'app', 'sidebar', 'scrim', 'sidebarToggle', 'brainMini', 'sidebarClose', 'mainContent',
+  'brainSwitch', 'brainStatic', 'brainStaticName', 'brainStaticScope', 'brainButton', 'brainName', 'brainScope', 'brainMenu',
+  'todayButton', 'listButton', 'boardButton', 'notesButton', 'searchButton', 'toolsButton', 'gitButton',
+  'todayCount', 'openCount', 'gitCount', 'projectNav', 'lastSync',
+  'moreButton', 'moreMenu', 'refreshButton', 'undoButton', 'undoLabel', 'shortcutsButton', 'quitButton',
+  'viewTitle', 'resultCount', 'gitStatus', 'searchField', 'searchInput', 'docQuery', 'toolSearch', 'newNoteButton', 'newButton',
+  'filters', 'projectChip', 'projectChipValue', 'projectChipClear', 'ownerChip', 'ownerFilter', 'scopeChip', 'scopeFilter',
+  'groupChip', 'groupFilter', 'docProjectChip', 'docProject', 'resetFilters', 'foldAllButton', 'errorBanner',
+  'todayView', 'listView', 'boardView', 'docsView', 'docStatus', 'docList', 'docPane', 'docBack', 'docPaneTitle', 'docPaneMeta',
+  'docPanePath', 'docEdit', 'docCancel', 'docSave', 'docPaneEmpty', 'docPaneError', 'docArticle', 'docEditor',
+  'toolsView', 'toolsCatalog', 'toolResult', 'toolResultTitle', 'toolResultCommand', 'toolResultStatus', 'toolResultEmpty', 'toolResultOutput',
+  'gitView', 'gitRepos', 'gitDetail', 'gitDetailTitle', 'gitDetailStatus', 'gitDetailEmpty', 'gitDetailNote', 'gitDiff',
+  'editor', 'editorForm', 'editorTitle', 'editorHint', 'closeEditor', 'editorProjectField', 'editorProject', 'editorActionTitle',
+  'editorState', 'editorOwner', 'editorDue', 'editorScheduled', 'editorPriority', 'editorGroup', 'editorGroupNewLabel',
+  'editorGroupNew', 'editorGroupHint', 'editorHistory', 'editorHistoryCount', 'addNoteButton', 'editorHistoryList', 'noteForm',
+  'noteInput', 'submitNote', 'closeNoteForm', 'noteError', 'editorStamps', 'editorError', 'deleteEditor', 'cancelEditor', 'saveEditor',
+  'popover', 'newNoteDialog', 'newNoteForm', 'closeNewNote', 'newNoteTitle', 'newNoteProject', 'newNoteWhere', 'newNoteContent',
+  'newNoteError', 'cancelNewNote', 'saveNewNote', 'quitDialog', 'quitConfirm', 'shortcutsDialog', 'toast', 'toastText', 'toastAction'
 ].map(id => [id, document.getElementById(id)]));
+
+// ---------- Session state (view and filters of this tab; no task content) ----------
 const UI_STATE_KEY = 'actions-brain-ui-v1';
 function readUIState() {
   try {
@@ -30,25 +31,26 @@ function readUIState() {
   } catch { return {}; }
 }
 const savedUI = readUIState();
-let pendingProject = typeof savedUI.project === 'string' ? savedUI.project : '';
+const VIEWS = ['today', 'list', 'board', 'notes', 'search', 'tools', 'git'];
+const ACTION_VIEWS = ['today', 'list', 'board'];
+const VIEW_TITLES = {today: 'Aujourd’hui', list: 'Actions', board: 'Tableau', notes: 'Notes', search: 'Recherche', tools: 'Outils', git: 'Git'};
+const NAV_BUTTONS = {today: 'todayButton', list: 'listButton', board: 'boardButton', notes: 'notesButton', search: 'searchButton', tools: 'toolsButton', git: 'gitButton'};
+let view = VIEWS.includes(savedUI.view) ? savedUI.view : 'today';
+// The project filter of the sidebar: '' (all), a register path, or a folder prefix ending with '/' (a client and its missions).
+let projectScope = typeof savedUI.project === 'string' ? savedUI.project : '';
 let pendingGroup = typeof savedUI.group === 'string' ? savedUI.group : '';
-// Folded list groups, as `register|slug` ('|' alone: « Sans groupe »).
+// Folded sections, shared by the list and the board: `register|slug` for a group, `register|` for the loose actions of a project,
+// `p:register` for a project, '|' for « Sans groupe » in a board column.
 const foldedGroups = new Set(Array.isArray(savedUI.foldedGroups) ? savedUI.foldedGroups.filter(key => typeof key === 'string') : []);
 let snapshot = {actions: [], registers: [], owner: '', today: ''};
-let pendingDocProject = typeof savedUI.docProject === 'string' ? savedUI.docProject : typeof savedUI.notesProject === 'string' ? savedUI.notesProject : '';
-let view = ['list', 'board', 'tools', 'git', 'search'].includes(savedUI.view) ? savedUI.view : savedUI.view === 'notes' ? 'search' : 'list';
 let toastTimer;
 let tools = [];
-let detailCurrent = null;
-let previewRequest = 0;
-let previewTrigger = null;
-let previewHideTimer;
-let suppressPreviewFocus = false;
 let editorHistoryRequest = 0;
 let noteState = null;
 let noteBusy = false;
 let undoState = {available: false, label: null, depth: 0};
 let undoBusy = false;
+let selectedId = null;
 let notesData = [];
 let notesLoaded = false;
 let recentDocs = [];
@@ -57,6 +59,7 @@ let docTimer;
 let docMode = 'recent';
 let docResults = [];
 let docTotal = 0;
+let docTruncated = false;
 let docTerms = [];
 let docError = '';
 let docSearchRequest = 0;
@@ -72,42 +75,130 @@ const DOC_MARK_CAP = 500;
 const docFoldCache = new Map();
 const INBOX_REGISTER = 'inbox';
 const detailCache = new Map();
-const STATUS_OPTIONS = [
-  [' ', 'À faire'], ['/', 'En cours'], ['w', 'En attente'], ['x', 'Terminée'], ['-', 'Annulée']
-];
 function saveUIState() {
   try {
     sessionStorage.setItem(UI_STATE_KEY, JSON.stringify({
-      view, search: ids.searchInput.value, project: ids.projectFilter.value, group: ids.groupFilter.value || pendingGroup,
+      view, search: ids.searchInput.value, project: projectScope, group: ids.groupFilter.value || pendingGroup,
       owner: ids.ownerFilter.value, scope: ids.scopeFilter.value, toolSearch: ids.toolSearch.value,
-      docQuery: ids.docQuery.value, docProject: ids.docProject.value, gitRepo: gitCurrent, foldedGroups: [...foldedGroups],
-      brain: currentBrain
+      docQuery: ids.docQuery.value, docProject: ids.docProject.value, foldedGroups: [...foldedGroups], brain: currentBrain
     }));
   } catch { /* The interface remains usable when browser storage is unavailable. */ }
 }
 
+// ---------- Small helpers ----------
+const SVG_NS = 'http://www.w3.org/2000/svg';
 function element(tag, className = '', value = '') {
   const node = document.createElement(tag);
   if (className) node.className = className;
   if (value) node.textContent = value;
   return node;
 }
+function svgIcon(markup, className = '') {
+  const svg = document.createElementNS(SVG_NS, 'svg');
+  svg.setAttribute('viewBox', '0 0 16 16');
+  svg.setAttribute('aria-hidden', 'true');
+  if (className) svg.setAttribute('class', className);
+  svg.innerHTML = markup;
+  return svg;
+}
+function iconButton(className, label, icon, title = label) {
+  const button = element('button', className);
+  button.type = 'button';
+  button.setAttribute('aria-label', label);
+  button.title = title;
+  button.append(svgIcon(icon));
+  return button;
+}
+const ICONS = {
+  open: '<path d="M9.5 3h3.5v3.5M13 3 8.5 7.5M7 4H4.5A1.5 1.5 0 0 0 3 5.5v6A1.5 1.5 0 0 0 4.5 13h6a1.5 1.5 0 0 0 1.5-1.5V9"/>',
+  trash: '<path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/>',
+  plus: '<path d="M8 3.5v9M3.5 8h9"/>',
+  chevron: '<path d="M4.5 6.25 8 9.75l3.5-3.5"/>',
+  calendar: '<rect x="2.75" y="3.5" width="10.5" height="9.5" rx="1.5"/><path d="M2.75 6.5h10.5M5.5 2.5v2M10.5 2.5v2"/>',
+  check: '<path d="M3.5 8.5l3 3 6-6.5"/>'
+};
+function plural(count, word, words = `${word}s`) { return `${count} ${count === 1 ? word : words}`; }
+const TIME_FORMAT = new Intl.DateTimeFormat('fr-FR', {hour: '2-digit', minute: '2-digit'});
+const DAY_FORMAT = new Intl.DateTimeFormat('fr-FR', {weekday: 'short', day: 'numeric', month: 'short'});
+const DAY_YEAR_FORMAT = new Intl.DateTimeFormat('fr-FR', {day: 'numeric', month: 'short', year: 'numeric'});
+const LONG_FORMAT = new Intl.DateTimeFormat('fr-FR', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
+function parseDay(iso) {
+  const [year, month, day] = iso.split('-').map(Number);
+  return new Date(year, month - 1, day, 12);
+}
+function isoDay(date) {
+  return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+}
+function today() { return snapshot.today || isoDay(new Date()); }
+function addDays(iso, count) {
+  const date = parseDay(iso);
+  date.setDate(date.getDate() + count);
+  return isoDay(date);
+}
+function dayDiff(from, to) { return Math.round((parseDay(to) - parseDay(from)) / 86400000); }
+function formatDay(iso) { return iso ? DAY_YEAR_FORMAT.format(parseDay(iso)) : ''; }
 function formatStamp(value) {
   if (!value) return '';
   const [day, time] = value.split(' ');
-  return time ? `${formatDate(day)} à ${time}` : formatDate(day);
+  return time ? `${formatDay(day)} à ${time}` : formatDay(day);
 }
-function formatDate(value) {
-  if (!value) return '—';
-  const [year, month, day] = value.split('-');
-  return `${day}/${month}/${year}`;
+// « aujourd’hui », « demain », « hier », otherwise « lun. 27 oct. » (« 12 janv. 2027 » in another year).
+function relativeDay(iso) {
+  const diff = dayDiff(today(), iso);
+  if (diff === 0) return 'aujourd’hui';
+  if (diff === 1) return 'demain';
+  if (diff === -1) return 'hier';
+  return iso.slice(0, 4) === today().slice(0, 4) ? DAY_FORMAT.format(parseDay(iso)) : DAY_YEAR_FORMAT.format(parseDay(iso));
 }
-function statusLabel(state) {
-  return {' ': 'À faire', '/': 'En cours', w: 'En attente', x: 'Terminée', '-': 'Annulée'}[state] || state;
+function closed(action) { return action.state === 'x' || action.state === '-'; }
+// The mission part of « client / mission » (the whole label otherwise), for narrow places; the full label goes in the tooltip.
+function shortProject(label) { return label.split(' / ').at(-1); }
+function dueState(action) {
+  if (!action.due) return '';
+  if (closed(action)) return 'closed';
+  return action.due < today() ? 'late' : action.due === today() ? 'today' : '';
 }
-function stateClass(state) {
-  return {' ': 'state-todo', '/': 'state-progress', w: 'state-wait', x: 'state-done', '-': 'state-cancel'}[state] || '';
+function dueTitle(action) {
+  const late = dueState(action) === 'late' ? dayDiff(action.due, today()) : 0;
+  return `Échéance le ${LONG_FORMAT.format(parseDay(action.due))}${late ? `, en retard de ${plural(late, 'jour')}` : ''}`;
 }
+function dueNode(action) {
+  const state = dueState(action);
+  const node = element('span', `due${state ? ` due-${state}` : ''}`, relativeDay(action.due));
+  node.title = dueTitle(action);
+  return node;
+}
+
+// ---------- Status and priority ----------
+const STATUS = {
+  ' ': {label: 'À faire', cls: 's-todo', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/>'},
+  '/': {label: 'En cours', cls: 's-doing', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/><path class="fill" d="M8 4.25a3.75 3.75 0 0 1 0 7.5z"/>'},
+  w: {label: 'En attente', cls: 's-wait', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/><path class="bar" d="M6.6 6.1v3.8M9.4 6.1v3.8"/>'},
+  x: {label: 'Terminée', cls: 's-done', icon: '<circle class="fill" cx="8" cy="8" r="6.5"/><path class="knock" d="M5.3 8.2l1.8 1.8 3.6-3.8"/>'},
+  '-': {label: 'Annulée', cls: 's-cancel', icon: '<circle class="fill" cx="8" cy="8" r="6.5"/><path class="knock" d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2"/>'}
+};
+const STATUS_ORDER = [' ', '/', 'w', 'x', '-'];
+function statusInfo(state) { return STATUS[state] || STATUS[' ']; }
+function statusLabel(state) { return STATUS[state]?.label || state; }
+function statusIcon(state) { return svgIcon(statusInfo(state).icon, `status-icon ${statusInfo(state).cls}`); }
+const PRIORITY = {
+  '⏫': {label: 'Haute', cls: 'prio-high', icon: '<path d="M4 8.5l4-4 4 4M4 12.5l4-4 4 4"/>'},
+  '🔼': {label: 'Moyenne', cls: 'prio-medium', icon: '<path d="M4.5 10 8 6.5l3.5 3.5"/>'},
+  '🔽': {label: 'Basse', cls: 'prio-low', icon: '<path d="M4.5 6.5 8 10l3.5-3.5"/>'}
+};
+function priorityNode(action) {
+  const info = PRIORITY[action.priority];
+  const node = element('span', info ? `priority ${info.cls}` : 'priority');
+  if (info) {
+    node.setAttribute('role', 'img');
+    node.setAttribute('aria-label', `Priorité ${info.label.toLowerCase()}`);
+    node.title = `Priorité ${info.label.toLowerCase()}`;
+    node.append(svgIcon(info.icon));
+  }
+  return node;
+}
+
+// ---------- Groups ----------
 function groupLabel(slug) {
   const text = slug.replace(/-/g, ' ');
   return text.charAt(0).toLocaleUpperCase('fr') + text.slice(1);
@@ -117,235 +208,7 @@ function groupSlug(text) {
   return text.toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 40).replace(/-+$/, '');
 }
-function dateNode(action) {
-  if (!action.due) return element('span', 'cell-muted', '—');
-  const className = action.state === 'x' || action.state === '-' ? '' : action.due < snapshot.today ? ' date-overdue' : action.due === snapshot.today ? ' date-today' : '';
-  return element('span', `date-pill${className}`, formatDate(action.due));
-}
-function priorityNode(action) {
-  const label = {'⏫': 'Haute', '🔼': 'Moyenne', '🔽': 'Basse'}[action.priority] || 'Normale';
-  return element('span', `priority-pill${action.priority === '⏫' ? ' priority-high' : ''}`, label);
-}
-function statusControl(action) {
-  const select = element('select', `status-select ${stateClass(action.state)}`);
-  select.dataset.actionId = action.id;
-  select.setAttribute('aria-label', `Changer le statut de ${action.id}`);
-  select.title = 'Changer le statut sans ouvrir la tâche';
-  for (const [value, label] of STATUS_OPTIONS) select.add(new Option(label, value));
-  select.value = action.state;
-  select.addEventListener('click', event => event.stopPropagation());
-  select.addEventListener('pointerdown', event => event.stopPropagation());
-  select.addEventListener('change', event => {
-    event.stopPropagation();
-    updateStatus(action, select.value, select);
-  });
-  return select;
-}
-function filteredBase() {
-  const text = ids.searchInput.value.trim().toLocaleLowerCase('fr');
-  const project = ids.projectFilter.value;
-  const mine = ids.ownerFilter.value === 'mine';
-  const group = ids.groupFilter.value;
-  return snapshot.actions.filter(action =>
-    (!text || `${action.id} ${action.title} ${action.owner} ${action.project} ${action.group ? `${groupLabel(action.group)} ${action.group}` : ''}`.toLocaleLowerCase('fr').includes(text)) &&
-    (!project || action.register === project) &&
-    (!group || (group === 'none' ? !action.group : Boolean(action.group) && groupKey(action) === group)) &&
-    (!mine || action.owner.toLocaleLowerCase('fr').includes(snapshot.owner.toLocaleLowerCase('fr')))
-  );
-}
-function scoped(actions) {
-  const scope = ids.scopeFilter.value;
-  return actions.filter(action => scope === 'all' || (scope === 'active' ? !['x', '-'].includes(action.state) : ['x', '-'].includes(action.state)));
-}
-function sortActions(actions) {
-  const rank = {'/': 0, ' ': 1, w: 2, x: 3, '-': 4};
-  const priority = {'⏫': 0, '🔼': 1, '': 2, '🔽': 3};
-  return [...actions].sort((a, b) =>
-    rank[a.state] - rank[b.state] ||
-    priority[a.priority] - priority[b.priority] ||
-    (a.due || '9999').localeCompare(b.due || '9999') ||
-    a.id.localeCompare(b.id)
-  );
-}
-function setSummary() {
-  const active = snapshot.actions.filter(action => !['x', '-'].includes(action.state));
-  ids.dueCount.textContent = String(active.filter(action => action.due && action.due <= snapshot.today).length);
-  ids.waitingCount.textContent = String(active.filter(action => action.state === 'w').length);
-}
-function empty(message) {
-  const box = element('div', 'empty');
-  box.append(element('strong', '', 'Aucune action ici.'), element('span', '', message));
-  return box;
-}
-async function loadDetails(action) {
-  const key = `${action.id}:${action.version}`;
-  if (!detailCache.has(key)) {
-    const pending = request(`/api/actions/${encodeURIComponent(action.id)}/details`);
-    detailCache.set(key, pending);
-    pending.catch(() => detailCache.delete(key));
-  }
-  return detailCache.get(key);
-}
-function detailText(action) {
-  if (!action.details.length) return 'Aucune note complémentaire dans le registre.';
-  return action.details.join('\n');
-}
-function metadata(action) {
-  const fields = [
-    ['Projet', action.project], ...(action.group ? [['Groupe', groupLabel(action.group)]] : []), ['Responsable', action.owner],
-    ['Statut', statusLabel(action.state)],
-    ['Créée', action.created_at ? formatStamp(action.created_at) : 'Non renseignée'],
-    ['Mise à jour', action.updated_at ? formatStamp(action.updated_at) : 'Non renseignée'],
-    ['Priorité', {'⏫': 'Haute', '🔼': 'Moyenne', '🔽': 'Basse'}[action.priority] || 'Normale'],
-    ['Échéance', action.due ? formatDate(action.due) : 'Non renseignée'],
-    ['Planifiée', action.scheduled ? formatDate(action.scheduled) : 'Non renseignée']
-  ];
-  if (['x', '-'].includes(action.state)) fields.push(['Clôture', action.done ? formatDate(action.done) : 'Non renseignée']);
-  const list = element('dl', 'action-metadata');
-  for (const [label, value] of fields) {
-    const pair = element('div', 'action-metadata-pair');
-    pair.append(element('dt', '', label), element('dd', '', value));
-    list.append(pair);
-  }
-  return list;
-}
-function positionPreview(trigger) {
-  if (ids.detailPreview.hidden) return;
-  const rect = trigger.getBoundingClientRect();
-  const clip = trigger.closest('.list-view, .board-cards')?.getBoundingClientRect();
-  if (rect.bottom < Math.max(0, clip?.top ?? 0) || rect.top > Math.min(window.innerHeight, clip?.bottom ?? window.innerHeight)) { hidePreview(); return; }
-  const margin = 12;
-  const gap = 10;
-  const width = ids.detailPreview.getBoundingClientRect().width;
-  const height = ids.detailPreview.getBoundingClientRect().height;
-  let left = rect.right + gap;
-  if (left + width > window.innerWidth - margin) left = rect.left - width - gap;
-  left = Math.max(margin, Math.min(left, window.innerWidth - width - margin));
-  const top = Math.max(margin, Math.min(rect.top, window.innerHeight - height - margin));
-  ids.detailPreview.style.left = `${left}px`;
-  ids.detailPreview.style.top = `${top}px`;
-}
-function hidePreview() {
-  clearTimeout(previewHideTimer);
-  previewRequest += 1;
-  ids.detailPreview.hidden = true;
-  previewTrigger?.setAttribute('aria-expanded', 'false');
-  previewTrigger = null;
-}
-function schedulePreviewHide() {
-  clearTimeout(previewHideTimer);
-  previewHideTimer = setTimeout(() => {
-    if (!ids.detailPreview.matches(':hover') && !ids.detailPreview.contains(document.activeElement)) hidePreview();
-  }, 180);
-}
-async function showPreview(action, trigger) {
-  clearTimeout(previewHideTimer);
-  if (previewTrigger && previewTrigger !== trigger) previewTrigger.setAttribute('aria-expanded', 'false');
-  previewTrigger = trigger;
-  trigger.setAttribute('aria-expanded', 'true');
-  const requestId = ++previewRequest;
-  ids.detailPreview.textContent = 'Chargement du détail…';
-  ids.detailPreview.hidden = false;
-  positionPreview(trigger);
-  try {
-    const details = await loadDetails(action);
-    if (requestId === previewRequest) {
-      ids.detailPreview.setAttribute('aria-label', `Aperçu de ${details.id}`);
-      const header = element('div', 'preview-header');
-      header.append(element('span', 'preview-id', details.id), element('strong', 'preview-title', details.title));
-      const notes = element('section', 'preview-notes');
-      notes.append(element('h3', '', 'Notes et historique'), element('pre', '', detailText(details)));
-      ids.detailPreview.replaceChildren(header, metadata(details), notes);
-      positionPreview(trigger);
-    }
-  } catch (error) {
-    if (requestId === previewRequest) {
-      ids.detailPreview.textContent = error.message;
-      positionPreview(trigger);
-    }
-  }
-}
-async function openDetail(action) {
-  hidePreview();
-  detailCurrent = null;
-  ids.detailTitle.textContent = `${action.id} · ${action.title}`;
-  ids.detailMeta.replaceChildren(metadata(action));
-  ids.detailBody.textContent = 'Chargement du détail…';
-  ids.editDetail.disabled = true;
-  if (!ids.detailDialog.open) ids.detailDialog.showModal();
-  try {
-    const details = await loadDetails(action);
-    if (!ids.detailDialog.open) return;
-    detailCurrent = details;
-    ids.detailTitle.textContent = `${details.id} · ${details.title}`;
-    ids.detailMeta.replaceChildren(metadata(details));
-    ids.detailBody.replaceChildren(element('pre', 'detail-lines', detailText(details)));
-    ids.editDetail.disabled = false;
-  } catch (error) {
-    if (ids.detailDialog.open) ids.detailBody.textContent = error.message;
-  }
-}
-function eyeButton(action) {
-  const eye = element('button', 'detail-eye');
-  eye.type = 'button';
-  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('viewBox', '0 0 24 24');
-  icon.setAttribute('aria-hidden', 'true');
-  icon.innerHTML = '<path d="M6 3.5h9l3 3v13a1.5 1.5 0 0 1-1.5 1.5h-10A1.5 1.5 0 0 1 5 19.5v-14A2 2 0 0 1 6 3.5Z"/><path d="M15 3.5v4h3M8.5 11h6M8.5 14.5h7M8.5 18h4"/>';
-  eye.append(icon);
-  eye.setAttribute('aria-label', `Aperçu et détail de ${action.id}`);
-  eye.setAttribute('aria-controls', 'detailPreview');
-  eye.setAttribute('aria-expanded', 'false');
-  eye.addEventListener('mouseenter', () => showPreview(action, eye));
-  eye.addEventListener('mouseleave', schedulePreviewHide);
-  eye.addEventListener('focus', () => { if (!suppressPreviewFocus) showPreview(action, eye); });
-  eye.addEventListener('blur', event => { if (event.relatedTarget !== ids.detailPreview) schedulePreviewHide(); });
-  eye.addEventListener('keydown', event => {
-    if (event.key === 'ArrowDown' && !ids.detailPreview.hidden) { event.preventDefault(); ids.detailPreview.focus(); }
-    if (event.key === 'Escape') hidePreview();
-  });
-  eye.addEventListener('click', event => { event.stopPropagation(); openDetail(action); });
-  return eye;
-}
-ids.detailPreview.addEventListener('mouseenter', () => clearTimeout(previewHideTimer));
-ids.detailPreview.addEventListener('mouseleave', schedulePreviewHide);
-ids.detailPreview.addEventListener('blur', schedulePreviewHide);
-ids.detailPreview.addEventListener('keydown', event => {
-  if (event.key === 'Escape') {
-    event.preventDefault();
-    const trigger = previewTrigger;
-    hidePreview();
-    suppressPreviewFocus = true;
-    trigger?.focus();
-    queueMicrotask(() => { suppressPreviewFocus = false; });
-  }
-});
-// Scroll events do not bubble: capture them from the list, board and page scroll containers.
-window.addEventListener('scroll', () => { if (previewTrigger) positionPreview(previewTrigger); }, {passive: true, capture: true});
-window.addEventListener('resize', () => { if (previewTrigger) positionPreview(previewTrigger); });
-function rowTools(action) {
-  const tools = element('span', 'row-tools');
-  tools.append(eyeButton(action), deleteButton(action));
-  return tools;
-}
-function deleteButton(action) {
-  const button = element('button', 'row-delete');
-  button.type = 'button';
-  button.setAttribute('aria-label', `Supprimer ${action.id}`);
-  button.title = `Supprimer ${action.id} du registre (annulable avec ↶ Annuler)`;
-  button.append(trashIcon());
-  button.addEventListener('click', event => { event.stopPropagation(); deleteFromBoard(action, button); });
-  return button;
-}
-function addButton(label, preset) {
-  const button = element('button', 'group-add', '+');
-  button.type = 'button';
-  button.setAttribute('aria-label', `Ajouter une action au groupe ${label}`);
-  button.title = `Ajouter une action au groupe ${label}`;
-  button.addEventListener('click', event => { event.stopPropagation(); openEditor(null, preset); });
-  return button;
-}
-// A stable tone per group: its slug picks one of the 8 palette colours (--grp-0…7), the same everywhere (list, board, filter).
+// A stable tone per group: its slug picks one of the 8 palette colours (--grp-0…7), the same everywhere.
 function groupTone(slug) {
   let hash = 0;
   for (const char of slug) hash = (Math.imul(hash, 72) + char.charCodeAt(0)) >>> 0;
@@ -356,192 +219,494 @@ function groupKey(action) { return `${action.register}|${action.group}`; }
 function compareGroups(a, b) {
   return a.project.localeCompare(b.project, 'fr') || a.label.localeCompare(b.label, 'fr') || a.key.localeCompare(b.key);
 }
-// Folded groups: list and board share the keys; each section carries data-fold, its toggle .fold-toggle and its body .fold-body.
-function applyFolds() {
-  for (const section of document.querySelectorAll('[data-fold]')) {
-    const folded = foldedGroups.has(section.dataset.fold);
-    section.querySelector('.fold-body').hidden = folded;
-    section.querySelector('.fold-toggle').setAttribute('aria-expanded', String(!folded));
+
+// ---------- Filters ----------
+function inScope(register, scope = projectScope) {
+  return !scope || register === scope || (scope.endsWith('/') && typeof register === 'string' && register.startsWith(scope));
+}
+function isMine(action) {
+  const me = snapshot.owner.toLocaleLowerCase('fr');
+  return action.owner.toLocaleLowerCase('fr').includes(me);
+}
+function filteredBase() {
+  const text = ids.searchInput.value.trim().toLocaleLowerCase('fr');
+  const mine = ids.ownerFilter.value === 'mine';
+  const group = ids.groupFilter.value;
+  return snapshot.actions.filter(action =>
+    (!text || `${action.id} ${action.title} ${action.owner} ${action.project} ${action.group ? `${groupLabel(action.group)} ${action.group}` : ''}`.toLocaleLowerCase('fr').includes(text)) &&
+    inScope(action.register) &&
+    (!group || (group === 'none' ? !action.group : Boolean(action.group) && groupKey(action) === group)) &&
+    (!mine || isMine(action))
+  );
+}
+function scoped(actions) {
+  const scope = ids.scopeFilter.value;
+  return actions.filter(action => scope === 'all' || (scope === 'active' ? !closed(action) : closed(action)));
+}
+const STATE_RANK = {'/': 0, ' ': 1, w: 2, x: 3, '-': 4};
+const PRIORITY_RANK = {'⏫': 0, '🔼': 1, '': 2, '🔽': 3};
+function sortActions(actions) {
+  return [...actions].sort((a, b) =>
+    STATE_RANK[a.state] - STATE_RANK[b.state] ||
+    PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] ||
+    (a.due || '9999').localeCompare(b.due || '9999') ||
+    a.id.localeCompare(b.id)
+  );
+}
+function byDue(actions) {
+  return [...actions].sort((a, b) =>
+    (a.due || '9999').localeCompare(b.due || '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.id.localeCompare(b.id));
+}
+// Aujourd'hui: my late, due or scheduled work, my work in progress, what waits on others (state w or someone else's), then the week ahead.
+function todaySections(actions) {
+  const day = today();
+  const week = addDays(day, 7);
+  const sections = {late: [], today: [], doing: [], waiting: [], week: []};
+  for (const action of actions) {
+    if (closed(action)) continue;
+    if (action.state === 'w' || !isMine(action)) sections.waiting.push(action);
+    else if (action.due && action.due < day) sections.late.push(action);
+    else if (action.due === day || (action.scheduled && action.scheduled <= day)) sections.today.push(action);
+    else if (action.state === '/') sections.doing.push(action);
+    else if ((action.due && action.due <= week) || (action.scheduled && action.scheduled <= week)) sections.week.push(action);
   }
-  const all = ids.listView.querySelector('.fold-all');
-  if (all) all.textContent = listFoldKeys().every(key => foldedGroups.has(key)) ? 'Tout déplier' : 'Tout replier';
+  return {late: byDue(sections.late), today: sortActions(sections.today), doing: byDue(sections.doing), waiting: byDue(sections.waiting), week: byDue(sections.week)};
 }
-function listFoldKeys() { return [...ids.listView.querySelectorAll('[data-fold]')].map(section => section.dataset.fold); }
-function toggleFold(key) {
-  if (foldedGroups.has(key)) foldedGroups.delete(key); else foldedGroups.add(key);
-  applyFolds();
-  saveUIState();
+
+// ---------- Projects (sidebar) ----------
+const PARENT_LABELS = {internal: 'Interne', archive: 'Archives'};
+// Registers as a tree: a client and its missions, a folder of internal projects, or a project on its own.
+function projectTree() {
+  const parents = [];
+  const byKey = new Map();
+  for (const register of snapshot.registers) {
+    const parts = register.path.split('/');
+    const client = parts[1] === 'clients' && parts.length >= 7;
+    const nested = !client && parts.length > 4;
+    const key = client ? `projects/clients/${parts[2]}/` : nested ? `projects/${parts[1]}/` : register.path;
+    const labels = register.label.split(' / ');
+    const label = client ? labels[0] : nested ? PARENT_LABELS[parts[1]] || parts[1] : register.label;
+    const child = client ? labels.slice(1).join(' / ') || parts[4] : register.label;
+    if (!byKey.has(key)) {
+      const node = {key, label, children: []};
+      byKey.set(key, node);
+      parents.push(node);
+    }
+    byKey.get(key).children.push({key: register.path, label: child});
+  }
+  return parents;
 }
-function setAllFolds() {
-  const keys = listFoldKeys();
-  const fold = !keys.every(key => foldedGroups.has(key));
-  for (const key of keys) { if (fold) foldedGroups.add(key); else foldedGroups.delete(key); }
-  applyFolds();
-  saveUIState();
+function scopeLabel(scope) {
+  if (!scope) return '';
+  const register = snapshot.registers.find(item => item.path === scope);
+  if (register) return register.label;
+  return projectTree().find(node => node.key === scope)?.label || scope;
 }
-function foldToggle(className, key) {
-  const toggle = element('button', `${className} fold-toggle`);
-  toggle.type = 'button';
-  toggle.setAttribute('aria-expanded', String(!foldedGroups.has(key)));
-  toggle.addEventListener('click', () => toggleFold(key));
-  toggle.append(element('span', 'list-group-chevron'));
-  return toggle;
+function validateScope() {
+  if (projectScope && !snapshot.registers.some(register => inScope(register.path))) projectScope = '';
 }
-function listRow(action, grouped = false) {
-  const row = element('div', grouped ? `list-row in-group ${groupTone(action.group)}` : 'list-row');
-  const titleCell = element('div', 'action-main');
-  const idLabel = element('span', 'action-id', action.id);
-  if (action.created_at) idLabel.append(element('span', 'action-created', ` · créée le ${formatStamp(action.created_at)}`));
-  if (action.updated_at && action.updated_at !== action.created_at) idLabel.append(element('span', 'action-created', ` · mise à jour le ${formatStamp(action.updated_at)}`));
-  titleCell.append(idLabel);
-  const button = element('button', 'action-title', action.title);
+function projectButton(scope, label, count, className = '') {
+  const button = element('button', `project-item${className ? ` ${className}` : ''}`);
   button.type = 'button';
-  button.addEventListener('click', () => openEditor(action));
-  // Under a group header the project is redundant: empty cell (the grid keeps its columns), owner alone on narrow screens.
-  titleCell.append(button, rowTools(action), element('span', 'action-mobile-meta', grouped ? action.owner : `${action.project} · ${action.owner}`));
-  row.append(titleCell, element('span', 'cell-muted', grouped ? '' : action.project), element('span', 'cell-muted', action.owner), dateNode(action), statusControl(action), priorityNode(action));
+  button.dataset.scope = scope;
+  button.setAttribute('aria-current', String(scope === projectScope));
+  button.append(element('span', 'nav-label', label), element('span', 'nav-count', count ? String(count) : ''));
+  button.title = scope ? `${label} : ${plural(count, 'action ouverte', 'actions ouvertes')}` : 'Toutes les actions du brain';
+  button.addEventListener('click', () => setProjectScope(scope));
+  return button;
+}
+function renderProjectNav() {
+  const counts = new Map();
+  for (const action of snapshot.actions) if (!closed(action)) counts.set(action.register, (counts.get(action.register) || 0) + 1);
+  const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
+  const all = element('li');
+  all.append(projectButton('', 'Tous les projets', total, 'project-all'));
+  const items = [all];
+  for (const parent of projectTree()) {
+    const item = element('li');
+    if (parent.children.length === 1 && parent.children[0].key === parent.key) {
+      item.append(projectButton(parent.key, parent.label, counts.get(parent.key) || 0));
+    } else {
+      item.append(projectButton(parent.key, parent.label, parent.children.reduce((sum, child) => sum + (counts.get(child.key) || 0), 0)));
+      const list = element('ul');
+      for (const child of parent.children) {
+        const entry = element('li');
+        entry.append(projectButton(child.key, child.label, counts.get(child.key) || 0, 'project-child'));
+        list.append(entry);
+      }
+      item.append(list);
+    }
+    items.push(item);
+  }
+  if (items.length === 1 && snapshot.registers.length === 0) items.push(element('li', 'project-empty', 'Aucun registre'));
+  ids.projectNav.replaceChildren(...items);
+}
+function setProjectScope(scope) {
+  projectScope = scope;
+  if (scope) ids.docProject.value = ''; // A project of the sidebar and « Inbox » or « Hors projets » exclude each other.
+  populateGroupFilter();
+  renderProjectNav();
+  saveUIState();
+  closeDrawer(false);
+  if (isDocsView()) refreshDocLists();
+  render();
+}
+
+// ---------- Counters ----------
+function setSummary() {
+  const open = snapshot.actions.filter(action => !closed(action));
+  ids.openCount.textContent = open.length ? String(open.length) : '';
+  const sections = todaySections(open);
+  const urgent = sections.late.length + sections.today.length;
+  ids.todayCount.textContent = urgent ? String(urgent) : '';
+  ids.todayButton.title = `Aujourd’hui (1) : ${plural(sections.late.length, 'action en retard', 'actions en retard')}, ${plural(sections.today.length, 'pour aujourd’hui', 'pour aujourd’hui')}`;
+  renderProjectNav();
+}
+
+// ---------- Rows and cards ----------
+function loadDetails(action) {
+  const key = `${action.id}:${action.version}`;
+  if (!detailCache.has(key)) {
+    const pending = request(`/api/actions/${encodeURIComponent(action.id)}/details`);
+    detailCache.set(key, pending);
+    pending.catch(() => detailCache.delete(key));
+  }
+  return detailCache.get(key);
+}
+function findAction(id) { return snapshot.actions.find(action => action.id === id); }
+function statusButton(action) {
+  const button = element('button', 'status-button');
+  button.type = 'button';
+  button.tabIndex = -1;
+  button.setAttribute('aria-haspopup', 'menu');
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-label', `Statut : ${statusLabel(action.state).toLowerCase()}. Changer le statut de ${action.id}`);
+  button.title = `${statusLabel(action.state)} : changer le statut (s)`;
+  button.append(statusIcon(action.state));
+  button.addEventListener('click', event => {
+    event.stopPropagation();
+    selectAction(action.id, {focus: false, scroll: false});
+    openStatusMenu(action, button);
+  });
+  return button;
+}
+function dueButton(action) {
+  const button = element('button', action.due ? 'due-button' : 'due-button is-empty');
+  button.type = 'button';
+  button.tabIndex = -1;
+  button.setAttribute('aria-haspopup', 'dialog');
+  button.setAttribute('aria-expanded', 'false');
+  if (action.due) {
+    button.append(dueNode(action));
+    button.setAttribute('aria-label', `${dueTitle(action)}. Changer l’échéance de ${action.id}`);
+    button.title = `${dueTitle(action)} (d pour changer)`;
+  } else {
+    button.append(svgIcon(ICONS.calendar));
+    button.setAttribute('aria-label', `Ajouter une échéance à ${action.id}`);
+    button.title = 'Ajouter une échéance (d)';
+  }
+  button.addEventListener('click', event => {
+    event.stopPropagation();
+    selectAction(action.id, {focus: false, scroll: false});
+    openDueMenu(action, button);
+  });
+  return button;
+}
+function deleteButton(action) {
+  const button = iconButton('row-action row-delete', `Supprimer ${action.id}`, ICONS.trash, `Supprimer ${action.id} (annulable)`);
+  button.tabIndex = -1;
+  button.addEventListener('click', event => { event.stopPropagation(); deleteFromRow(action, button); });
+  return button;
+}
+function rowActions(action) {
+  const wrap = element('span', 'row-actions');
+  const open = iconButton('row-action', `Ouvrir le détail de ${action.id}`, ICONS.open, 'Ouvrir le détail (Entrée)');
+  open.tabIndex = -1;
+  open.addEventListener('click', event => { event.stopPropagation(); selectAction(action.id, {focus: false}); openEditor(action); });
+  wrap.append(open, deleteButton(action));
+  return wrap;
+}
+function actionClasses(base, action) {
+  return `${base}${closed(action) ? ' is-closed' : ''}${action.state === '-' ? ' is-cancelled' : ''}`;
+}
+function actionRow(action, {project = false} = {}) {
+  const row = element('div', actionClasses(project ? 'row with-project' : 'row', action));
+  row.dataset.id = action.id;
+  row.setAttribute('role', 'listitem');
+  const title = element('button', 'row-title', action.title);
+  title.type = 'button';
+  title.tabIndex = -1;
+  title.title = action.title;
+  const parts = [statusButton(action), element('span', 'row-id', action.id), title];
+  if (project) {
+    const where = element('span', 'row-project', action.project);
+    where.title = action.project;
+    parts.push(where);
+  }
+  const owner = element('span', 'row-owner', action.owner);
+  owner.title = `Responsable : ${action.owner}`;
+  const meta = element('span', 'row-meta');
+  meta.append(element('span', '', action.id));
+  if (project) meta.append(element('span', '', action.project));
+  meta.append(element('span', '', action.owner));
+  parts.push(owner, dueButton(action), priorityNode(action), rowActions(action), meta);
+  row.append(...parts);
   row.addEventListener('click', event => {
-    if (!event.target.closest('button, select')) openEditor(action);
+    if (event.target.closest('.status-button, .due-button, .row-action')) return;
+    selectAction(action.id, {focus: false, scroll: false});
+    openEditor(action);
   });
   return row;
 }
-// Progress of a group over its members (cancelled left out, scope filter ignored): done / total, in progress, waiting, late, next due date.
-function groupStats(members) {
-  const open = members.filter(action => action.state !== 'x');
-  return {
-    done: members.length - open.length, total: members.length,
-    doing: open.filter(action => action.state === '/').length, waiting: open.filter(action => action.state === 'w').length,
-    late: open.filter(action => action.due && action.due < snapshot.today).length,
-    next: open.map(action => action.due).filter(due => due && due >= snapshot.today).sort()[0] || ''
-  };
+function rowList(actions, options) {
+  const list = element('div', 'rows');
+  list.setAttribute('role', 'list');
+  for (const action of actions) list.append(actionRow(action, options));
+  return list;
 }
-function shortDate(value) {
-  return value.slice(0, 4) === snapshot.today.slice(0, 4) ? formatDate(value).slice(0, 5) : formatDate(value);
-}
-// One header per (project, group): colour dot, label, project, « done / total », progress bar and compact counters; then « Sans groupe » last (group = null).
-function listGroup(key, shown, group = null) {
-  const section = element('section', group ? `list-group ${groupTone(group.slug)}` : 'list-group');
-  section.dataset.fold = key;
-  const head = element('div', 'list-group-head');
-  const toggle = foldToggle('list-group-toggle', key);
-  const rows = element('div', 'list-group-rows fold-body');
-  rows.hidden = foldedGroups.has(key);
-  if (!group) toggle.append(element('span', 'list-group-name', 'Sans groupe'));
-  else {
-    const stats = group.stats;
-    const name = element('span', 'list-group-name');
-    name.append(element('span', 'group-dot'), element('span', 'list-group-label', group.label), element('span', 'list-group-project', group.project));
-    const meta = element('span', 'list-group-meta');
-    const bar = element('span', 'grp-bar');
-    bar.style.setProperty('--p', stats.total ? stats.done / stats.total : 0);
-    bar.append(element('span'));
-    const counters = element('span', 'list-group-stats');
-    for (const [count, text, late] of [[stats.doing, 'en cours', false], [stats.waiting, 'en attente', false], [stats.late, 'en retard', true]]) {
-      if (count) counters.append(element('span', `list-group-stat${late ? ' stat-late' : ''}`, `${count} ${text}`));
-    }
-    if (stats.next) {
-      const next = element('span', 'list-group-stat', `Échéance ${shortDate(stats.next)}`);
-      next.title = `Prochaine échéance du groupe : ${formatDate(stats.next)}`;
-      counters.append(next);
-    }
-    meta.append(element('span', 'list-group-count', `${stats.done} / ${stats.total}`), bar, counters);
-    toggle.append(name, meta);
-    toggle.setAttribute('aria-label', `${group.label}, ${group.project}, ${stats.done} faite${stats.done > 1 ? 's' : ''} sur ${stats.total}${stats.late ? `, ${stats.late} en retard` : ''}`);
+
+// Fold sections (list and board share the keys).
+function applyFolds() {
+  for (const section of document.querySelectorAll('[data-fold]')) {
+    const folded = foldedGroups.has(section.dataset.fold);
+    section.querySelector(':scope > .fold-body').hidden = folded;
+    section.querySelector(':scope > :first-child > .fold-toggle')?.setAttribute('aria-expanded', String(!folded));
   }
-  for (const action of sortActions(shown)) rows.append(listRow(action, Boolean(group)));
-  head.append(toggle);
-  if (group) head.append(addButton(group.label, {register: group.register, group: group.slug}));
-  section.append(head, rows);
+  const keys = listProjectKeys();
+  ids.foldAllButton.textContent = keys.length && keys.every(key => foldedGroups.has(key)) ? 'Tout déplier' : 'Tout replier';
+}
+function listProjectKeys() { return [...ids.listView.querySelectorAll('[data-fold^="p:"]')].map(section => section.dataset.fold); }
+function toggleFold(key) {
+  if (foldedGroups.has(key)) foldedGroups.delete(key); else foldedGroups.add(key);
+  applyFolds();
+  markSelection();
+  saveUIState();
+}
+function setAllFolds() {
+  const keys = listProjectKeys();
+  if (keys.every(key => foldedGroups.has(key))) {
+    for (const section of ids.listView.querySelectorAll('[data-fold]')) foldedGroups.delete(section.dataset.fold);
+  } else for (const key of keys) foldedGroups.add(key);
+  applyFolds();
+  markSelection();
+  saveUIState();
+}
+function foldToggle(key, label) {
+  const toggle = element('button', 'fold-toggle');
+  toggle.type = 'button';
+  toggle.setAttribute('aria-expanded', String(!foldedGroups.has(key)));
+  toggle.addEventListener('click', () => toggleFold(key));
+  toggle.append(svgIcon(ICONS.chevron, 'fold-chevron'));
+  if (label) toggle.setAttribute('aria-label', label);
+  return toggle;
+}
+function addButton(label, preset) {
+  const button = iconButton('icon-button fold-add', `Ajouter une action à ${label}`, ICONS.plus);
+  button.addEventListener('click', event => { event.stopPropagation(); openEditor(null, preset); });
+  return button;
+}
+// Progress over the members of a project or group (cancelled left out, Statut filter ignored).
+function progressStats(members) {
+  const counted = members.filter(action => action.state !== '-');
+  const done = counted.filter(action => action.state === 'x').length;
+  const late = counted.filter(action => action.state !== 'x' && action.due && action.due < today()).length;
+  return {done, total: counted.length, late};
+}
+function foldMeta(stats) {
+  const meta = element('span', 'fold-meta');
+  if (stats.late) meta.append(element('span', 'fold-late', plural(stats.late, 'en retard', 'en retard')));
+  const fraction = element('span', '', `${stats.done}/${stats.total}`);
+  fraction.title = `${plural(stats.done, 'faite', 'faites')} sur ${stats.total}`;
+  const bar = element('span', 'fold-progress');
+  bar.style.setProperty('--p', stats.total ? stats.done / stats.total : 0);
+  bar.append(element('span'));
+  meta.append(fraction, bar);
+  return meta;
+}
+function foldSection(key, headClass, toggle, extra, body) {
+  const section = element('section', 'fold-section');
+  section.dataset.fold = key;
+  const head = element('div', `fold-head ${headClass}`);
+  head.append(toggle, ...extra);
+  body.classList.add('fold-body');
+  body.hidden = foldedGroups.has(key);
+  section.append(head, body);
   return section;
 }
+
+// ---------- Aujourd'hui ----------
+function actionFiltersActive() {
+  return Boolean(projectScope || ids.searchInput.value.trim() || ids.ownerFilter.value || ids.groupFilter.value || (view !== 'today' && ids.scopeFilter.value !== 'active'));
+}
+// With filters on, the empty view offers to clear them; otherwise to create an action.
+function emptyState(title, text, withButton = true) {
+  const box = element('div', 'empty-state');
+  if (actionFiltersActive()) {
+    box.append(element('h2', '', 'Aucune action pour ces filtres.'), element('p', '', 'Efface les filtres pour tout revoir.'));
+    const button = element('button', 'button', 'Effacer les filtres');
+    button.type = 'button';
+    button.addEventListener('click', () => ids.resetFilters.click());
+    box.append(button);
+    return box;
+  }
+  box.append(element('h2', '', title), element('p', '', text));
+  if (withButton) {
+    const button = element('button', 'button button-primary');
+    button.type = 'button';
+    button.append(svgIcon(ICONS.plus), element('span', '', 'Nouvelle action'));
+    button.addEventListener('click', () => openEditor());
+    box.append(button);
+  }
+  return box;
+}
+function renderToday(base) {
+  const sections = todaySections(base);
+  const definitions = [
+    ['late', 'En retard', sections.late, ''],
+    ['today', 'Aujourd’hui', sections.today, ''],
+    ['doing', 'En cours', sections.doing, ''],
+    ['waiting', 'En attente des autres', sections.waiting, 'en attente ou confiées à quelqu’un d’autre'],
+    ['week', 'Cette semaine', sections.week, `jusqu’au ${DAY_FORMAT.format(parseDay(addDays(today(), 7)))}`]
+  ];
+  const total = definitions.reduce((sum, [, , actions]) => sum + actions.length, 0);
+  ids.resultCount.textContent = plural(total, 'action');
+  if (!total) {
+    ids.todayView.replaceChildren(emptyState('Rien d’urgent pour aujourd’hui.', 'Les actions en retard, du jour, en cours et en attente des autres apparaissent ici.'));
+    return;
+  }
+  const nodes = [];
+  for (const [key, title, actions, note] of definitions) {
+    if (!actions.length) continue;
+    const section = element('section', `section section-${key}`);
+    section.setAttribute('aria-labelledby', `today-${key}`);
+    const head = element('div', 'section-head');
+    const heading = element('h2', '', title);
+    heading.id = `today-${key}`;
+    head.append(heading, element('span', 'section-count', String(actions.length)));
+    if (note) head.append(element('span', 'section-note', note));
+    section.append(head, rowList(actions, {project: true}));
+    nodes.push(section);
+  }
+  ids.todayView.replaceChildren(...nodes);
+}
+
+// ---------- Actions (list) ----------
 function renderList(actions) {
-  ids.listView.replaceChildren();
+  const qualifier = ids.scopeFilter.value === 'active' ? ['ouverte', 'ouvertes'] : ids.scopeFilter.value === 'closed' ? ['clôturée', 'clôturées'] : ['', ''];
+  ids.resultCount.textContent = `${plural(actions.length, 'action')}${qualifier[0] ? ` ${actions.length === 1 ? qualifier[0] : qualifier[1]}` : ''}`;
   if (!actions.length) {
-    ids.listView.append(empty('Essaie un autre filtre ou crée une nouvelle action.'));
+    ids.listView.replaceChildren(emptyState('Aucune action ici.', 'Essaie un autre filtre ou crée une action.'));
     return;
   }
-  const head = element('div', 'list-head');
-  ['Action', 'Projet', 'Responsable', 'Échéance', 'Statut', 'Priorité'].forEach(title => head.append(element('span', '', title)));
-  ids.listView.append(head);
-  if (!actions.some(action => action.group)) {
-    for (const action of sortActions(actions)) ids.listView.append(listRow(action));
-    return;
-  }
-  const members = new Map();
-  for (const action of filteredBase()) {
-    if (!action.group || action.state === '-') continue;
-    if (!members.has(groupKey(action))) members.set(groupKey(action), []);
-    members.get(groupKey(action)).push(action);
-  }
-  const groups = new Map();
+  const base = filteredBase();
+  const order = new Map(snapshot.registers.map((register, index) => [register.path, index]));
+  const byRegister = new Map();
   for (const action of actions) {
-    if (!action.group) continue;
-    const key = groupKey(action);
-    if (!groups.has(key)) groups.set(key, {key, slug: action.group, register: action.register, project: action.project, label: groupLabel(action.group), stats: groupStats(members.get(key) || []), shown: []});
-    groups.get(key).shown.push(action);
+    if (!byRegister.has(action.register)) byRegister.set(action.register, []);
+    byRegister.get(action.register).push(action);
   }
-  const ordered = [...groups.values()].sort(compareGroups);
-  const tools = element('div', 'list-tools');
-  const fold = element('button', 'button button-quiet fold-all');
-  fold.type = 'button';
-  fold.addEventListener('click', setAllFolds);
-  tools.append(element('span', '', `${ordered.length} groupe${ordered.length > 1 ? 's' : ''}`), fold);
-  ids.listView.append(tools);
-  for (const group of ordered) ids.listView.append(listGroup(group.key, group.shown, group));
-  const loose = actions.filter(action => !action.group);
-  if (loose.length) ids.listView.append(listGroup(NO_GROUP, loose));
+  const nodes = [];
+  for (const [register, shown] of [...byRegister.entries()].sort((a, b) => (order.get(a[0]) ?? 0) - (order.get(b[0]) ?? 0))) {
+    const label = shown[0].project;
+    const members = base.filter(action => action.register === register);
+    const body = element('div');
+    const groups = new Map();
+    for (const action of shown) {
+      if (!action.group) continue;
+      if (!groups.has(action.group)) groups.set(action.group, []);
+      groups.get(action.group).push(action);
+    }
+    const loose = shown.filter(action => !action.group);
+    const sorted = [...groups.entries()].sort((a, b) => groupLabel(a[0]).localeCompare(groupLabel(b[0]), 'fr') || a[0].localeCompare(b[0]));
+    for (const [slug, groupActions] of sorted) {
+      const key = `${register}|${slug}`;
+      const name = groupLabel(slug);
+      const stats = progressStats(members.filter(action => action.group === slug));
+      const toggle = foldToggle(key, `Groupe ${name}, ${stats.done} sur ${stats.total} faites`);
+      toggle.append(element('span', `group-dot ${groupTone(slug)}`), element('span', 'fold-label', name), foldMeta(stats));
+      const rows = rowList(sortActions(groupActions), {});
+      rows.classList.add('in-group');
+      body.append(foldSection(key, 'group-head', toggle, [addButton(`${name} (${label})`, {register, group: slug})], rows));
+    }
+    if (loose.length && sorted.length) {
+      const key = `${register}|`;
+      const toggle = foldToggle(key, 'Sans groupe');
+      toggle.append(element('span', 'group-dot'), element('span', 'fold-label', 'Sans groupe'), foldMeta(progressStats(members.filter(action => !action.group))));
+      const rows = rowList(sortActions(loose), {});
+      rows.classList.add('in-group');
+      body.append(foldSection(key, 'group-head', toggle, [addButton(`${label}, sans groupe`, {register})], rows));
+    } else if (loose.length) body.append(rowList(sortActions(loose), {}));
+    const stats = progressStats(members);
+    const toggle = foldToggle(`p:${register}`, `${label}, ${stats.done} sur ${stats.total} faites`);
+    toggle.append(element('span', 'fold-label', label), foldMeta(stats));
+    nodes.push(foldSection(`p:${register}`, 'project-head', toggle, [addButton(label, {register})], body));
+  }
+  ids.listView.replaceChildren(...nodes);
   applyFolds();
 }
-function makeCard(action) {
-  const card = element('article', action.group ? `action-card in-group ${groupTone(action.group)}` : 'action-card');
+
+// ---------- Tableau ----------
+function makeCard(action, grouped = false) {
+  const card = element('article', actionClasses(`card ${statusInfo(action.state).cls}`, action));
+  card.dataset.id = action.id;
   card.draggable = true;
-  const top = element('span', 'card-top');
-  top.append(element('span', 'action-id', action.id), rowTools(action));
+  const top = element('div', 'card-top');
   const title = element('button', 'card-title', action.title);
   title.type = 'button';
-  card.append(top, title);
-  const meta = element('span', 'card-meta');
-  meta.append(statusControl(action));
-  if (action.due) meta.append(dateNode(action));
-  if (action.priority === '⏫') meta.append(priorityNode(action));
-  const where = element('span', 'card-project');
-  where.append(action.project);
-  if (action.owner) where.append(' · ', action.owner);
-  card.append(meta, where);
+  title.tabIndex = -1;
+  title.title = `${action.title}\nResponsable : ${action.owner}`;
+  top.append(statusButton(action), title);
+  const meta = element('div', 'card-meta');
+  meta.append(element('span', 'row-id', action.id));
+  if (!grouped) {
+    const where = element('span', 'card-project', shortProject(action.project));
+    where.title = action.project;
+    meta.append(where);
+  }
+  if (grouped) {
+    const owner = element('span', 'card-project', action.owner);
+    owner.title = `Responsable : ${action.owner}`;
+    meta.append(owner);
+  }
+  if (action.due) meta.append(dueNode(action));
+  if (PRIORITY[action.priority]) meta.append(priorityNode(action));
+  const actions = element('div', 'card-actions');
+  actions.append(deleteButton(action));
+  card.append(top, meta, actions);
   card.addEventListener('click', event => {
-    if (!event.target.closest('button, select') || event.target === title) openEditor(action);
+    if (event.target.closest('.status-button, .row-action')) return;
+    selectAction(action.id, {focus: false, scroll: false});
+    openEditor(action);
   });
-  // Buttons and selects inside the card must not start a drag (the title button still may); capture phase, as the status select stops pointerdown.
-  card.addEventListener('pointerdown', event => { card.draggable = !event.target.closest('button:not(.card-title), select'); }, true);
+  // Buttons inside the card must not start a drag (the title still may); capture phase, as the status button stops its own events.
+  card.addEventListener('pointerdown', event => { card.draggable = !event.target.closest('button:not(.card-title)'); }, true);
   for (const type of ['pointerup', 'pointercancel', 'dragend']) card.addEventListener(type, () => { card.draggable = true; });
   card.addEventListener('dragstart', event => {
-    if (event.target.closest('button, select')) { event.preventDefault(); return; }
+    if (event.target.closest?.('button:not(.card-title)')) { event.preventDefault(); return; }
+    closePopover(false);
     event.dataTransfer.setData('text/plain', action.id);
     event.dataTransfer.effectAllowed = 'move';
   });
   return card;
 }
-// A column's cards under one header per (project, group), « Sans groupe » last (group = null); the header folds them (keys shared with the list), its « + » adds an action to the group in the column's state.
+// A column's cards under one header per (project, group), « Sans groupe » last; the header folds them (keys shared with the list).
 function boardGroup(key, cards, group = null, state = ' ') {
-  const section = element('section', group ? `board-group ${groupTone(group.slug)}` : 'board-group');
-  section.dataset.fold = key;
-  const head = element('div', 'board-group-head');
-  const toggle = foldToggle('board-group-toggle', key);
-  const name = group ? `${group.label}, ${group.project}` : 'Sans groupe';
-  if (group) toggle.append(element('span', 'group-dot'), element('span', 'board-group-label', group.label), element('span', 'board-group-project', group.project));
-  else toggle.append(element('span', 'board-group-label', 'Sans groupe'));
+  const toggle = foldToggle(key, group ? `${group.label}, ${group.project}, ${plural(cards.length, 'carte')}` : `Sans groupe, ${plural(cards.length, 'carte')}`);
+  if (group) {
+    const where = element('span', 'board-group-project', shortProject(group.project));
+    where.title = group.project;
+    toggle.append(element('span', `group-dot ${groupTone(group.slug)}`), element('span', 'fold-label', group.label), where);
+  }
+  else toggle.append(element('span', 'group-dot'), element('span', 'fold-label', 'Sans groupe'));
   toggle.append(element('span', 'board-group-count', String(cards.length)));
-  toggle.setAttribute('aria-label', `${name}, ${cards.length} carte${cards.length > 1 ? 's' : ''}`);
-  head.append(toggle);
-  if (group) head.append(addButton(group.label, {register: group.register, group: group.slug, state}));
-  const body = element('div', 'board-group-cards fold-body');
-  body.hidden = foldedGroups.has(key);
-  cards.forEach(action => body.append(makeCard(action)));
-  section.append(head, body);
+  const body = element('div', 'board-group-cards');
+  cards.forEach(action => body.append(makeCard(action, Boolean(group))));
+  const section = foldSection(key, 'board-group-head', toggle, group ? [addButton(`${group.label} (${group.project})`, {register: group.register, group: group.slug, state})] : [], body);
+  section.className = 'board-group fold-section';
+  section.firstChild.className = 'board-group-head';
   return section;
 }
 function renderBoard(base) {
-  ids.boardView.replaceChildren();
   const scope = ids.scopeFilter.value;
   const columns = [
     {state: ' ', title: 'À faire'},
@@ -549,20 +714,20 @@ function renderBoard(base) {
     {state: 'w', title: 'En attente'},
     {state: 'x', title: 'Terminées récemment'}
   ];
+  let shownTotal = 0;
+  const panels = [];
   for (const column of columns) {
     const panel = element('section', 'board-column');
-    const heading = element('div', 'board-heading');
-    const all = base.filter(action => column.state === 'x' ? ['x', '-'].includes(action.state) : action.state === column.state);
-    let actions = all;
-    if (column.state === 'x') {
-      actions = [...all].sort((a, b) => (b.done || '').localeCompare(a.done || '') || b.id.localeCompare(a.id)).slice(0, 10);
-    } else if (scope === 'closed') {
-      actions = [];
-    } else {
-      actions = sortActions(all);
-    }
-    heading.append(element('span', '', column.title), element('small', '', String(actions.length)));
-    panel.append(heading);
+    const all = base.filter(action => column.state === 'x' ? closed(action) : action.state === column.state);
+    let actions;
+    if (column.state === 'x') actions = [...all].sort((a, b) => (b.done || '').localeCompare(a.done || '') || b.id.localeCompare(a.id)).slice(0, 10);
+    else if (scope === 'closed') actions = [];
+    else actions = sortActions(all);
+    shownTotal += actions.length;
+    const heading = element('h2', 'board-heading');
+    heading.id = `column-${column.state === ' ' ? 'todo' : column.state === '/' ? 'doing' : column.state}`;
+    heading.append(statusIcon(column.state), element('span', '', column.title), element('span', 'board-count', String(actions.length)));
+    panel.setAttribute('aria-labelledby', heading.id);
     const cards = element('div', 'board-cards');
     if (!actions.length) cards.append(element('p', 'board-empty', 'Aucune action'));
     else if (!actions.some(action => action.group)) actions.forEach(action => cards.append(makeCard(action)));
@@ -579,117 +744,312 @@ function renderBoard(base) {
       const loose = actions.filter(action => !action.group);
       if (loose.length) cards.append(boardGroup(NO_GROUP, loose));
     }
-    panel.append(cards);
+    panel.append(heading, cards);
     panel.addEventListener('dragover', event => { event.preventDefault(); panel.classList.add('drag-over'); });
     panel.addEventListener('dragleave', event => { if (!panel.contains(event.relatedTarget)) panel.classList.remove('drag-over'); });
     panel.addEventListener('drop', async event => {
       event.preventDefault();
       panel.classList.remove('drag-over');
-      const action = snapshot.actions.find(item => item.id === event.dataTransfer.getData('text/plain'));
+      const action = findAction(event.dataTransfer.getData('text/plain'));
       if (action && action.state !== column.state) await updateStatus(action, column.state);
     });
-    ids.boardView.append(panel);
+    panels.push(panel);
   }
+  ids.resultCount.textContent = plural(shownTotal, 'action');
+  ids.boardView.replaceChildren(...panels);
   applyFolds();
 }
+
+// ---------- Selection and keyboard navigation over rows and cards ----------
+function activeRoot() {
+  return view === 'today' ? ids.todayView : view === 'list' ? ids.listView : view === 'board' ? ids.boardView : null;
+}
+function visibleRows() {
+  const root = activeRoot();
+  return root ? [...root.querySelectorAll('[data-id]')].filter(row => row.offsetParent !== null) : [];
+}
+const ROW_CONTROLS = '.status-button, .row-title, .card-title, .due-button, .row-action';
+function setStops(row, on) { for (const control of row.querySelectorAll(ROW_CONTROLS)) control.tabIndex = on ? 0 : -1; }
+// The selected row (else the first one) is the list's single tab stop: its controls are reachable with Tab, the others with j/k.
+function markSelection() {
+  const root = activeRoot();
+  if (!root) return;
+  const rows = [...root.querySelectorAll('[data-id]')];
+  let current = null;
+  for (const row of rows) {
+    const selected = row.dataset.id === selectedId;
+    row.classList.toggle('is-selected', selected);
+    setStops(row, false);
+    if (selected && row.offsetParent !== null) current = row;
+  }
+  const stop = current || rows.find(row => row.offsetParent !== null);
+  if (stop) setStops(stop, true);
+}
+function rowFor(id) {
+  const root = activeRoot();
+  return root ? root.querySelector(`[data-id="${CSS.escape(id)}"]`) : null;
+}
+function selectAction(id, {focus = true, scroll = true} = {}) {
+  selectedId = id;
+  markSelection();
+  const row = rowFor(id);
+  if (!row) return;
+  if (scroll) row.scrollIntoView({block: 'nearest'});
+  if (focus) row.querySelector('.row-title, .card-title')?.focus({preventScroll: true});
+}
+function moveSelection(delta) {
+  const rows = visibleRows();
+  if (!rows.length) return;
+  const index = rows.findIndex(row => row.dataset.id === selectedId);
+  const next = rows[index === -1 ? (delta > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + delta))];
+  selectAction(next.dataset.id);
+  if (editorOpen() && editorAction && editorAction.id !== next.dataset.id && !editorDirty()) {
+    const action = findAction(next.dataset.id);
+    if (action) openEditor(action, null, {focus: 'none'});
+  }
+}
+function selectedAction() {
+  const row = selectedId && rowFor(selectedId);
+  return row && row.offsetParent !== null ? findAction(selectedId) : null;
+}
+// After a write and a refresh: the same action again, else the row now at its former place.
+function focusAction(id, part = 'title', formerIndex = -1) {
+  let row = rowFor(id);
+  if (!row || row.offsetParent === null) {
+    const rows = visibleRows();
+    row = formerIndex >= 0 && rows.length ? rows[Math.min(formerIndex, rows.length - 1)] : null;
+  }
+  if (!row) { ids.resultCount.focus({preventScroll: true}); return; }
+  selectedId = row.dataset.id;
+  markSelection();
+  const target = part === 'status' ? row.querySelector('.status-button') : part === 'due' ? row.querySelector('.due-button') : null;
+  (target || row.querySelector('.row-title, .card-title')).focus({preventScroll: true});
+}
+
+// ---------- Popovers: status menu and due date ----------
+let popoverState = null;
+function popoverItems() { return [...ids.popover.querySelectorAll('.menu-item, input')]; }
+function openPopover(anchor, nodes, {role = 'menu', label = ''} = {}) {
+  closePopover(false);
+  closeMoreMenu(false);
+  ids.popover.replaceChildren(...nodes);
+  ids.popover.setAttribute('role', role);
+  ids.popover.setAttribute('aria-label', label);
+  ids.popover.hidden = false;
+  anchor.setAttribute('aria-expanded', 'true');
+  popoverState = {anchor};
+  const rect = anchor.getBoundingClientRect();
+  const box = ids.popover.getBoundingClientRect();
+  let left = Math.min(rect.left, window.innerWidth - box.width - 12);
+  left = Math.max(12, left);
+  let top = rect.bottom + 4;
+  if (top + box.height > window.innerHeight - 12) top = Math.max(12, rect.top - box.height - 4);
+  ids.popover.style.left = `${left}px`;
+  ids.popover.style.top = `${top}px`;
+  (ids.popover.querySelector('[aria-checked="true"]') || popoverItems()[0])?.focus();
+}
+function closePopover(refocus = true) {
+  if (!popoverState) return;
+  const {anchor} = popoverState;
+  popoverState = null;
+  ids.popover.hidden = true;
+  ids.popover.replaceChildren();
+  anchor.setAttribute('aria-expanded', 'false');
+  if (refocus && anchor.isConnected) anchor.focus({preventScroll: true});
+}
+function menuItem(content, onPick, {role = 'menuitem', checked = null, hint = ''} = {}) {
+  const item = element('button', 'menu-item');
+  item.type = 'button';
+  item.setAttribute('role', role);
+  if (checked !== null) item.setAttribute('aria-checked', String(checked));
+  item.append(...content);
+  if (hint) item.append(element('span', 'menu-item-hint', hint));
+  item.addEventListener('click', () => { closePopover(false); onPick(); });
+  return item;
+}
+function openStatusMenu(action, anchor) {
+  const items = STATUS_ORDER.map((state, index) => menuItem(
+    [statusIcon(state), element('span', 'menu-item-text', statusLabel(state))],
+    () => updateStatus(action, state, anchor),
+    {role: 'menuitemradio', checked: state === action.state, hint: String(index + 1)}
+  ));
+  openPopover(anchor, items, {label: `Statut de ${action.id}`});
+}
+function nextMonday(day) {
+  const date = parseDay(day);
+  date.setDate(date.getDate() + ((8 - date.getDay()) % 7 || 7));
+  return isoDay(date);
+}
+function openDueMenu(action, anchor) {
+  const day = today();
+  const choices = [['Aujourd’hui', day], ['Demain', addDays(day, 1)]];
+  if (nextMonday(day) !== addDays(day, 1)) choices.push(['Lundi prochain', nextMonday(day)]);
+  choices.push(['Dans une semaine', addDays(day, 7)]);
+  const nodes = [element('p', 'menu-heading', `Échéance de ${action.id}`)];
+  for (const [label, value] of choices) {
+    nodes.push(menuItem([element('span', 'menu-item-text', label)], () => updateDue(action, value, anchor), {hint: DAY_FORMAT.format(parseDay(value))}));
+  }
+  const pick = element('label', 'menu-date');
+  const input = element('input');
+  input.type = 'date';
+  input.value = action.due || '';
+  input.setAttribute('aria-label', 'Autre date');
+  input.addEventListener('keydown', event => {
+    if (event.key === 'Enter' && input.value) { event.preventDefault(); closePopover(false); updateDue(action, input.value, anchor); }
+  });
+  input.addEventListener('change', () => {
+    // A picked date applies at once; typing digits waits for Enter (each keystroke fires change in some browsers).
+    if (input.value && input.dataset.typed !== '1') { closePopover(false); updateDue(action, input.value, anchor); }
+  });
+  input.addEventListener('keydown', event => { if (/^\d$/.test(event.key)) input.dataset.typed = '1'; });
+  pick.append(input);
+  nodes.push(element('div', 'menu-separator'), pick);
+  if (action.due) nodes.push(menuItem([element('span', 'menu-item-text', 'Retirer l’échéance')], () => updateDue(action, '', anchor)));
+  openPopover(anchor, nodes, {role: 'dialog', label: `Échéance de ${action.id}`});
+}
+ids.popover.addEventListener('keydown', event => {
+  const items = popoverItems();
+  const index = items.indexOf(document.activeElement);
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    if (document.activeElement?.tagName === 'INPUT' && event.target.type === 'date') return;
+    event.preventDefault();
+    items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length]?.focus();
+  } else if (event.key === 'Home' || event.key === 'End') {
+    if (document.activeElement?.tagName === 'INPUT') return;
+    event.preventDefault();
+    items[event.key === 'Home' ? 0 : items.length - 1]?.focus();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closePopover();
+  } else if (event.key === 'Tab') {
+    // Focus stays in the popover: Tab and Maj+Tab cycle through its items.
+    event.preventDefault();
+    items[(index + (event.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
+  } else if (/^[1-5]$/.test(event.key) && ids.popover.getAttribute('role') === 'menu') {
+    event.preventDefault();
+    ids.popover.querySelectorAll('.menu-item')[Number(event.key) - 1]?.click();
+  }
+});
+document.addEventListener('pointerdown', event => {
+  if (popoverState && !ids.popover.contains(event.target) && !popoverState.anchor.contains(event.target)) closePopover(false);
+  if (!ids.moreMenu.hidden && !ids.moreMenu.parentElement.contains(event.target)) closeMoreMenu(false);
+  if (brainMenuOpen() && !ids.brainSwitch.contains(event.target)) closeBrainMenu(false);
+});
+window.addEventListener('resize', () => closePopover(false));
+for (const root of [ids.todayView, ids.listView, ids.boardView]) root.addEventListener('scroll', () => closePopover(false), {passive: true, capture: true});
+
+// ---------- Render ----------
+function isDocsView() { return view === 'notes' || view === 'search'; }
+function renderFilterChips() {
+  const actionView = ACTION_VIEWS.includes(view);
+  const docs = isDocsView();
+  ids.filters.classList.toggle('is-empty', !actionView && !docs);
+  ids.projectChip.hidden = !projectScope || !(actionView || docs);
+  ids.projectChipValue.textContent = scopeLabel(projectScope);
+  ids.ownerChip.hidden = !actionView;
+  ids.scopeChip.hidden = !(view === 'list' || view === 'board');
+  ids.groupChip.hidden = !actionView;
+  ids.docProjectChip.hidden = !docs;
+  ids.ownerChip.classList.toggle('is-active', ids.ownerFilter.value !== '');
+  ids.scopeChip.classList.toggle('is-active', ids.scopeFilter.value !== 'active');
+  ids.groupChip.classList.toggle('is-active', ids.groupFilter.value !== '');
+  ids.docProjectChip.classList.toggle('is-active', ids.docProject.value !== '');
+  for (const select of [ids.ownerFilter, ids.scopeFilter, ids.groupFilter, ids.docProject]) {
+    select.parentElement.querySelector('.chip-value').textContent = select.selectedOptions[0]?.textContent || '';
+  }
+  const active = actionView ? actionFiltersActive() : docs ? Boolean(projectScope || ids.docProject.value) : false;
+  ids.resetFilters.hidden = !active;
+  ids.foldAllButton.hidden = view !== 'list' || !listProjectKeys().length;
+}
 function render() {
-  if (!ids.detailPreview.hidden) hidePreview();
-  if (view === 'tools') {
-    filterTools();
-    return;
+  closePopover(false);
+  if (view === 'tools') filterTools();
+  else if (view === 'git') renderGit();
+  else if (isDocsView()) renderDocsView();
+  else {
+    const base = filteredBase();
+    if (view === 'today') renderToday(base);
+    else if (view === 'list') renderList(scoped(base));
+    else renderBoard(base);
+    markSelection();
   }
-  if (view === 'git') {
-    renderGit();
-    return;
-  }
-  if (view === 'search') {
-    renderSearchView();
-    return;
-  }
-  const base = filteredBase();
-  const actions = scoped(base);
-  const plural = actions.length !== 1;
-  const qualifier = ids.scopeFilter.value === 'active' ? (plural ? 'ouvertes' : 'ouverte') :
-    ids.scopeFilter.value === 'closed' ? (plural ? 'clôturées' : 'clôturée') : 'dans la sélection';
-  ids.resultCount.textContent = `${actions.length} action${plural ? 's' : ''} ${qualifier}`;
-  renderList(actions);
-  renderBoard(base);
+  renderFilterChips();
 }
 function setView(next, persist = true) {
+  if (!VIEWS.includes(next)) next = 'today';
   view = next;
-  ids.filters.hidden = ['tools', 'git', 'search'].includes(next);
+  closePopover(false);
+  ids.todayView.hidden = next !== 'today';
   ids.listView.hidden = next !== 'list';
   ids.boardView.hidden = next !== 'board';
-  ids.boardHint.hidden = next !== 'board';
+  ids.docsView.hidden = !isDocsView();
   ids.toolsView.hidden = next !== 'tools';
   ids.gitView.hidden = next !== 'git';
-  ids.searchView.hidden = next !== 'search';
-  ids.summaryChips.hidden = !['list', 'board'].includes(next);
-  ids.gitStatus.hidden = next !== 'git';
-  ids.lastSync.hidden = next === 'git';
-  for (const [button, selected] of [[ids.listButton, next === 'list'], [ids.boardButton, next === 'board'], [ids.toolsButton, next === 'tools'], [ids.gitButton, next === 'git'], [ids.searchButton, next === 'search']]) {
-    button.classList.toggle('selected', selected);
-    button.setAttribute('aria-pressed', String(selected));
+  for (const [name, id] of Object.entries(NAV_BUTTONS)) {
+    if (name === next) ids[id].setAttribute('aria-current', 'page'); else ids[id].removeAttribute('aria-current');
   }
+  ids.viewTitle.textContent = VIEW_TITLES[next];
+  ids.searchInput.hidden = !ACTION_VIEWS.includes(next);
+  ids.docQuery.hidden = next !== 'search';
+  ids.toolSearch.hidden = next !== 'tools';
+  ids.mainContent.classList.toggle('view-searchless', next === 'notes' || next === 'git');
+  ids.gitStatus.hidden = next !== 'git';
+  ids.resultCount.textContent = '';
   render();
   if (next === 'tools' && !tools.length) loadTools();
   if (next === 'git') loadGit();
-  if (next === 'search') {
-    refreshSearchView();
-    if (persist) ids.docQuery.focus();
+  if (isDocsView()) {
+    refreshDocsView();
+    if (persist && next === 'search') ids.docQuery.focus();
   }
-  if (persist) saveUIState();
+  if (persist) {
+    saveUIState();
+    closeDrawer(false);
+  }
 }
 function populateProjects() {
-  const selected = ids.projectFilter.value || pendingProject;
   const editing = ids.editorProject.value;
-  ids.projectFilter.replaceChildren(new Option('Tous les projets', ''));
-  ids.editorProject.replaceChildren();
-  for (const register of snapshot.registers) {
-    ids.projectFilter.add(new Option(register.label, register.path));
-    ids.editorProject.add(new Option(register.label, register.path));
-  }
-  ids.projectFilter.value = selected;
-  pendingProject = '';
+  ids.editorProject.replaceChildren(...snapshot.registers.map(register => new Option(register.label, register.path)));
   populateGroupFilter();
-  const docBefore = ids.docProject.value;
-  const docSelected = ids.docProject.value || pendingDocProject;
-  ids.docProject.replaceChildren(new Option('Tous les projets', ''), new Option('Inbox', INBOX_REGISTER), new Option('Hors projets', 'none'));
-  for (const register of snapshot.registers) ids.docProject.add(new Option(register.label, register.path));
-  ids.docProject.value = [...ids.docProject.options].some(option => option.value === docSelected) ? docSelected : '';
-  pendingDocProject = '';
-  if (view === 'search' && ids.docProject.value !== docBefore && ids.docQuery.value.trim()) runDocSearch();
-  ids.editorProject.value = editing || snapshot.registers[0]?.path || '';
-  fillGroupOptions();
+  ids.editorProject.value = editing || defaultRegister();
+  if (!editorOpen()) fillGroupOptions();
 }
-// Group filter: « Tous les groupes », « Sans groupe », then the groups as `register|slug` (project label as prefix unless a project is filtered); a saved group that is gone falls back to « Tous ».
+function defaultRegister() {
+  if (snapshot.registers.some(register => register.path === projectScope)) return projectScope;
+  return snapshot.registers.find(register => inScope(register.path))?.path || snapshot.registers[0]?.path || '';
+}
+// Group filter: « Tous », « Sans groupe », then the groups as `register|slug`; one <optgroup> per project unless one register is selected.
 function populateGroupFilter() {
   const selected = ids.groupFilter.value || pendingGroup;
   pendingGroup = '';
-  const project = ids.projectFilter.value;
+  const single = snapshot.registers.some(register => register.path === projectScope);
   const entries = [];
   for (const register of snapshot.registers) {
-    if (project && register.path !== project) continue;
+    if (!inScope(register.path)) continue;
     for (const slug of register.groups || []) entries.push({value: `${register.path}|${slug}`, project: register.label, label: groupLabel(slug), key: slug});
   }
   entries.sort(compareGroups);
-  // Every project: one <optgroup> per project (a long « projet · libellé » would hide the chosen group in the closed select); one project: plain options.
   const nodes = [];
   for (const entry of entries) {
-    if (project) { nodes.push(new Option(entry.label, entry.value)); continue; }
+    if (single) { nodes.push(new Option(entry.label, entry.value)); continue; }
     if (nodes.at(-1)?.label !== entry.project) { const section = document.createElement('optgroup'); section.label = entry.project; nodes.push(section); }
     nodes.at(-1).append(new Option(entry.label, entry.value));
   }
-  ids.groupFilter.replaceChildren(new Option('Tous les groupes', ''), new Option('Sans groupe', 'none'), ...nodes);
+  ids.groupFilter.replaceChildren(new Option('Tous', ''), new Option('Sans groupe', 'none'), ...nodes);
   ids.groupFilter.value = [...ids.groupFilter.options].some(option => option.value === selected) ? selected : '';
   titleGroupFilter();
 }
 function titleGroupFilter() {
   const chosen = ids.groupFilter.selectedOptions[0];
-  ids.groupFilter.title = chosen?.value && chosen.parentElement.label ? `${chosen.parentElement.label} · ${chosen.textContent}` : '';
+  ids.groupFilter.title = chosen?.value && chosen.parentElement.label ? `${chosen.parentElement.label} : ${chosen.textContent}` : '';
 }
-// The editor's group select: « Aucun groupe », the groups already used in the selected project (labels sorted), « Nouveau groupe… » (free label, saved as its slug).
+
+// ---------- Editor: the detail panel (create and edit) ----------
 const NEW_GROUP = '__new';
+let editorAction = null;
+let editorInitial = '';
+let editorReturnFocus = null;
 function groupChoice() {
   return ids.editorGroup.value === NEW_GROUP ? {fresh: true, text: ids.editorGroupNew.value} : {slug: ids.editorGroup.value};
 }
@@ -715,13 +1075,339 @@ function showGroupField(focus = false) {
   const slug = groupValue();
   const register = snapshot.registers.find(item => item.path === ids.editorProject.value);
   ids.editorGroupNewLabel.hidden = !choice.fresh;
-  ids.editorGroupHint.textContent = !choice.fresh ? (slug ? `Groupe enregistré : ${slug}` : 'Facultatif : regroupe les actions d’un même lot.') :
+  ids.editorGroupHint.textContent = !choice.fresh ? (slug ? `Enregistré : ${slug}` : 'Facultatif : regroupe les actions d’un même lot.') :
     !choice.text.trim() ? 'Saisis un libellé : il sera converti en identifiant.' :
     !slug ? 'Aucune lettre ni chiffre : pas de groupe.' :
-    `${(register?.groups || []).includes(slug) ? 'Groupe existant' : 'Nouveau groupe enregistré'} : ${slug}`;
+    `${(register?.groups || []).includes(slug) ? 'Groupe existant' : 'Nouveau groupe'} : ${slug}`;
   if (focus && choice.fresh) ids.editorGroupNew.focus();
 }
-// Brains: the server serves every brain of the Work; the page picks one and sends it as `brain=<name>` with every /api/ request.
+function formAction() {
+  return {
+    title: ids.editorActionTitle.value.replace(/[\r\n]+/g, ' ').trim(), owner: ids.editorOwner.value.trim(),
+    state: ids.editorState.value, priority: ids.editorPriority.value,
+    due: ids.editorDue.value, scheduled: ids.editorScheduled.value, group: groupValue()
+  };
+}
+function editorOpen() { return !ids.editor.hidden; }
+function editorSignature() { return JSON.stringify([ids.editorProject.value, formAction()]); }
+function editorDirty() { return editorOpen() && editorSignature() !== editorInitial; }
+function updateEditorButtons() {
+  ids.saveEditor.disabled = Boolean(editorAction) && !editorDirty();
+}
+function sizeTitleField() {
+  ids.editorActionTitle.style.height = 'auto';
+  ids.editorActionTitle.style.height = `${Math.min(ids.editorActionTitle.scrollHeight + 2, 320)}px`;
+}
+function renderStamps(action) {
+  if (!action) { ids.editorStamps.hidden = true; ids.editorStamps.replaceChildren(); return; }
+  const pairs = [
+    ['Créée', action.created_at ? formatStamp(action.created_at) : 'Non renseignée'],
+    ['Mise à jour', action.updated_at ? formatStamp(action.updated_at) : 'Non renseignée']
+  ];
+  if (closed(action)) pairs.push(['Clôture', action.done ? formatDay(action.done) : 'Non renseignée']);
+  ids.editorStamps.replaceChildren(...pairs.flatMap(([label, value]) => [element('dt', '', label), element('dd', '', value)]));
+  ids.editorStamps.hidden = false;
+}
+// preset (creation only): {register, group (slug), state}. focus: 'auto' (title when creating, heading when editing), 'title', 'none'.
+function openEditor(action = null, preset = null, {focus = 'auto'} = {}) {
+  const same = action && editorAction && editorAction.id === action.id;
+  if (editorDirty() && !same && !confirm('Abandonner les modifications non enregistrées de cette action ?')) return false;
+  closePopover(false);
+  if (!editorOpen()) editorReturnFocus = document.activeElement;
+  const historyRequest = ++editorHistoryRequest;
+  editorAction = action;
+  ids.editor.dataset.actionId = action?.id || '';
+  ids.editor.dataset.version = action?.version || '';
+  ids.editorTitle.textContent = action ? action.id : 'Nouvelle action';
+  const target = !action && preset?.register && snapshot.registers.find(register => register.path === preset.register);
+  ids.editorHint.textContent = action ? action.project : target ? `${target.label}${preset.group ? `, groupe ${groupLabel(preset.group)}` : ''}` : '';
+  ids.editorProjectField.hidden = Boolean(action);
+  ids.editorProject.disabled = Boolean(action);
+  ids.editorProject.value = action?.register || preset?.register || defaultRegister();
+  ids.editorActionTitle.value = action?.raw_title || '';
+  fillGroupOptions({slug: action?.group || (!action && preset?.group) || ''}, true);
+  ids.editorHistory.hidden = !action;
+  noteState = null;
+  noteBusy = false;
+  closeNoteForm(false);
+  ids.noteInput.value = '';
+  ids.addNoteButton.disabled = true;
+  ids.editorHistoryList.replaceChildren(element('li', 'note-empty', 'Chargement…'));
+  ids.editorHistoryCount.textContent = '';
+  ids.editorOwner.value = action?.owner || snapshot.owner;
+  ids.editorState.value = action?.state || (!action && preset?.state) || ' ';
+  ids.editorPriority.value = action?.priority || '';
+  ids.editorDue.value = action?.due || '';
+  ids.editorScheduled.value = action?.scheduled || '';
+  ids.saveEditor.textContent = action ? 'Enregistrer' : 'Créer l’action';
+  ids.cancelEditor.textContent = action ? 'Fermer' : 'Annuler';
+  ids.deleteEditor.hidden = !action;
+  renderStamps(action);
+  setEditorBusy(false);
+  ids.editorError.hidden = true;
+  ids.editor.hidden = false;
+  ids.editor.setAttribute('aria-label', action ? `Action ${action.id}` : 'Nouvelle action');
+  sizeTitleField();
+  editorInitial = editorSignature();
+  updateEditorButtons();
+  if (focus === 'title' || (focus === 'auto' && !action)) ids.editorActionTitle.focus();
+  else if (focus === 'auto') ids.editorTitle.focus({preventScroll: true});
+  if (action) {
+    loadDetails(action).then(details => {
+      if (historyRequest !== editorHistoryRequest || !editorOpen()) return;
+      renderNotes(details);
+    }).catch(error => {
+      if (historyRequest !== editorHistoryRequest || !editorOpen()) return;
+      ids.editorHistoryList.replaceChildren(element('li', 'note-empty', `Historique indisponible : ${error.message}`));
+    });
+  }
+  return true;
+}
+function closeEditor({force = false, refocus = true} = {}) {
+  if (!editorOpen()) return true;
+  if (!force && editorDirty() && !confirm('Abandonner les modifications non enregistrées de cette action ?')) return false;
+  const wasEditing = editorAction?.id;
+  ids.editor.hidden = true;
+  editorHistoryRequest += 1;
+  editorAction = null;
+  noteState = null;
+  if (refocus) {
+    const row = wasEditing && rowFor(wasEditing);
+    const target = row?.querySelector('.row-title, .card-title') || (editorReturnFocus?.isConnected && !ids.editor.contains(editorReturnFocus) ? editorReturnFocus : null);
+    (target || ids.resultCount).focus({preventScroll: true});
+  }
+  editorReturnFocus = null;
+  return true;
+}
+// After a refresh: an unchanged panel follows the register (new version), a vanished action closes it.
+function syncEditorAfterRefresh() {
+  if (!editorOpen() || !editorAction) return;
+  const fresh = findAction(editorAction.id);
+  if (!fresh) { closeEditor({force: true, refocus: false}); return; }
+  if (fresh.version !== editorAction.version && !editorDirty()) openEditor(fresh, null, {focus: 'none'});
+}
+function renderNotes(details) {
+  noteState = {id: details.id, version: details.details_version, notes: details.notes};
+  const shown = details.notes.filter(note => !/^-?\s*(créée|mise à jour)\s*:/i.test(note.text));
+  ids.editorHistoryList.replaceChildren();
+  if (!shown.length) ids.editorHistoryList.append(element('li', 'note-empty', 'Aucune note pour l’instant.'));
+  for (const note of shown) {
+    const item = element('li', `note-item${note.deletable ? '' : ' note-source'}`);
+    const text = note.text.replace(/^-\s+/, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
+    const body = element('span', 'note-text');
+    const dated = text.match(/^(\d{2}\/\d{2}) : ([\s\S]*)$/);
+    if (dated) body.append(element('span', 'note-date', dated[1]), dated[2]);
+    else body.textContent = text;
+    item.append(body);
+    if (note.deletable) {
+      const button = iconButton('icon-button note-delete', 'Supprimer la note', ICONS.trash);
+      button.addEventListener('click', () => deleteNote(note));
+      item.append(button);
+    }
+    ids.editorHistoryList.append(item);
+  }
+  const count = shown.filter(note => note.deletable).length;
+  ids.editorHistoryCount.textContent = count ? String(count) : '';
+  setNoteBusy(false);
+}
+function setNoteBusy(busy) {
+  noteBusy = busy;
+  ids.addNoteButton.disabled = busy || !noteState;
+  ids.submitNote.disabled = busy || !noteState;
+  ids.editorHistoryList.querySelectorAll('.note-delete').forEach(button => { button.disabled = busy; });
+}
+function showNoteError(error) {
+  ids.noteError.textContent = error.status === 409 ? 'L’historique a changé dans le registre : ferme puis rouvre l’action pour le recharger.' : error.message;
+  ids.noteError.hidden = false;
+}
+function forgetDetails(id, fresh) {
+  for (const key of [...detailCache.keys()]) if (key.startsWith(`${id}:`)) detailCache.delete(key);
+  detailCache.set(`${id}:${fresh.version}`, Promise.resolve(fresh));
+}
+function openNoteForm() {
+  ids.noteForm.hidden = false;
+  ids.addNoteButton.setAttribute('aria-expanded', 'true');
+  ids.noteInput.focus();
+  ids.noteForm.scrollIntoView({block: 'nearest'});
+}
+function closeNoteForm(focus = true) {
+  ids.noteForm.hidden = true;
+  ids.noteError.hidden = true;
+  ids.addNoteButton.setAttribute('aria-expanded', 'false');
+  if (focus && editorOpen()) ids.addNoteButton.focus();
+}
+async function changeNotes(send) {
+  const session = editorHistoryRequest;
+  const id = noteState.id;
+  setNoteBusy(true);
+  ids.noteError.hidden = true;
+  try {
+    const fresh = await send();
+    setUndo(fresh.undo);
+    forgetDetails(id, fresh);
+    if (session !== editorHistoryRequest || !editorOpen()) return null;
+    renderNotes(fresh);
+    // The action line changed (« mise à jour »): its new version keeps the panel and later saves in step.
+    editorAction = {...editorAction, version: fresh.version, updated_at: fresh.updated_at};
+    ids.editor.dataset.version = fresh.version;
+    renderStamps(editorAction);
+    refreshQuietly();
+    return fresh;
+  } catch (error) {
+    if (session === editorHistoryRequest && editorOpen()) {
+      setNoteBusy(false);
+      showNoteError(error);
+    }
+    return null;
+  }
+}
+async function submitNote() {
+  if (noteBusy || !noteState) return;
+  const note = ids.noteInput.value.replace(/\s*[\r\n\u2028\u2029]+\s*/g, ' ').trim();
+  if (!note) {
+    showNoteError(new Error('Saisis une note avant d’ajouter.'));
+    ids.noteInput.focus();
+    return;
+  }
+  const {id, version} = noteState;
+  const fresh = await changeNotes(() => request(`/api/actions/${encodeURIComponent(id)}/notes`, {
+    method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+    body: JSON.stringify({details_version: version, note})
+  }));
+  if (fresh) {
+    ids.noteInput.value = '';
+    ids.noteInput.focus();
+  } else if (editorOpen()) ids.noteInput.focus();
+}
+async function deleteNote(note) {
+  if (noteBusy || !noteState || !confirm('Supprimer cette note du registre ?')) return;
+  const {id, version} = noteState;
+  const fresh = await changeNotes(() => request(`/api/actions/${encodeURIComponent(id)}/notes/${note.index}`, {
+    method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+    body: JSON.stringify({details_version: version, text: note.text})
+  }));
+  if (!editorOpen()) return;
+  (ids.editorHistoryList.querySelector('.note-delete') || ids.addNoteButton).focus();
+}
+function setEditorBusy(busy) {
+  ids.saveEditor.disabled = busy || (Boolean(editorAction) && !editorDirty());
+  ids.deleteEditor.disabled = busy;
+  ids.saveEditor.setAttribute('aria-busy', String(busy));
+}
+// No confirmation: Annuler (and Git) restore a deleted action. Checks `version` and `details_version`, then stacks the undo.
+async function removeAction(id, version, detailsVersion = null) {
+  const details = detailsVersion ?? (await loadDetails({id, version})).details_version;
+  const result = await request(`/api/actions/${encodeURIComponent(id)}`, {
+    method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+    body: JSON.stringify({version, details_version: details})
+  });
+  for (const key of [...detailCache.keys()]) if (key.startsWith(`${id}:`)) detailCache.delete(key);
+  setUndo(result.undo);
+}
+async function deleteEditor() {
+  const id = ids.editor.dataset.actionId;
+  if (!id || ids.deleteEditor.disabled || noteBusy) return;
+  const index = visibleRows().findIndex(row => row.dataset.id === id);
+  setEditorBusy(true);
+  ids.editorError.hidden = true;
+  try {
+    await removeAction(id, ids.editor.dataset.version, noteState?.id === id ? noteState.version : null);
+    closeEditor({force: true, refocus: false});
+    await refresh();
+    showToast('Action supprimée', {undo: true});
+    focusAction(id, 'title', index);
+  } catch (error) {
+    ids.editorError.textContent = error.status === 409 ? 'Le registre a changé : ferme puis rouvre l’action avant de la supprimer.' : error.message;
+    ids.editorError.hidden = false;
+  } finally {
+    setEditorBusy(false);
+  }
+}
+async function deleteFromRow(action, button) {
+  if (button.disabled) return;
+  closePopover(false);
+  const index = visibleRows().findIndex(row => row.dataset.id === action.id);
+  button.disabled = true;
+  try {
+    await removeAction(action.id, action.version);
+    if (editorAction?.id === action.id) closeEditor({force: true, refocus: false});
+    await refresh();
+    showToast('Action supprimée', {undo: true});
+    focusAction(action.id, 'title', index);
+  } catch (error) {
+    const conflict = error.status === 409;
+    if (conflict) await refresh();
+    showError(conflict ? `Le registre a changé : la liste a été actualisée, vérifie ${action.id} puis recommence.` : error.message);
+    button.disabled = false;
+  }
+}
+async function saveEditor(event) {
+  event.preventDefault();
+  if (ids.saveEditor.disabled) return;
+  if (!ids.editorForm.reportValidity()) return;
+  const action = formAction();
+  const id = ids.editor.dataset.actionId;
+  setEditorBusy(true);
+  try {
+    if (id) {
+      setUndo((await request(`/api/actions/${encodeURIComponent(id)}`, {
+        method: 'PATCH', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+        body: JSON.stringify({version: ids.editor.dataset.version, action})
+      })).undo);
+      editorInitial = editorSignature(); // saved: the panel follows the fresh line after the refresh
+      showToast('Action mise à jour', {undo: true});
+      await refresh();
+      if (editorOpen()) ids.editorTitle.focus({preventScroll: true});
+    } else {
+      const result = await request('/api/actions', {
+        method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+        body: JSON.stringify({register: ids.editorProject.value, action})
+      });
+      setUndo(result.undo);
+      closeEditor({force: true, refocus: false});
+      await refresh();
+      showToast(`Action ${result.id} créée`, {undo: true});
+      focusAction(result.id);
+    }
+  } catch (error) {
+    ids.editorError.textContent = error.status === 409 ? 'Le registre a changé depuis l’ouverture : copie tes modifications, ferme le panneau puis rouvre l’action.' : error.message;
+    ids.editorError.hidden = false;
+  } finally {
+    setEditorBusy(false);
+    updateEditorButtons();
+  }
+}
+// Quick edits from a row or a card: the whole line goes back with one field changed (the group is left as it is).
+async function patchAction(action, changes, message, {anchor = null, part = 'title'} = {}) {
+  const index = visibleRows().findIndex(row => row.dataset.id === action.id);
+  const keepFocus = anchor !== null || (document.activeElement && activeRoot()?.contains(document.activeElement));
+  if (anchor) anchor.disabled = true;
+  try {
+    setUndo((await request(`/api/actions/${encodeURIComponent(action.id)}`, {
+      method: 'PATCH', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+      body: JSON.stringify({version: action.version, action: {
+        title: action.raw_title, owner: action.owner, state: action.state, priority: action.priority,
+        due: action.due, scheduled: action.scheduled, ...changes
+      }})
+    })).undo);
+    showToast(message, {undo: true});
+    await refresh();
+  } catch (error) {
+    await refresh();
+    showError(error.status === 409 ? `Le registre a changé : la liste a été actualisée, vérifie ${action.id} puis recommence.` : error.message);
+  }
+  if (keepFocus && ACTION_VIEWS.includes(view)) focusAction(action.id, part, index);
+}
+function updateStatus(action, state, anchor = null) {
+  if (state === action.state) return Promise.resolve();
+  return patchAction(action, {state}, 'Statut mis à jour', {anchor, part: 'status'});
+}
+function updateDue(action, due, anchor = null) {
+  if (due === action.due) return Promise.resolve();
+  return patchAction(action, {due}, due ? 'Échéance mise à jour' : 'Échéance retirée', {anchor, part: 'due'});
+}
+
+// ---------- Brains ----------
 const BRAIN_STORAGE_KEY = 'actions-brain-current-v1';
 // Routes that do not depend on the selected brain: their answers are never dropped when the brain changes.
 const BRAIN_NEUTRAL = new Set(['/api/brains', '/api/tools', '/api/shutdown']);
@@ -775,6 +1461,16 @@ function syncBrainUrl() {
     history.replaceState(history.state, '', url.href);
   } catch { /* The address bar keeps its value. */ }
 }
+// One accent per brain, stable: steel for `brain`, plum for `brain-perso`, then a hash over four more.
+const EXTRA_ACCENTS = ['teal', 'olive', 'rust', 'slate'];
+function accentFor(name) {
+  if (!name || name === 'brain') return 'steel';
+  if (name === 'brain-perso') return 'plum';
+  let hash = 0;
+  for (const char of name) hash = (Math.imul(hash, 31) + char.charCodeAt(0)) >>> 0;
+  return EXTRA_ACCENTS[hash % EXTRA_ACCENTS.length];
+}
+function applyAccent(name) { document.documentElement.dataset.accent = accentFor(name); }
 // What the page shows for a brain: the short label of the server (`Perso` for `brain-perso`); the folder name stays the technical value.
 function brainLabel(name) {
   return brains.find(brain => brain.name === name)?.label || name;
@@ -785,11 +1481,13 @@ function brainOption(brain, index) {
   option.setAttribute('role', 'option');
   option.setAttribute('aria-selected', String(brain.name === currentBrain));
   option.dataset.brain = brain.name;
-  const check = element('span', 'brain-check', '✓');
-  check.setAttribute('aria-hidden', 'true');
-  option.append(check, element('span', 'brain-option-name', brain.label || brain.name));
-  if (brain.scope) option.append(element('span', 'brain-option-scope', brain.scope));
-  option.title = [brain.name, brain.description].filter(Boolean).join(' — ');
+  const swatch = element('span', 'brain-swatch');
+  swatch.dataset.accent = accentFor(brain.name);
+  const text = element('span', 'brain-option-text');
+  text.append(element('span', 'brain-option-name', brain.label || brain.name));
+  if (brain.scope) text.append(element('span', 'brain-option-scope', brain.scope));
+  option.append(swatch, text, svgIcon(ICONS.check, 'brain-check'));
+  option.title = [brain.name, brain.description].filter(Boolean).join(' : ');
   option.addEventListener('click', () => chooseBrain(brain.name));
   return option;
 }
@@ -799,14 +1497,17 @@ function renderBrainSwitch() {
   const known = brains.find(brain => brain.name === currentBrain);
   const active = ids.brainMenu.children[brainMenuIndex]?.dataset.brain || currentBrain;
   ids.brainStatic.hidden = several;
-  ids.brainStatic.textContent = brainLabel(currentBrain) || 'Brain';
+  ids.brainStaticName.textContent = brainLabel(currentBrain) || 'Brain';
+  ids.brainStaticScope.textContent = known?.scope || '';
   ids.brainButton.hidden = !several;
   ids.brainName.textContent = brainLabel(currentBrain);
-  ids.brainButton.title = known ? [known.name, known.scope, known.description].filter(Boolean).join(' — ') : '';
+  ids.brainScope.textContent = known?.scope || '';
+  ids.brainMini.textContent = brainLabel(currentBrain) || 'Brain';
+  ids.brainButton.title = known ? [known.name, known.description].filter(Boolean).join(' : ') : '';
   ids.brainMenu.replaceChildren(...brains.map(brainOption));
   if (!several) closeBrainMenu(false);
   else if (brainMenuOpen()) setBrainActive(Math.max(0, brains.findIndex(brain => brain.name === active)));
-  document.title = several && currentBrain ? `Actions · ${brainLabel(currentBrain)}` : 'Actions · Brain local';
+  document.title = several && currentBrain ? `Actions – ${brainLabel(currentBrain)}` : 'Actions';
 }
 function brainMenuOpen() { return !ids.brainMenu.hidden; }
 function setBrainActive(index) {
@@ -819,6 +1520,7 @@ function setBrainActive(index) {
 }
 function openBrainMenu() {
   if (brains.length < 2 || brainMenuOpen()) return;
+  closePopover(false);
   ids.brainMenu.hidden = false;
   ids.brainButton.setAttribute('aria-expanded', 'true');
   setBrainActive(brains.findIndex(brain => brain.name === currentBrain));
@@ -842,30 +1544,30 @@ function adoptBrain(name) {
   brainEpoch += 1;
   storeBrain(name);
   syncBrainUrl();
+  applyAccent(name);
   renderBrainSwitch();
 }
-// What a brain owns: project filters, group folds, selections, open documents and Git detail, tool output, undo button.
+// What a brain owns: project filter, group folds, selection, panel, open documents and Git detail, tool output, undo.
 // The text typed in the search boxes and the owner and scope filters are not tied to a brain: they stay.
 function resetBrainState() {
-  pendingProject = '';
+  projectScope = '';
   pendingGroup = '';
-  pendingDocProject = '';
-  ids.projectFilter.value = '';
   ids.groupFilter.value = '';
   ids.docProject.value = '';
   ids.editorProject.replaceChildren();
   foldedGroups.clear();
   snapshot = {actions: [], registers: [], owner: '', today: ''};
   detailCache.clear();
-  detailCurrent = null;
-  hidePreview();
+  selectedId = null;
+  closePopover(false);
+  closeEditor({force: true, refocus: false});
   gitLoadId += 1;
   gitDiffRequest += 1;
   gitLoading = null;
   gitLoaded = false;
   gitRepos = [];
   gitSelected = null;
-  gitScrolls.clear();
+  ids.gitCount.textContent = '';
   ids.gitRepos.replaceChildren();
   showGitDetail({message: 'Choisis un fichier modifié ou un commit pour voir ses différences ici.'});
   clearTimeout(docTimer);
@@ -878,6 +1580,7 @@ function resetBrainState() {
   docMode = 'recent';
   docResults = [];
   docTotal = 0;
+  docTruncated = false;
   docTerms = [];
   docError = '';
   docSelectedId = null;
@@ -893,8 +1596,8 @@ function resetBrainState() {
   setDocError('');
   setDocStatus('');
   renderDocPane();
-  ids.toolResult.classList.remove('has-result');
   ids.toolResultTitle.textContent = 'Résultat';
+  ids.toolResultCommand.hidden = true;
   ids.toolResultStatus.textContent = 'Prêt';
   ids.toolResultStatus.className = '';
   ids.toolResultEmpty.hidden = false;
@@ -903,9 +1606,10 @@ function resetBrainState() {
   setUndo(null);
   ids.errorBanner.hidden = true;
   ids.lastSync.textContent = 'Chargement…';
+  ids.todayCount.textContent = '';
+  ids.openCount.textContent = '';
   populateProjects();
-  ids.dueCount.textContent = '—';
-  ids.waitingCount.textContent = '—';
+  renderProjectNav();
   render();
   saveUIState();
 }
@@ -914,16 +1618,17 @@ function enterBrain(name) {
   resetBrainState();
   refresh();
 }
-// A change waits for the writes in flight (their answer would land in the new brain) and keeps a note being edited unless the user lets it go.
+// A change waits for the writes in flight and keeps an action or a note being edited unless the user lets it go.
 function switchBrain(name) {
   if (name === currentBrain) return false;
   if (pendingWrites > 0) {
     showToast('Une opération est en cours : attends sa fin pour changer de brain.');
     return false;
   }
+  if (editorDirty() && !confirm('Abandonner les modifications non enregistrées de cette action ?')) return false;
   if (docDirty() && !confirm('Abandonner les modifications non enregistrées de cette note ?')) return false;
   enterBrain(name);
-  showToast(`Brain : ${brainLabel(name)}`);
+  showToast(`Brain ${brainLabel(name)} ouvert`);
   return true;
 }
 // Reads the brains of the Work (rediscovered by the server each time). Startup: the brain comes from the URL, then the browser's memory,
@@ -941,9 +1646,9 @@ async function loadBrains({initial = false} = {}) {
     if (choice) adoptBrain(choice);
     // Filters kept by this tab belong to the brain they were saved with.
     if (savedUI.brain && savedUI.brain !== currentBrain) {
-      pendingProject = '';
+      projectScope = '';
       pendingGroup = '';
-      pendingDocProject = '';
+      ids.docProject.value = '';
       foldedGroups.clear();
     }
   } else if (fallback && !names.includes(currentBrain)) {
@@ -954,37 +1659,44 @@ async function loadBrains({initial = false} = {}) {
   renderBrainSwitch();
   return false;
 }
+
+// ---------- Outils ----------
 async function loadTools() {
-  ids.toolsCatalog.textContent = 'Chargement des outils…';
+  ids.toolsCatalog.replaceChildren(element('p', 'git-loading', 'Chargement des outils…'));
   try {
     tools = (await request('/api/tools')).tools;
-    ids.toolsCatalog.replaceChildren();
     const groups = [...new Set(tools.map(tool => tool.group))];
-    for (const [index, group] of groups.entries()) {
+    const sections = [];
+    for (const group of groups) {
       const section = element('details', 'tool-group');
-      section.open = index === 0;
+      section.open = true;
       const summary = element('summary', 'tool-group-heading');
-      summary.append(element('strong', '', group), element('span', '', String(tools.filter(tool => tool.group === group).length)));
+      summary.append(svgIcon(ICONS.chevron, 'fold-chevron'), element('span', '', group), element('span', 'tool-group-count', String(tools.filter(tool => tool.group === group).length)));
       section.append(summary);
       for (const tool of tools.filter(item => item.group === group)) {
         const row = element('div', 'tool-row');
         row.dataset.search = `${tool.group} ${tool.label} ${tool.description} ${tool.command}`.toLocaleLowerCase('fr');
         const copy = element('div', 'tool-copy');
-        const name = element('strong', '', tool.label);
-        if (tool.confirm) name.append(' ', element('span', 'tool-writes', 'modifie le brain'));
-        copy.append(name, element('p', '', tool.description), element('code', '', tool.command));
-        const button = element('button', 'button button-quiet', 'Lancer');
+        const name = element('div', 'tool-name');
+        name.append(element('span', '', tool.label));
+        if (tool.confirm) name.append(element('span', 'tool-writes', 'modifie le brain'));
+        const description = element('p', '', tool.description);
+        description.title = `${tool.description}\n${tool.command}`;
+        copy.append(name, description);
+        const button = element('button', 'button button-small', 'Lancer');
         button.type = 'button';
         button.setAttribute('aria-label', `Lancer ${tool.label}`);
+        button.title = tool.command;
         button.addEventListener('click', () => runTool(tool, button));
         row.append(copy, button);
         section.append(row);
       }
-      ids.toolsCatalog.append(section);
+      sections.push(section);
     }
+    ids.toolsCatalog.replaceChildren(...sections);
     render();
   } catch (error) {
-    ids.toolsCatalog.textContent = error.message;
+    ids.toolsCatalog.replaceChildren(element('p', 'git-error', error.message));
   }
 }
 function filterTools() {
@@ -997,11 +1709,11 @@ function filterTools() {
       if (!row.hidden) visible += 1;
     }
     group.hidden = visible === 0;
-    group.querySelector('.tool-group-heading span').textContent = String(visible);
+    group.querySelector('.tool-group-count').textContent = String(visible);
     if (query && visible) group.open = true;
     count += visible;
   }
-  ids.resultCount.textContent = `${count} outil${count === 1 ? '' : 's'}`;
+  ids.resultCount.textContent = tools.length ? plural(count, 'outil') : '';
 }
 async function runTool(tool, button) {
   if (tool.confirm && !confirm(tool.confirm)) return;
@@ -1009,9 +1721,10 @@ async function runTool(tool, button) {
   buttons.forEach(item => { item.disabled = true; });
   button.textContent = 'En cours…';
   ids.toolResultTitle.textContent = tool.label;
+  ids.toolResultCommand.textContent = tool.command;
+  ids.toolResultCommand.hidden = false;
   ids.toolResultStatus.textContent = 'Exécution en cours';
   ids.toolResultStatus.className = '';
-  ids.toolResult.classList.add('has-result');
   ids.toolResultEmpty.hidden = true;
   ids.toolResultOutput.hidden = false;
   ids.toolResultOutput.textContent = 'La commande travaille. Son résultat apparaîtra ici.';
@@ -1036,6 +1749,8 @@ async function runTool(tool, button) {
     button.textContent = 'Lancer';
   }
 }
+
+// ---------- Git (read only) ----------
 const GIT_LABELS = {M: 'Modifié', A: 'Ajouté', D: 'Supprimé', R: 'Renommé', C: 'Copié', U: 'Conflit', '?': 'Non suivi'};
 const GIT_GROUPS = [
   {key: 'staged', title: 'Indexés', test: file => file.staged},
@@ -1044,13 +1759,11 @@ const GIT_GROUPS = [
 ];
 let gitRepos = [];
 let gitLoaded = false;
-let gitCurrent = typeof savedUI.gitRepo === 'string' ? savedUI.gitRepo : 'work';
 let gitLoading = null;
 let gitLoadId = 0; // bumped when the brain changes: a load started before it no longer owns `gitLoading`
 let gitSelected = null;
 let gitDiffRequest = 0;
 const gitRowSelections = new WeakMap();
-const gitScrolls = new Map();
 function gitPlural(count, word) { return `${count} ${word}${count === 1 ? '' : 's'}`; }
 function gitBadgeClass(letter) {
   return {A: 'add', M: 'mod', D: 'del', R: 'ren', C: 'ren', U: 'del', '?': 'new'}[letter] || 'mod';
@@ -1060,7 +1773,7 @@ function gitLetter(file, group) {
 }
 function gitPathNode(file) {
   const path = element('span', 'git-path');
-  if (file.orig_path) path.append(element('span', 'git-orig', file.orig_path), ' → ');
+  if (file.orig_path) path.append(element('span', 'git-orig', file.orig_path), ' vers ');
   const slash = file.path.lastIndexOf('/');
   if (slash >= 0) path.append(element('span', 'git-dir', file.path.slice(0, slash + 1)));
   path.append(element('span', 'git-name', file.path.slice(slash + 1)));
@@ -1086,7 +1799,7 @@ function gitRelativeDate(value) {
   for (const [limit, unit, size] of steps) {
     if (Math.abs(seconds) < limit) return formatter.format(Math.round(seconds / size), unit);
   }
-  return new Intl.DateTimeFormat('fr-FR', {day: 'numeric', month: 'short', year: 'numeric'}).format(date);
+  return DAY_YEAR_FORMAT.format(date);
 }
 function gitSameSelection(a, b) {
   return Boolean(a && b) && a.repo === b.repo && a.kind === b.kind &&
@@ -1103,7 +1816,7 @@ function gitFileRow(repo, file, group) {
   const badge = element('span', `git-badge git-badge-${gitBadgeClass(letter)}`, letter);
   badge.title = GIT_LABELS[letter] || letter;
   row.append(badge, gitPathNode(file), gitCountsNode(file, group));
-  row.setAttribute('aria-label', `${GIT_LABELS[letter] || letter} : ${file.orig_path ? `${file.orig_path} → ` : ''}${file.path}`);
+  row.setAttribute('aria-label', `${GIT_LABELS[letter] || letter} : ${file.orig_path ? `${file.orig_path} vers ` : ''}${file.path}`);
   const selection = {repo: repo.id, kind: 'file', path: file.path, group};
   gitRowSelections.set(row, selection);
   row.setAttribute('aria-pressed', String(gitSameSelection(selection, gitSelected)));
@@ -1114,7 +1827,7 @@ function gitCommitRow(repo, commit) {
   const row = gitRow('git-commit');
   const subject = element('span', 'git-subject', commit.subject || '(sans message)');
   if (commit.unpushed) subject.append(element('span', 'git-pill', 'non poussé'));
-  const meta = element('span', 'git-commit-meta', `${commit.author} · ${gitRelativeDate(commit.date)}`);
+  const meta = element('span', 'git-commit-meta', `${commit.author}, ${gitRelativeDate(commit.date)}`);
   meta.title = commit.date;
   const main = element('span', 'git-commit-main');
   main.append(subject, meta);
@@ -1129,20 +1842,18 @@ function gitSyncNode(repo) {
   const sync = element('span', 'git-sync');
   if (repo.upstream && repo.ahead !== null && repo.behind !== null) {
     sync.textContent = `↑${repo.ahead} ↓${repo.behind}`;
-    sync.title = `${gitPlural(repo.ahead, 'commit')} à pousser, ${gitPlural(repo.behind, 'commit')} à récupérer, par rapport à ${repo.upstream} (dernière synchro locale)`;
+    sync.title = `${gitPlural(repo.ahead, 'commit')} à pousser, ${gitPlural(repo.behind, 'commit')} à récupérer, par rapport à ${repo.upstream} (dernière synchro locale, aucun fetch depuis cette page)`;
   } else if (repo.upstream) {
     sync.textContent = 'branche distante introuvable';
     sync.title = repo.upstream;
-  } else {
-    sync.textContent = 'pas de branche distante';
-  }
+  } else sync.textContent = 'pas de branche distante';
   return sync;
 }
 function gitRepoCard(repo) {
   const card = element('section', 'git-card');
   card.setAttribute('aria-label', `Dépôt ${repo.label}`);
   const head = element('div', 'git-card-head');
-  head.append(element('h3', '', repo.label));
+  head.append(element('h2', '', repo.label));
   if (!repo.available) {
     card.append(head, element('p', 'git-unavailable', 'Dépôt Git introuvable sur cette machine.'));
     return card;
@@ -1151,73 +1862,42 @@ function gitRepoCard(repo) {
     card.append(head, element('p', 'git-error', repo.error));
     return card;
   }
-  const branch = element('span', 'git-branch', repo.detached ? `HEAD détachée (${repo.branch})` : repo.branch || '(aucune branche)');
-  const sync = gitSyncNode(repo);
-  sync.title = 'Avance et retard sur la branche distante, depuis la dernière synchro locale (aucun fetch depuis cette page).';
-  head.append(branch, sync, element('span', 'git-count', repo.files.length ? gitPlural(repo.files.length, 'changement') : 'propre'));
+  head.append(element('span', 'git-branch', repo.detached ? `HEAD détachée (${repo.branch})` : repo.branch || '(aucune branche)'), gitSyncNode(repo),
+    element('span', 'git-count', repo.files.length ? gitPlural(repo.files.length, 'changement') : 'propre'));
   card.append(head);
-  const changes = element('div', 'git-changes');
   const populated = GIT_GROUPS.map(group => [group, repo.files.filter(group.test)]).filter(([, files]) => files.length);
-  if (!populated.length) changes.append(element('p', 'git-empty', 'Aucun changement local.'));
+  if (!populated.length) card.append(element('p', 'git-empty', 'Aucun changement local.'));
   for (const [group, files] of populated) {
     const section = element('div', 'git-group');
-    const heading = element('h4', '', `${group.title} (${files.length})`);
     const list = element('ul', 'git-list');
     for (const file of files) {
       const item = element('li');
       item.append(gitFileRow(repo, file, group.key));
       list.append(item);
     }
-    section.append(heading, list);
-    changes.append(section);
+    section.append(element('h3', '', `${group.title} (${files.length})`), list);
+    card.append(section);
   }
-  const body = element('div', 'git-card-body');
-  body.dataset.repo = repo.id;
-  body.tabIndex = 0;
-  body.setAttribute('aria-label', `Changements et commits de ${repo.label}`);
-  body.append(changes);
   const commits = element('div', 'git-group git-commits');
-  commits.append(element('h4', '', 'Derniers commits'));
   const list = element('ul', 'git-list');
   for (const commit of repo.commits) {
     const item = element('li');
     item.append(gitCommitRow(repo, commit));
     list.append(item);
   }
-  commits.append(list.children.length ? list : element('p', 'git-empty', 'Aucun commit.'));
-  card.append(body, commits);
+  commits.append(element('h3', '', 'Derniers commits'), list.children.length ? list : element('p', 'git-empty', 'Aucun commit.'));
+  card.append(commits);
   return card;
 }
 function renderGit() {
   const files = gitRepos.reduce((total, repo) => total + (repo.files ? repo.files.length : 0), 0);
-  ids.resultCount.textContent = gitLoaded ? gitPlural(files, 'changement') + ' locaux' : '';
+  ids.gitCount.textContent = gitLoaded && files ? String(files) : '';
+  if (view === 'git') ids.resultCount.textContent = gitLoaded ? `${gitPlural(files, 'changement')} locaux` : '';
   if (!gitLoaded) return;
   const focused = ids.gitRepos.contains(document.activeElement) ? gitRowSelections.get(document.activeElement) : null;
-  // Each repository scrolls on its own; keep each scroll position across refreshes.
-  for (const body of ids.gitRepos.querySelectorAll('.git-card-body')) gitScrolls.set(body.dataset.repo, body.scrollTop);
-  if (!gitRepos.some(repo => repo.id === gitCurrent) && gitRepos.length) gitCurrent = gitRepos[0].id;
-  const toggle = element('div', 'git-switch');
-  toggle.setAttribute('role', 'group');
-  toggle.setAttribute('aria-label', 'Dépôt affiché');
-  for (const repo of gitRepos) {
-    const button = element('button', '', repo.label);
-    button.type = 'button';
-    button.setAttribute('aria-pressed', String(repo.id === gitCurrent));
-    const count = repo.files ? repo.files.length : 0;
-    if (count) button.append(element('span', 'git-switch-count', String(count)));
-    if (repo.ahead) button.append(element('span', 'git-switch-ahead', `↑${repo.ahead}`));
-    button.title = !repo.available ? 'Dépôt introuvable' : count ? gitPlural(count, 'changement') + ' locaux' : 'Aucun changement local';
-    button.addEventListener('click', () => {
-      if (gitCurrent === repo.id) return;
-      gitCurrent = repo.id;
-      saveUIState();
-      renderGit();
-    });
-    toggle.append(button);
-  }
-  const current = gitRepos.find(repo => repo.id === gitCurrent);
-  ids.gitRepos.replaceChildren(toggle, ...(current ? [gitRepoCard(current)] : []));
-  for (const body of ids.gitRepos.querySelectorAll('.git-card-body')) body.scrollTop = gitScrolls.get(body.dataset.repo) || 0;
+  const scroll = ids.gitRepos.scrollTop;
+  ids.gitRepos.replaceChildren(...gitRepos.map(gitRepoCard));
+  ids.gitRepos.scrollTop = scroll;
   if (focused) {
     const row = [...ids.gitRepos.querySelectorAll('.git-row')].find(item => gitSameSelection(gitRowSelections.get(item), focused));
     if (row) row.focus();
@@ -1240,17 +1920,17 @@ function loadGit() {
   if (gitLoading) return gitLoading;
   ids.gitStatus.textContent = gitLoaded ? 'Actualisation…' : 'Chargement…';
   ids.gitStatus.classList.remove('git-status-error');
-  if (!gitLoaded) ids.gitRepos.textContent = 'Chargement des dépôts…';
+  if (!gitLoaded) ids.gitRepos.replaceChildren(element('p', 'git-loading', 'Chargement des dépôts…'));
   const loadId = gitLoadId;
   gitLoading = (async () => {
     try {
       gitRepos = (await request('/api/git')).repos;
       gitLoaded = true;
-      ids.gitStatus.textContent = `Actualisé à ${new Intl.DateTimeFormat('fr-FR', {hour: '2-digit', minute: '2-digit'}).format(new Date())}`;
-      if (view === 'git') renderGit();
+      ids.gitStatus.textContent = `Actualisé à ${TIME_FORMAT.format(new Date())}`;
+      renderGit();
       if (gitSelected && !gitStillListed()) {
         gitSelected = null;
-        showGitDetail({message: 'Ce changement n\'est plus présent. Choisis un autre fichier ou commit.'});
+        showGitDetail({message: 'Ce changement n’est plus présent. Choisis un autre fichier ou commit.'});
       } else if (gitSelected) loadGitDiff();
     } catch (error) {
       if (error.stale || loadId !== gitLoadId) return;
@@ -1306,8 +1986,8 @@ async function loadGitDiff() {
   if (!selection) return;
   const repo = gitRepos.find(item => item.id === selection.repo);
   const label = repo ? repo.label : selection.repo;
-  const groupTitle = selection.kind === 'file' ? GIT_GROUPS.find(group => group.key === selection.group).title.replace(/s$/, '') : '';
-  const title = selection.kind === 'commit' ? `${label} · ${selection.short} ${selection.subject || ''}`.trim() : `${label} · ${selection.path} · ${groupTitle}`;
+  const groupTitle = selection.kind === 'file' ? GIT_GROUPS.find(group => group.key === selection.group).title.replace(/s$/, '').toLowerCase() : '';
+  const title = selection.kind === 'commit' ? `${label} : ${selection.short} ${selection.subject || ''}`.trim() : `${label} : ${selection.path} (${groupTitle})`;
   const requestId = ++gitDiffRequest;
   showGitDetail({title, status: 'Chargement…', message: 'Chargement des différences…'});
   try {
@@ -1326,7 +2006,7 @@ async function loadGitDiff() {
     if (selection.kind === 'commit') {
       showGitDetail({title, note: result.truncated ? 'Aperçu tronqué à 300 Ko.' : '', lines: result.show.replace(/\n$/, '').split('\n')});
     } else if (result.hidden) {
-      showGitDetail({title, message: 'Contenu masqué : ce fichier est considéré comme sensible (clé, secret, .env…). Rien n\'est affiché.'});
+      showGitDetail({title, message: 'Contenu masqué : ce fichier est considéré comme sensible (clé, secret, .env…). Rien n’est affiché.'});
     } else if (result.binary && !result.diff.trim()) {
       showGitDetail({title, message: 'Fichier binaire : aucun aperçu des différences.'});
     } else {
@@ -1341,23 +2021,26 @@ async function loadGitDiff() {
     showGitDetail({title, status: 'Échec', failed: true, message: error.message});
   }
 }
+
+// ---------- Undo ----------
+// Undo labels come from the server (« statut de ABC-001 → En cours »): no arrow in the interface.
+function undoText(label) { return String(label || '').replace(/\s*→\s*/g, ' vers '); }
 function setUndo(state) {
   undoState = state || {available: false, label: null, depth: 0};
   renderUndo();
 }
 function renderUndo() {
-  const text = undoState.available ? `Annuler : ${undoState.label}` : 'Rien à annuler';
-  ids.undoButton.disabled = undoBusy || !undoState.available;
-  ids.undoButton.setAttribute('aria-busy', String(undoBusy));
+  const text = undoState.available ? `Annuler : ${undoText(undoState.label)}` : 'Rien à annuler';
+  ids.undoLabel.textContent = text;
+  ids.undoButton.setAttribute('aria-disabled', String(undoBusy || !undoState.available));
   ids.undoButton.title = text;
-  ids.undoButton.setAttribute('aria-label', text);
+  if (!undoState.available || undoBusy) ids.toastAction.hidden = true;
 }
 async function loadUndo() {
-  try { setUndo(await request('/api/undo')); } catch { /* The button keeps its last known state. */ }
+  try { setUndo(await request('/api/undo')); } catch { /* The menu keeps its last known state. */ }
 }
 async function undoLast() {
   if (undoBusy || !undoState.available) return;
-  const hadFocus = document.activeElement === ids.undoButton;
   undoBusy = true;
   renderUndo();
   try {
@@ -1368,49 +2051,66 @@ async function undoLast() {
     setUndo(result.undo);
     detailCache.clear();
     await refresh();
-    showToast(`Annulé : ${result.undone}`);
+    showToast(`Annulé : ${undoText(result.undone)}`);
   } catch (error) {
     showToast(error.message);
     await refresh();
   } finally {
     undoBusy = false;
     renderUndo();
-    if (hadFocus && ids.undoButton.disabled) ids.resultCount.focus();
   }
 }
-// A refresh redraws the list and the board: keep each scroll position (list, board, every column).
-function listScrolls() {
+
+// ---------- Refresh ----------
+// A refresh redraws the active view: keep its scroll positions (rows, board, every column).
+function viewScrolls() {
   return {
-    list: [ids.listView.scrollTop, ids.listView.scrollLeft],
-    board: ids.boardView.scrollLeft,
+    today: ids.todayView.scrollTop, list: ids.listView.scrollTop, board: ids.boardView.scrollLeft,
     columns: [...ids.boardView.querySelectorAll('.board-cards')].map(cards => cards.scrollTop)
   };
 }
-function restoreListScrolls(scrolls) {
-  [ids.listView.scrollTop, ids.listView.scrollLeft] = scrolls.list;
+function restoreViewScrolls(scrolls) {
+  ids.todayView.scrollTop = scrolls.today;
+  ids.listView.scrollTop = scrolls.list;
   ids.boardView.scrollLeft = scrolls.board;
   ids.boardView.querySelectorAll('.board-cards').forEach((cards, index) => { cards.scrollTop = scrolls.columns[index] || 0; });
 }
+function showError(message) {
+  ids.errorBanner.textContent = message;
+  ids.errorBanner.hidden = false;
+}
 async function refresh() {
   if (view === 'git') loadGit();
-  if (view === 'search') refreshSearchView();
+  if (isDocsView()) refreshDocsView();
   try {
     snapshot = await request('/api/actions');
     detailCache.clear();
     loadUndo();
     ids.errorBanner.hidden = true;
-    ids.lastSync.textContent = `Actualisé à ${new Intl.DateTimeFormat('fr-FR', {hour: '2-digit', minute: '2-digit'}).format(new Date())}`;
+    ids.lastSync.textContent = `Actualisé à ${TIME_FORMAT.format(new Date())}`;
+    validateScope();
     populateProjects();
     setSummary();
-    const scrolls = listScrolls();
+    const scrolls = viewScrolls();
     render();
-    restoreListScrolls(scrolls);
+    restoreViewScrolls(scrolls);
+    syncEditorAfterRefresh();
   } catch (error) {
     if (error.stale) return;
-    ids.errorBanner.textContent = error.message;
-    ids.errorBanner.hidden = false;
+    showError(error.message);
   }
 }
+// Counters and rows follow a write made from the panel (a note), without moving the focus.
+async function refreshQuietly() {
+  try {
+    snapshot = await request('/api/actions');
+    setSummary();
+    const scrolls = viewScrolls();
+    if (ACTION_VIEWS.includes(view)) { render(); restoreViewScrolls(scrolls); }
+  } catch { /* The next refresh will catch up. */ }
+}
+
+// ---------- Documents: Notes and Recherche ----------
 function docFoldChar(char) {
   let folded = docFoldCache.get(char);
   if (folded === undefined) {
@@ -1495,66 +2195,85 @@ function setDocStatus(message, failed = false) {
   ids.docStatus.textContent = message;
   ids.docStatus.className = failed ? 'doc-status doc-status-error' : 'doc-status';
 }
+// Where the documents come from: « Inbox » or « Hors projets » of the chip, else the sidebar project (a client prefix is filtered here).
+function docProjectParam() {
+  if (ids.docProject.value) return ids.docProject.value;
+  return snapshot.registers.some(register => register.path === projectScope) ? projectScope : '';
+}
+function docScopeMatch(item) {
+  const place = ids.docProject.value;
+  if (place === INBOX_REGISTER) return item.register === INBOX_REGISTER;
+  if (place === 'none') return !item.register;
+  return !projectScope || (Boolean(item.register) && item.register !== INBOX_REGISTER && inScope(item.register));
+}
 function docItem(item, searching) {
   const li = element('li');
   const button = element('button', 'doc-item');
   button.type = 'button';
   button.dataset.docId = item.id;
   button.setAttribute('aria-pressed', String(item.id === docSelectedId));
-  const title = element('strong', 'doc-item-title');
+  const title = element('span', 'doc-item-title');
   if (searching) title.append(docMarked(item.title, docFindRanges(item.title, docTerms)));
   else title.textContent = item.title;
   const meta = element('span', 'doc-item-meta');
-  if (item.project) meta.append(element('span', 'doc-pill', item.project));
-  if (item.date) meta.append(element('span', 'doc-date', formatDate(item.date)));
-  const path = element('span', 'doc-item-path');
-  if (searching) path.append(docMarked(docShortPath(item.id), docFindRanges(docShortPath(item.id), docTerms)));
-  else path.textContent = docShortPath(item.id);
-  meta.append(path);
+  meta.append(element('span', '', item.project || 'Hors projets'));
+  if (item.date) meta.append(element('span', 'doc-item-date', formatDay(item.date)));
   button.append(title, meta);
-  if (searching) for (const snippet of item.snippets || []) button.append(docSnippetNode(snippet));
-  else if (item.excerpt) button.append(element('span', 'doc-item-excerpt', item.excerpt));
+  if (searching) {
+    const path = element('span', 'doc-item-path');
+    path.append(docMarked(docShortPath(item.id), docFindRanges(docShortPath(item.id), docTerms)));
+    button.append(path);
+    for (const snippet of item.snippets || []) button.append(docSnippetNode(snippet));
+  } else if (item.excerpt) button.append(element('span', 'doc-item-excerpt', item.excerpt));
   button.addEventListener('click', () => openDoc(item.id, {nav: 'root', terms: searching ? docTerms : []}));
   li.append(button);
   return li;
 }
 function docEmpty(heading, message) {
-  const box = element('div', 'empty');
-  box.append(element('strong', '', heading), element('span', '', message));
+  const box = element('div', 'empty-state');
+  box.append(element('h2', '', heading), element('p', '', message));
   return box;
 }
 function renderDocList() {
-  const searching = docMode === 'search';
   const focused = ids.docList.contains(document.activeElement) ? document.activeElement.dataset.docId : null;
-  if (searching && docError) {
-    ids.docList.replaceChildren(docEmpty('Recherche impossible.', docError));
-    return;
+  const filtering = Boolean(projectScope || ids.docProject.value);
+  if (view === 'notes') {
+    if (!notesLoaded) { ids.docList.replaceChildren(); return; }
+    const items = notesData.filter(docScopeMatch);
+    ids.resultCount.textContent = plural(items.length, 'note');
+    if (!items.length) {
+      ids.docList.replaceChildren(docEmpty('Aucune note ici.', filtering ? 'Aucune note pour ce filtre.' : 'Crée une note : elle s’enregistre dans le projet choisi ou dans l’Inbox.'));
+      return;
+    }
+    const list = element('ul', 'doc-items');
+    list.append(...items.map(item => docItem(item, false)));
+    ids.docList.replaceChildren(list);
+  } else {
+    const searching = docMode === 'search';
+    if (searching && docError) {
+      ids.resultCount.textContent = '';
+      ids.docList.replaceChildren(docEmpty('Recherche impossible.', docError));
+      return;
+    }
+    if (!searching && !notesLoaded) { ids.docList.replaceChildren(); return; }
+    const items = (searching ? docResults : recentDocs).filter(docScopeMatch);
+    ids.resultCount.textContent = searching
+      ? `${plural(docTotal, 'résultat')}${docTotal > items.length ? `, ${items.length} affichés` : ''}`
+      : plural(items.length, 'document récent', 'documents récents');
+    if (!items.length) {
+      ids.docList.replaceChildren(searching
+        ? docEmpty('Aucun résultat.', 'Aucun document ne contient ces termes.')
+        : docEmpty('Aucun document ici.', filtering ? 'Aucun document pour ce filtre.' : 'Le brain ne contient encore aucun document.'));
+      return;
+    }
+    const list = element('ul', 'doc-items');
+    list.append(...items.map(item => docItem(item, searching)));
+    if (searching) ids.docList.replaceChildren(list);
+    else ids.docList.replaceChildren(element('h2', 'doc-list-heading', 'Modifiés récemment'), list);
   }
-  if (!searching && !notesLoaded) { ids.docList.replaceChildren(); return; }
-  const project = ids.docProject.value;
-  const items = searching ? docResults : recentDocs;
-  if (!items.length) {
-    ids.docList.replaceChildren(searching
-      ? docEmpty('Aucun résultat.', 'Aucun document ne contient ces termes.')
-      : docEmpty('Aucun document ici.', project ? 'Aucun document pour ce filtre.' : 'Le brain ne contient encore aucun document.'));
-    return;
-  }
-  const list = element('ul', 'doc-items');
-  list.append(...items.map(item => docItem(item, searching)));
-  if (searching) ids.docList.replaceChildren(list);
-  else ids.docList.replaceChildren(element('h4', 'doc-list-heading', 'Modifiés récemment'), list);
   if (focused) ids.docList.querySelector(`.doc-item[data-doc-id="${CSS.escape(focused)}"]`)?.focus();
 }
-function renderSearchView() {
-  if (docMode === 'search') {
-    ids.resultCount.textContent = docError ? '' : `${docTotal} résultat${docTotal === 1 ? '' : 's'}${docTotal > docResults.length ? ` (${docResults.length} affichés)` : ''}`;
-  } else {
-    const project = ids.docProject.value;
-    const count = recentDocs.length;
-    ids.resultCount.textContent = notesLoaded ? `${count} document${count === 1 ? '' : 's'} récent${count === 1 ? '' : 's'}` : '';
-  }
-  renderDocList();
-}
+function renderDocsView() { renderDocList(); }
 function markDocSelection() {
   for (const button of ids.docList.querySelectorAll('.doc-item')) {
     button.setAttribute('aria-pressed', String(button.dataset.docId === docSelectedId));
@@ -1562,19 +2281,18 @@ function markDocSelection() {
 }
 async function loadNotes() {
   const requestId = ++notesRequest;
-  if (docMode === 'recent') setDocStatus(notesLoaded ? 'Actualisation…' : 'Chargement…');
+  if (!notesLoaded) setDocStatus('Chargement…');
   try {
-    const project = ids.docProject.value;
-    const [data, recent] = await Promise.all([request('/api/notes'), request(`/api/docs/recent?project=${encodeURIComponent(project)}`)]);
+    const [data, recent] = await Promise.all([request('/api/notes'), request(`/api/docs/recent?project=${encodeURIComponent(docProjectParam())}`)]);
     if (requestId !== notesRequest) return;
     notesData = data.notes;
     recentDocs = recent.docs;
     notesLoaded = true;
-    if (docMode === 'recent') setDocStatus(`Actualisé à ${new Intl.DateTimeFormat('fr-FR', {hour: '2-digit', minute: '2-digit'}).format(new Date())}`);
-    if (view === 'search') renderSearchView();
+    if (view === 'notes' || docMode === 'recent') setDocStatus('');
+    if (isDocsView()) renderDocsView();
   } catch (error) {
-    if (requestId !== notesRequest) return;
-    if (docMode === 'recent') setDocStatus(`Échec : ${error.message}`, true);
+    if (requestId !== notesRequest || error.stale) return;
+    setDocStatus(`Échec : ${error.message}`, true);
   }
 }
 async function runDocSearch() {
@@ -1586,33 +2304,42 @@ async function runDocSearch() {
     docMode = 'recent';
     docResults = [];
     docTotal = 0;
+    docTruncated = false;
     docTerms = [];
-    renderSearchView();
+    setDocStatus('');
+    renderDocsView();
     loadNotes();
     return;
   }
   docMode = 'search';
   setDocStatus('Recherche…');
   try {
-    const data = await request(`/api/search?${new URLSearchParams({q: query, project: ids.docProject.value})}`);
+    const data = await request(`/api/search?${new URLSearchParams({q: query, project: docProjectParam()})}`);
     if (requestId !== docSearchRequest) return;
     docResults = data.results;
     docTotal = data.total;
+    docTruncated = data.truncated;
     docTerms = data.terms;
     setDocStatus(data.truncated ? `Les ${data.results.length} meilleurs résultats sont affichés.` : '');
   } catch (error) {
-    if (requestId !== docSearchRequest) return;
+    if (requestId !== docSearchRequest || error.stale) return;
     docResults = [];
     docTotal = 0;
     docTerms = [];
     docError = error.message;
     setDocStatus('');
   }
-  renderSearchView();
+  if (isDocsView()) renderDocsView();
 }
 function scheduleDocSearch() {
   clearTimeout(docTimer);
   docTimer = setTimeout(runDocSearch, 200);
+}
+// The lists of the documents views after a filter change.
+function refreshDocLists() {
+  if (view === 'search' && ids.docQuery.value.trim()) runDocSearch();
+  else loadNotes();
+  renderDocsView();
 }
 function setDocError(message) {
   ids.docPaneError.textContent = message;
@@ -1623,6 +2350,7 @@ function docDirty() {
 }
 function renderDocPane() {
   const doc = docCurrent;
+  ids.docsView.classList.toggle('has-doc', Boolean(doc));
   ids.docBack.hidden = !docHistory.length;
   ids.docPaneEmpty.hidden = Boolean(doc);
   ids.docArticle.hidden = !doc || docEditing;
@@ -1641,7 +2369,7 @@ function renderDocPane() {
   }
   const listed = notesData.find(item => item.id === doc.id) || recentDocs.find(item => item.id === doc.id);
   ids.docPaneTitle.textContent = doc.title;
-  ids.docPaneMeta.textContent = `${doc.project || 'Hors projets'}${listed ? ` · ${formatDate(listed.date)}` : ''}`;
+  ids.docPaneMeta.replaceChildren(element('span', '', doc.project || 'Hors projets'), ...(listed?.date ? [element('span', 'doc-item-date', formatDay(listed.date))] : []));
   ids.docPanePath.textContent = doc.id;
 }
 function scrollDocTo(node, center) {
@@ -1708,7 +2436,7 @@ async function openDoc(id, {nav = 'root', terms = [], anchor = ''} = {}) {
     renderDocPane();
     showDocArticle(doc.html, docMarks, anchor, quiet);
   } catch (error) {
-    if (requestId !== docRenderRequest) return;
+    if (requestId !== docRenderRequest || error.stale) return;
     if (error.status === 404) {
       docSelectedId = null;
       docCurrent = null;
@@ -1769,9 +2497,9 @@ async function saveDoc() {
     docEditing = false;
     docNote = null;
     docSaving = false;
-    showToast('Note enregistrée');
+    showToast('Note enregistrée', {undo: true});
     await Promise.all([loadNotes(), openDoc(docCurrent.id, {nav: 'keep'})]);
-    if (docMode === 'search') runDocSearch();
+    if (docMode === 'search' && view === 'search') runDocSearch();
     ids.docEdit.focus();
   } catch (error) {
     setDocError(error.status === 409
@@ -1782,10 +2510,13 @@ async function saveDoc() {
     renderDocPane();
   }
 }
-function refreshSearchView() {
+function refreshDocsView() {
   loadNotes();
-  if (ids.docQuery.value.trim() || docMode === 'search') runDocSearch();
-  else { docMode = 'recent'; docError = ''; renderSearchView(); }
+  if (view === 'search' && (ids.docQuery.value.trim() || docMode === 'search')) runDocSearch();
+  else {
+    if (view === 'search') { docMode = 'recent'; docError = ''; }
+    renderDocsView();
+  }
   if (docSelectedId && !docEditing && !docSaving) openDoc(docSelectedId, {nav: 'keep'});
 }
 function newNoteFolder() {
@@ -1797,9 +2528,11 @@ function updateNewNoteWhere() {
   ids.newNoteWhere.textContent = `Fichier créé : ${newNoteFolder()}AAAA-MM-JJ-titre.md`;
 }
 function openNewNote() {
+  closePopover(false);
   ids.newNoteProject.replaceChildren(new Option('Inbox (à trier)', INBOX_REGISTER), ...snapshot.registers.map(register => new Option(register.label, register.path)));
   const paths = [...ids.newNoteProject.options].map(option => option.value);
-  ids.newNoteProject.value = paths.includes(ids.docProject.value) ? ids.docProject.value : INBOX_REGISTER;
+  const preferred = ids.docProject.value === INBOX_REGISTER ? INBOX_REGISTER : projectScope;
+  ids.newNoteProject.value = paths.includes(preferred) ? preferred : INBOX_REGISTER;
   ids.newNoteTitle.value = '';
   ids.newNoteContent.value = '';
   ids.newNoteError.hidden = true;
@@ -1821,18 +2554,21 @@ async function createNote(event) {
     setUndo(result.undo);
     ids.newNoteDialog.close();
     if (docDirty() && !confirm('Abandonner les modifications non enregistrées du document ouvert ?')) {
-      if (view === 'search') await loadNotes();
-      showToast('Note créée');
+      if (isDocsView()) await loadNotes();
+      showToast('Note créée', {undo: true});
       return;
     }
     docEditing = false;
     docNote = null;
     docSelectedId = null;
     docCurrent = null;
-    ids.docQuery.value = '';
-    ids.docProject.value = '';
-    setView('search');
-    showToast('Note créée');
+    if (!docScopeMatch({register: ids.newNoteProject.value})) {
+      projectScope = '';
+      ids.docProject.value = '';
+      renderProjectNav();
+    }
+    setView('notes');
+    showToast('Note créée', {undo: true});
     await openDoc(result.id, {nav: 'root'});
   } catch (error) {
     ids.newNoteError.textContent = error.message;
@@ -1841,290 +2577,205 @@ async function createNote(event) {
     ids.saveNewNote.disabled = false;
   }
 }
-function showToast(message) {
-  ids.toast.textContent = message;
+
+// ---------- Toast ----------
+function hideToast() { ids.toast.hidden = true; }
+function showToast(message, {undo = false} = {}) {
+  ids.toastText.textContent = message;
+  ids.toastAction.hidden = !undo || !undoState.available;
   ids.toast.hidden = false;
   clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => { ids.toast.hidden = true; }, 3500);
+  toastTimer = setTimeout(hideToast, undo ? 6000 : 3500);
 }
-function formAction() {
-  return {
-    title: ids.editorActionTitle.value.replace(/[\r\n]+/g, ' ').trim(), owner: ids.editorOwner.value.trim(),
-    state: ids.editorState.value, priority: ids.editorPriority.value,
-    due: ids.editorDue.value, scheduled: ids.editorScheduled.value, group: groupValue()
-  };
+ids.toast.addEventListener('mouseenter', () => clearTimeout(toastTimer));
+ids.toast.addEventListener('focusin', () => clearTimeout(toastTimer));
+ids.toast.addEventListener('mouseleave', () => { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 2500); });
+ids.toastAction.addEventListener('click', () => { ids.toastAction.hidden = true; hideToast(); undoLast(); });
+
+// ---------- Sidebar, drawer and the « Plus d’options » menu ----------
+const SIDEBAR_KEY = 'actions-brain-sidebar-v1';
+const narrowQuery = window.matchMedia('(max-width: 900px)');
+function readSidebarCollapsed() {
+  try { return localStorage.getItem(SIDEBAR_KEY) === 'collapsed'; } catch { return false; }
 }
-function sizeTitleField() {
-  ids.editorActionTitle.style.height = 'auto';
-  ids.editorActionTitle.style.height = `${Math.min(ids.editorActionTitle.scrollHeight + 2, 400)}px`;
+function updateSidebarToggle() {
+  const narrow = narrowQuery.matches;
+  const open = narrow ? ids.app.classList.contains('drawer-open') : !ids.app.classList.contains('sidebar-collapsed');
+  ids.sidebarToggle.setAttribute('aria-expanded', String(open));
+  const label = narrow ? (open ? 'Fermer le menu' : 'Ouvrir le menu') : open ? 'Masquer la barre latérale' : 'Afficher la barre latérale';
+  ids.sidebarToggle.setAttribute('aria-label', label);
+  ids.sidebarToggle.title = `${label} ([)`;
+  ids.mainContent.inert = narrow && open;
 }
-// preset (creation only): {register, group (slug), state} pre-fills the form; the top bar's « + Task » passes none.
-function openEditor(action = null, preset = null) {
-  hidePreview();
-  const historyRequest = ++editorHistoryRequest;
-  ids.editor.dataset.actionId = action?.id || '';
-  ids.editor.dataset.version = action?.version || '';
-  ids.editor.dataset.title = action?.title || '';
-  ids.editorTitle.textContent = action ? `Modifier ${action.id}` : 'Nouvelle action';
-  const target = !action && preset?.register && snapshot.registers.find(register => register.path === preset.register);
-  ids.editorHint.textContent = action ? `${action.project} · les changements seront enregistrés dans son registre.` :
-    target ? `${target.label}${preset.group ? ` · groupe ${groupLabel(preset.group)}` : ''} · décris l’action.` : 'Choisis un projet puis décris l’action.';
-  ids.editorProject.disabled = Boolean(action);
-  ids.editorProject.value = action?.register || preset?.register || ids.projectFilter.value || snapshot.registers[0]?.path || '';
-  ids.editorActionTitle.value = action?.raw_title || '';
-  fillGroupOptions({slug: action?.group || (!action && preset?.group) || ''}, true);
-  ids.editorHistory.hidden = !action;
-  noteState = null;
-  noteBusy = false;
-  closeNoteForm(false);
-  ids.noteInput.value = '';
-  ids.addNoteButton.disabled = true;
-  ids.editorHistoryList.replaceChildren(element('li', 'note-empty', 'Chargement…'));
-  ids.editorHistoryCount.textContent = '';
-  ids.editorOwner.value = action?.owner || snapshot.owner;
-  ids.editorState.value = action?.state || (!action && preset?.state) || ' ';
-  ids.editorPriority.value = action?.priority || '';
-  ids.editorDue.value = action?.due || '';
-  ids.editorScheduled.value = action?.scheduled || '';
-  ids.saveEditor.textContent = action ? 'Enregistrer' : 'Créer l’action';
-  ids.deleteEditor.hidden = !action;
-  setEditorBusy(false);
-  ids.editorError.hidden = true;
-  ids.editor.showModal();
-  sizeTitleField();
-  ids.editorActionTitle.focus();
-  if (action) {
-    loadDetails(action).then(details => {
-      if (historyRequest !== editorHistoryRequest || !ids.editor.open) return;
-      renderNotes(details);
-    }).catch(error => {
-      if (historyRequest !== editorHistoryRequest || !ids.editor.open) return;
-      ids.editorHistoryList.replaceChildren(element('li', 'note-empty', `Historique indisponible : ${error.message}`));
-    });
-  }
+function openDrawer() {
+  ids.app.classList.add('drawer-open');
+  ids.scrim.hidden = false;
+  updateSidebarToggle();
+  (ids.sidebar.querySelector('.nav-item[aria-current="page"]') || ids.todayButton).focus();
 }
-function trashIcon() {
-  const icon = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
-  icon.setAttribute('viewBox', '0 0 24 24');
-  icon.setAttribute('aria-hidden', 'true');
-  icon.innerHTML = '<path d="M4.5 7h15M9.5 7V4.5h5V7M6.5 7l1 13h9l1-13M10 11v6M14 11v6"/>';
-  return icon;
+function closeDrawer(refocus = true) {
+  if (!ids.app.classList.contains('drawer-open')) return;
+  ids.app.classList.remove('drawer-open');
+  ids.scrim.hidden = true;
+  updateSidebarToggle();
+  if (refocus) ids.sidebarToggle.focus();
 }
-function renderNotes(details) {
-  noteState = {id: details.id, version: details.details_version, notes: details.notes};
-  ids.editorHistoryList.replaceChildren();
-  if (!details.notes.length) ids.editorHistoryList.append(element('li', 'note-empty', 'Aucune note pour l’instant.'));
-  for (const note of details.notes) {
-    const item = element('li', `note-item${note.deletable ? '' : ' note-source'}`);
-    item.append(element('span', 'note-text', note.text.replace(/^-\s+/, '')));
-    if (note.deletable) {
-      const button = element('button', 'note-delete');
-      button.type = 'button';
-      button.setAttribute('aria-label', 'Supprimer la note');
-      button.title = 'Supprimer la note';
-      button.append(trashIcon());
-      button.addEventListener('click', () => deleteNote(note));
-      item.append(button);
-    }
-    ids.editorHistoryList.append(item);
-  }
-  const count = details.notes.length;
-  ids.editorHistoryCount.textContent = count ? `${count} note${count > 1 ? 's' : ''}` : '';
-  setNoteBusy(false);
-}
-function setNoteBusy(busy) {
-  noteBusy = busy;
-  ids.addNoteButton.disabled = busy || !noteState;
-  ids.submitNote.disabled = busy || !noteState;
-  ids.editorHistoryList.querySelectorAll('.note-delete').forEach(button => { button.disabled = busy; });
-}
-function showNoteError(error) {
-  ids.noteError.textContent = error.status === 409 ? 'L’historique a changé dans le registre : ferme puis rouvre l’action pour le recharger.' : error.message;
-  ids.noteError.hidden = false;
-}
-function forgetDetails(id, fresh) {
-  for (const key of [...detailCache.keys()]) if (key.startsWith(`${id}:`)) detailCache.delete(key);
-  detailCache.set(`${id}:${fresh.version}`, Promise.resolve(fresh));
-}
-function openNoteForm() {
-  ids.noteForm.hidden = false;
-  ids.addNoteButton.setAttribute('aria-expanded', 'true');
-  ids.noteInput.focus();
-  ids.noteForm.scrollIntoView({block: 'nearest'});
-}
-function closeNoteForm(focus = true) {
-  ids.noteForm.hidden = true;
-  ids.noteError.hidden = true;
-  ids.addNoteButton.setAttribute('aria-expanded', 'false');
-  if (focus && ids.editor.open) ids.addNoteButton.focus();
-}
-async function changeNotes(send) {
-  const session = editorHistoryRequest;
-  const id = noteState.id;
-  setNoteBusy(true);
-  ids.noteError.hidden = true;
-  try {
-    const fresh = await send();
-    setUndo(fresh.undo);
-    forgetDetails(id, fresh);
-    if (session !== editorHistoryRequest || !ids.editor.open) return null;
-    renderNotes(fresh);
-    return fresh;
-  } catch (error) {
-    if (session === editorHistoryRequest && ids.editor.open) {
-      setNoteBusy(false);
-      showNoteError(error);
-    }
-    return null;
-  }
-}
-async function submitNote() {
-  if (noteBusy || !noteState) return;
-  const note = ids.noteInput.value.replace(/\s*[\r\n\u2028\u2029]+\s*/g, ' ').trim();
-  if (!note) {
-    showNoteError(new Error('Saisis une note avant d’ajouter.'));
-    ids.noteInput.focus();
+function toggleSidebar() {
+  if (narrowQuery.matches) {
+    if (ids.app.classList.contains('drawer-open')) closeDrawer(); else openDrawer();
     return;
   }
-  const {id, version} = noteState;
-  const fresh = await changeNotes(() => request(`/api/actions/${encodeURIComponent(id)}/notes`, {
-    method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
-    body: JSON.stringify({details_version: version, note})
-  }));
-  if (fresh) {
-    ids.noteInput.value = '';
-    ids.noteInput.focus();
-    ids.editorHistoryList.scrollTop = ids.editorHistoryList.scrollHeight;
-  } else if (ids.editor.open) ids.noteInput.focus();
+  const collapsed = ids.app.classList.toggle('sidebar-collapsed');
+  try { localStorage.setItem(SIDEBAR_KEY, collapsed ? 'collapsed' : 'open'); } catch { /* Not remembered. */ }
+  updateSidebarToggle();
 }
-async function deleteNote(note) {
-  if (noteBusy || !noteState || !confirm('Supprimer cette note du registre ?')) return;
-  const {id, version} = noteState;
-  const fresh = await changeNotes(() => request(`/api/actions/${encodeURIComponent(id)}/notes/${note.index}`, {
-    method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
-    body: JSON.stringify({details_version: version, text: note.text})
-  }));
-  if (!ids.editor.open) return;
-  if (fresh) (ids.editorHistoryList.querySelectorAll('.note-delete')[Math.max(0, note.index - 1)] || ids.addNoteButton).focus();
-  else (ids.editorHistoryList.querySelectorAll('.note-delete')[note.index] || ids.addNoteButton).focus();
+narrowQuery.addEventListener('change', () => { closeDrawer(false); updateSidebarToggle(); });
+function moreItems() { return [...ids.moreMenu.querySelectorAll('.menu-item')]; }
+function openMoreMenu() {
+  closePopover(false);
+  ids.moreMenu.hidden = false;
+  ids.moreButton.setAttribute('aria-expanded', 'true');
+  moreItems()[0].focus();
 }
-function setEditorBusy(busy) {
-  for (const button of [ids.saveEditor, ids.deleteEditor]) button.disabled = busy;
+function closeMoreMenu(refocus = true) {
+  if (ids.moreMenu.hidden) return;
+  ids.moreMenu.hidden = true;
+  ids.moreButton.setAttribute('aria-expanded', 'false');
+  if (refocus) ids.moreButton.focus();
 }
-// No confirmation: ↶ Annuler (and Git) restore a deleted action.
-// Shared by the editor and the list/board buttons: checks `version` and `details_version`, then stacks the undo.
-async function removeAction(id, version, detailsVersion = null) {
-  const details = detailsVersion ?? (await loadDetails({id, version})).details_version;
-  const result = await request(`/api/actions/${encodeURIComponent(id)}`, {
-    method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
-    body: JSON.stringify({version, details_version: details})
-  });
-  for (const key of [...detailCache.keys()]) if (key.startsWith(`${id}:`)) detailCache.delete(key);
-  setUndo(result.undo);
-}
-async function deleteEditor() {
-  const id = ids.editor.dataset.actionId;
-  if (!id || ids.deleteEditor.disabled || noteBusy) return;
-  setEditorBusy(true);
-  ids.editorError.hidden = true;
+ids.moreButton.addEventListener('click', () => { if (ids.moreMenu.hidden) openMoreMenu(); else closeMoreMenu(); });
+ids.moreMenu.addEventListener('keydown', event => {
+  const items = moreItems();
+  const index = items.indexOf(document.activeElement);
+  if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+    event.preventDefault();
+    items[(index + (event.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length].focus();
+  } else if (event.key === 'Home' || event.key === 'End') {
+    event.preventDefault();
+    items[event.key === 'Home' ? 0 : items.length - 1].focus();
+  } else if (event.key === 'Escape') {
+    event.preventDefault();
+    event.stopPropagation();
+    closeMoreMenu();
+  } else if (event.key === 'Tab') closeMoreMenu(false);
+});
+ids.refreshButton.addEventListener('click', async () => {
+  closeMoreMenu();
+  if (!await loadBrains()) refresh();
+});
+ids.undoButton.addEventListener('click', () => {
+  if (ids.undoButton.getAttribute('aria-disabled') === 'true') return;
+  closeMoreMenu();
+  undoLast();
+});
+ids.shortcutsButton.addEventListener('click', () => { closeMoreMenu(false); ids.shortcutsDialog.showModal(); });
+ids.quitButton.addEventListener('click', () => { closeMoreMenu(false); ids.quitDialog.showModal(); });
+ids.quitConfirm.addEventListener('click', async () => {
+  ids.quitConfirm.disabled = true;
   try {
-    await removeAction(id, ids.editor.dataset.version, noteState?.id === id ? noteState.version : null);
-    ids.editor.close();
-    await refresh();
-    showToast(`${id} supprimée · ↶ Annuler pour la restaurer`);
+    await request('/api/shutdown', {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+      body: '{}'
+    });
+    ids.quitDialog.close();
+    document.body.replaceChildren(element('main', 'stopped-screen', 'Actions Brain est arrêté. Tu peux fermer cet onglet. Relance l’app depuis le Dock pour la rouvrir.'));
+    window.close();
   } catch (error) {
-    ids.editorError.textContent = error.status === 409 ? 'Le registre a changé : ferme puis rouvre l’action avant de la supprimer.' : error.message;
-    ids.editorError.hidden = false;
-  } finally {
-    setEditorBusy(false);
+    ids.quitConfirm.disabled = false;
+    ids.quitDialog.close();
+    showToast(`Arrêt impossible : ${error.message}`);
   }
-}
-async function deleteFromBoard(action, button) {
-  if (button.disabled) return;
-  hidePreview();
-  button.disabled = true;
-  try {
-    await removeAction(action.id, action.version);
-    await refresh();
-    showToast(`${action.id} supprimée · ↶ Annuler pour la restaurer`);
-  } catch (error) {
-    const conflict = error.status === 409;
-    if (conflict) await refresh();
-    ids.errorBanner.textContent = conflict ? `Le registre a changé : la liste a été actualisée, vérifie ${action.id} puis recommence.` : error.message;
-    ids.errorBanner.hidden = false;
-    button.disabled = false;
-  }
-}
-async function saveEditor(event) {
-  event.preventDefault();
-  if (!ids.editorForm.reportValidity()) return;
-  const action = formAction();
-  const id = ids.editor.dataset.actionId;
-  setEditorBusy(true);
-  try {
-    if (id) {
-      setUndo((await request(`/api/actions/${encodeURIComponent(id)}`, {
-        method: 'PATCH', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
-        body: JSON.stringify({version: ids.editor.dataset.version, action})
-      })).undo);
-      showToast(`${id} enregistrée`);
-    } else {
-      const result = await request('/api/actions', {
-        method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
-        body: JSON.stringify({register: ids.editorProject.value, action})
-      });
-      setUndo(result.undo);
-      showToast(`${result.id} créée`);
-    }
-    ids.editor.close();
-    await refresh();
-  } catch (error) {
-    ids.editorError.textContent = error.message;
-    ids.editorError.hidden = false;
-  } finally {
-    setEditorBusy(false);
-  }
-}
-async function updateStatus(action, state, source = null) {
-  if (state === action.state) return;
-  if (source) source.disabled = true;
-  try {
-    setUndo((await request(`/api/actions/${encodeURIComponent(action.id)}`, {
-      method: 'PATCH', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
-      body: JSON.stringify({version: action.version, action: {
-        title: action.raw_title, owner: action.owner, state, priority: action.priority,
-        due: action.due, scheduled: action.scheduled
-      }})
-    })).undo);
-    showToast(`${action.id} : statut « ${statusLabel(state)} » enregistré`);
-    await refresh();
-    if (source) {
-      const activeView = view === 'board' ? ids.boardView : ids.listView;
-      const next = activeView.querySelector(`.status-select[data-action-id="${action.id}"]`);
-      (next || ids.resultCount).focus({preventScroll: true});
-    }
-  } catch (error) {
-    await refresh();
-    ids.errorBanner.textContent = error.message;
-    ids.errorBanner.hidden = false;
-    if (source) {
-      const activeView = view === 'board' ? ids.boardView : ids.listView;
-      (activeView.querySelector(`.status-select[data-action-id="${action.id}"]`) || ids.resultCount).focus({preventScroll: true});
-    }
-  }
-}
+});
 
-ids.listButton.addEventListener('click', () => setView('list'));
-ids.boardButton.addEventListener('click', () => setView('board'));
-ids.toolsButton.addEventListener('click', () => setView('tools'));
-ids.gitButton.addEventListener('click', () => setView('git'));
-ids.searchButton.addEventListener('click', () => setView('search'));
+// ---------- Keyboard ----------
+function isTyping(target) {
+  return target instanceof HTMLElement && (target.isContentEditable || ['INPUT', 'TEXTAREA', 'SELECT'].includes(target.tagName));
+}
+function focusSearch() {
+  if (view === 'notes' || view === 'git') setView('search');
+  const input = view === 'search' ? ids.docQuery : view === 'tools' ? ids.toolSearch : ids.searchInput;
+  input.focus();
+  input.select();
+}
+function handleEscape(event) {
+  if (document.querySelector('dialog[open]')) return;
+  if (popoverState) { event.preventDefault(); closePopover(); return; }
+  if (!ids.moreMenu.hidden) { event.preventDefault(); closeMoreMenu(); return; }
+  if (ids.app.classList.contains('drawer-open')) { event.preventDefault(); closeDrawer(); return; }
+  if (editorOpen() && (ids.editor.contains(document.activeElement) || !isTyping(document.activeElement))) {
+    if (!ids.noteForm.hidden && ids.noteForm.contains(document.activeElement)) { event.preventDefault(); closeNoteForm(); return; }
+    event.preventDefault();
+    closeEditor();
+  }
+}
+document.addEventListener('keydown', event => {
+  if (event.defaultPrevented || event.isComposing) return;
+  const key = event.key;
+  const typing = isTyping(event.target);
+  if ((event.metaKey || event.ctrlKey) && !event.shiftKey && !event.altKey && key.toLowerCase() === 'z') {
+    if (typing || document.querySelector('dialog[open]')) return;
+    event.preventDefault();
+    undoLast();
+    return;
+  }
+  if ((event.metaKey || event.ctrlKey) && key === 'Enter' && editorOpen() && ids.editor.contains(event.target) && !ids.noteForm.contains(event.target)) {
+    event.preventDefault();
+    ids.editorForm.requestSubmit();
+    return;
+  }
+  if (key === 'Escape') { handleEscape(event); return; }
+  if (event.metaKey || event.ctrlKey || typing) return;
+  if (document.querySelector('dialog[open]') || popoverState || brainMenuOpen() || !ids.moreMenu.hidden) return;
+  const digit = /^[1-5]$/.test(key) ? key : /^Digit[1-5]$/.test(event.code) && !event.altKey ? event.code.slice(5) : null;
+  const inRows = ACTION_VIEWS.includes(view);
+  const onBody = event.target === document.body || event.target === ids.mainContent || event.target === ids.editorTitle;
+  if (key === '/') { event.preventDefault(); focusSearch(); }
+  else if (key === '?') { event.preventDefault(); ids.shortcutsDialog.showModal(); }
+  else if (key === '[') { event.preventDefault(); toggleSidebar(); }
+  else if (digit && !event.altKey) { event.preventDefault(); setView(['today', 'list', 'board', 'notes', 'search'][Number(digit) - 1]); }
+  else if (key === 'n' && !event.altKey) { event.preventDefault(); openEditor(); }
+  else if (inRows && (key === 'j' || key === 'ArrowDown') && !event.altKey) {
+    if (key === 'ArrowDown' && !onBody && !activeRoot().contains(event.target)) return;
+    event.preventDefault();
+    moveSelection(1);
+  } else if (inRows && (key === 'k' || key === 'ArrowUp') && !event.altKey) {
+    if (key === 'ArrowUp' && !onBody && !activeRoot().contains(event.target)) return;
+    event.preventDefault();
+    moveSelection(-1);
+  } else if (inRows && key === 'Enter' && onBody && event.target !== ids.editorTitle) {
+    const action = selectedAction();
+    if (action) { event.preventDefault(); openEditor(action); }
+  } else if (inRows && (key === 's' || key === 'd') && !event.altKey) {
+    const action = selectedAction();
+    const row = action && rowFor(action.id);
+    if (!row) return;
+    event.preventDefault();
+    if (key === 's') openStatusMenu(action, row.querySelector('.status-button'));
+    else {
+      const due = row.querySelector('.due-button');
+      openDueMenu(action, due || row.querySelector('.status-button'));
+    }
+  }
+});
+
+// ---------- Wiring ----------
+for (const [name, id] of Object.entries(NAV_BUTTONS)) ids[id].addEventListener('click', () => setView(name));
+ids.newButton.addEventListener('click', () => openEditor());
 ids.newNoteButton.addEventListener('click', openNewNote);
+ids.sidebarToggle.addEventListener('click', toggleSidebar);
+ids.sidebarClose.addEventListener('click', () => closeDrawer());
+ids.scrim.addEventListener('click', () => closeDrawer());
+ids.projectChipClear.addEventListener('click', () => { setProjectScope(''); ids.searchInput.focus(); });
 ids.docQuery.addEventListener('input', () => { scheduleDocSearch(); saveUIState(); });
 ids.docQuery.addEventListener('keydown', event => {
   if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); runDocSearch(); }
 });
-ids.docProject.addEventListener('change', () => { runDocSearch(); saveUIState(); });
+ids.docProject.addEventListener('change', () => {
+  if (ids.docProject.value && projectScope) { projectScope = ''; populateGroupFilter(); renderProjectNav(); }
+  refreshDocLists();
+  renderFilterChips();
+  saveUIState();
+});
 ids.docBack.addEventListener('click', docGoBack);
 ids.docEdit.addEventListener('click', startDocEdit);
 ids.docCancel.addEventListener('click', cancelDocEdit);
@@ -2145,26 +2796,29 @@ ids.newNoteForm.addEventListener('submit', createNote);
 ids.newNoteProject.addEventListener('change', updateNewNoteWhere);
 ids.closeNewNote.addEventListener('click', () => ids.newNoteDialog.close());
 ids.cancelNewNote.addEventListener('click', () => ids.newNoteDialog.close());
-ids.projectFilter.addEventListener('change', populateGroupFilter);
 ids.groupFilter.addEventListener('change', titleGroupFilter);
-for (const node of [ids.searchInput, ids.projectFilter, ids.groupFilter, ids.ownerFilter, ids.scopeFilter]) {
+for (const node of [ids.searchInput, ids.groupFilter, ids.ownerFilter, ids.scopeFilter]) {
   node.addEventListener(node === ids.searchInput ? 'input' : 'change', () => { render(); saveUIState(); });
 }
 ids.resetFilters.addEventListener('click', () => {
-  ids.searchInput.value = '';
-  ids.projectFilter.value = '';
-  ids.groupFilter.value = '';
+  projectScope = '';
+  if (isDocsView()) {
+    ids.docProject.value = '';
+    refreshDocLists();
+  } else {
+    ids.searchInput.value = '';
+    ids.groupFilter.value = '';
+    ids.ownerFilter.value = '';
+    ids.scopeFilter.value = 'active';
+  }
   populateGroupFilter();
-  ids.ownerFilter.value = '';
-  ids.scopeFilter.value = 'active';
+  renderProjectNav();
   render();
   saveUIState();
-  ids.searchInput.focus();
+  (isDocsView() ? ids.docProject : ids.searchInput).focus();
 });
+ids.foldAllButton.addEventListener('click', setAllFolds);
 ids.toolSearch.addEventListener('input', () => { filterTools(); saveUIState(); });
-document.getElementById('refreshButton').addEventListener('click', async () => {
-  if (!await loadBrains()) refresh();
-});
 ids.brainButton.addEventListener('click', () => { if (brainMenuOpen()) closeBrainMenu(); else openBrainMenu(); });
 ids.brainButton.addEventListener('keydown', event => {
   if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); openBrainMenu(); }
@@ -2176,7 +2830,7 @@ ids.brainMenu.addEventListener('keydown', event => {
   else if (key === 'Home') setBrainActive(0);
   else if (key === 'End') setBrainActive(brains.length - 1);
   else if (key === 'Enter' || key === ' ') chooseBrain(ids.brainMenu.children[brainMenuIndex]?.dataset.brain);
-  else if (key === 'Escape') closeBrainMenu();
+  else if (key === 'Escape') { event.stopPropagation(); closeBrainMenu(); }
   else if (key === 'Tab') closeBrainMenu(false);
   else if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
     // Type-ahead: the next brain whose name starts with the typed letter.
@@ -2191,31 +2845,18 @@ ids.brainMenu.addEventListener('keydown', event => {
 ids.brainMenu.addEventListener('focusout', event => {
   if (!ids.brainSwitch.contains(event.relatedTarget)) closeBrainMenu(false);
 });
-document.addEventListener('pointerdown', event => {
-  if (brainMenuOpen() && !ids.brainSwitch.contains(event.target)) closeBrainMenu(false);
-});
-ids.undoButton.addEventListener('click', undoLast);
-document.getElementById('quitButton').addEventListener('click', async () => {
-  const button = document.getElementById('quitButton');
-  button.disabled = true;
-  try {
-    await request('/api/shutdown', {
-      method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
-      body: '{}'
-    });
-    document.body.replaceChildren(element('main', 'stopped-screen', 'Actions Brain est arrêté. Tu peux fermer cet onglet. Relance l’app depuis le Dock pour le rouvrir.'));
-    window.close();
-  } catch (error) {
-    button.disabled = false;
-    showToast(`Arrêt impossible : ${error.message}`);
-  }
-});
-document.getElementById('newButton').addEventListener('click', () => openEditor());
-document.getElementById('closeEditor').addEventListener('click', () => ids.editor.close());
-document.getElementById('cancelEditor').addEventListener('click', () => ids.editor.close());
+ids.editorTitle.tabIndex = -1;
+ids.closeEditor.addEventListener('click', () => closeEditor());
+ids.cancelEditor.addEventListener('click', () => closeEditor());
 ids.editorForm.addEventListener('submit', saveEditor);
+ids.editorForm.addEventListener('input', updateEditorButtons);
+ids.editorForm.addEventListener('change', updateEditorButtons);
 ids.deleteEditor.addEventListener('click', deleteEditor);
 ids.editorActionTitle.addEventListener('input', sizeTitleField);
+ids.editorActionTitle.addEventListener('keydown', event => {
+  // The title is one line in the register: Entrée saves (Maj+Entrée is ignored as well).
+  if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); if (!event.shiftKey) ids.editorForm.requestSubmit(); }
+});
 ids.editorProject.addEventListener('change', () => fillGroupOptions());
 ids.editorGroup.addEventListener('change', () => showGroupField(true));
 ids.editorGroupNew.addEventListener('input', () => showGroupField());
@@ -2226,27 +2867,17 @@ ids.noteInput.addEventListener('keydown', event => {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeNoteForm(); }
   else if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); if (!event.shiftKey) submitNote(); }
 });
-ids.editor.addEventListener('cancel', event => {
-  if (!ids.noteForm.hidden && ids.noteForm.contains(document.activeElement)) { event.preventDefault(); closeNoteForm(); }
-});
-ids.closeDetail.addEventListener('click', () => ids.detailDialog.close());
-ids.dismissDetail.addEventListener('click', () => ids.detailDialog.close());
-ids.editDetail.addEventListener('click', () => {
-  if (!detailCurrent) return;
-  ids.detailDialog.close();
-  openEditor(detailCurrent);
-});
-ids.detailDialog.addEventListener('close', () => {
-  detailCurrent = null;
-  suppressPreviewFocus = true;
-  hidePreview();
-  setTimeout(() => { suppressPreviewFocus = false; }, 0);
-});
+
+// ---------- Start ----------
+applyAccent(brainFromUrl() || readStoredBrain());
+if (!narrowQuery.matches && readSidebarCollapsed()) ids.app.classList.add('sidebar-collapsed');
+updateSidebarToggle();
 ids.searchInput.value = typeof savedUI.search === 'string' ? savedUI.search : '';
 ids.ownerFilter.value = savedUI.owner === 'mine' ? 'mine' : '';
 ids.scopeFilter.value = ['active', 'all', 'closed'].includes(savedUI.scope) ? savedUI.scope : 'active';
 ids.toolSearch.value = typeof savedUI.toolSearch === 'string' ? savedUI.toolSearch : '';
 ids.docQuery.value = typeof savedUI.docQuery === 'string' ? savedUI.docQuery : '';
+ids.docProject.value = ['', INBOX_REGISTER, 'none'].includes(savedUI.docProject) ? savedUI.docProject : '';
 // The brain is known before anything is requested, so that no view starts on the wrong one.
 loadBrains({initial: true}).finally(() => {
   setView(view, false);

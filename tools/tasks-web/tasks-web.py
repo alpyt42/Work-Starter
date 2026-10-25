@@ -81,9 +81,9 @@ TOOLS = {
     "transcripts": ("Mémoire", "Nouvelles transcriptions", "Repère les transcriptions qui ne sont suivies par aucun brain.", "brain/brain-state.py", ("transcripts", "--new")),
     "board": ("Actions", "Vue texte des actions", "Affiche les registres par projet dans un format de terminal.", "brain/action.py", ("board",)),
     "sweep_preview": ("Actions", "Actions à ranger (aperçu)", "Liste les actions placées sous une section qui ne correspond pas à leur état (cochée, annulée ou rouverte), sans rien modifier.", "brain/action.py", ("sweep",)),
-    "sweep_write": ("Actions", "Ranger les actions par statut", "Déplace chaque action dans Ouvertes, Terminées ou Annulées selon son état (modifie les registres ; rattrapable avec git, mais hors de la pile ↶ Annuler de l'interface).", "brain/action.py", ("sweep", "--write")),
+    "sweep_write": ("Actions", "Ranger les actions par statut", "Déplace chaque action dans Ouvertes, Terminées ou Annulées selon son état (modifie les registres ; rattrapable avec git, mais hors de la pile d'annulation de l'interface).", "brain/action.py", ("sweep", "--write")),
     "archive_preview": ("Actions", "Actions à archiver (aperçu)", "Liste les actions closes depuis plus de 30 jours qui partiraient dans state/actions-archive-AAAA.md, sans rien modifier.", "brain/action.py", ("archive",)),
-    "archive_write": ("Actions", "Archiver les actions", "Déplace les actions closes depuis plus de 30 jours dans state/actions-archive-AAAA.md (modifie les registres ; rattrapable avec git, mais hors de la pile ↶ Annuler de l'interface).", "brain/action.py", ("archive", "--write")),
+    "archive_write": ("Actions", "Archiver les actions", "Déplace les actions closes depuis plus de 30 jours dans state/actions-archive-AAAA.md (modifie les registres ; rattrapable avec git, mais hors de la pile d'annulation de l'interface).", "brain/action.py", ("archive", "--write")),
     "repositories": ("Dépôts", "Vérifier les dépôts", "Compare les clones locaux au catalogue privé et contrôle leur identité Git.", "repos/client-repos.py", ("check",)),
 }
 
