@@ -12,18 +12,20 @@ The tools act on the default brain, or on another brain with `BRAIN_DIR` (`--bra
 |---|---|---|
 | `uv run tools/brain/new-brain.py <folder> [--scope S] [--description D] [--remote PATTERN] [--email PATTERN] [--no-git]` | Creates a blank brain (`brain` or `brain-<name>`) from `kit/brain/seed/`: refuses to overwrite an existing folder, runs `git init` (unless `--no-git`), with no commit and no remote. The four options fill in the brain's boundary in `.data/brain.json` | script header |
 | `uv run tools/brain/check-links.py [--allow-missing-local]` | Checks that every Markdown link of a brain points to an existing file; a link to another brain fails even if the target exists; `--allow-missing-local` reports separately the targets missing from `artifacts/` and `repos/`; the templates in `skills/<name>/assets/` are not checked | script header |
+| `uv run tools/brain/brain-state.py map [--json] [--brain <name>] [--all]` | Map of every brain in one glance: one line per project with its page, register prefix, actions by state, overdue actions, proposed decisions and last timeline entry; the first stop to find where to work | script header |
 | `uv run tools/brain/brain-state.py brains` | Lists the brains present (the default brain first) with their `scope`, their `description` and the transcripts they track | script header |
 | `uv run tools/brain/brain-state.py transcripts [--new \| --where <file>]` | Merges the transcript states of every brain; `--new`: those that no brain tracks; `--where`: the brain that owns a file | script header |
 | `uv run tools/brain/action.py board` | Prints the action registers by project in the terminal (`--write` for a Markdown preview, `--watch` to keep it up to date) | [action.md](brain/action.md) |
 | `uv run tools/brain/action.py <command>` | Creates, reads, edits, completes the history of and deletes actions (agents and tasks-web), files the registers by status (`sweep`) and archives closures older than 30 days (`archive`) | [action.md](brain/action.md) |
 | `uv run tools/brain/decision.py <command>` | Lists, proposes, accepts, rejects or supersedes the decisions of the `state/decisions.md` registers | [decision.md](brain/decision.md) |
+| `uv run tools/brain/timeline.py add\|roll` | Writes a dated entry in the `## Timeline` of a project page (`add`), and moves the entries of past months into `journal/YYYY-MM.md` (`roll`, dry run unless `--write`) | [timeline.md](brain/timeline.md) |
 | `uv run tools/brain/migrate-english.py [--brain PATH] [--diff] [--write \| --check]` | Converts a brain written with the earlier French format labels (registers, project and person pages, `tasks.md`, `.data` values) to the English ones, without touching written content; dry run by default, `--write` applies, `--check` exits with code 1 if something is left to convert | script header |
 
 ## Local interface (`tasks-web/`)
 
 | Command | Role | Guide |
 |---|---|---|
-| `uv run tools/tasks-web/tasks-web.py [--port N] [--brain DIR]` | Local web interface for actions (Today, Actions, Board, Notes, Search, Tools, Git) on `http://127.0.0.1:8765/`; a selector at the top left switches between the brains of the workspace without a restart (`?brain=<name>`, `GET /api/brains`; `--brain` sets the default brain); the Tools view runs predefined commands (links, brains, transcripts, actions, repositories) | [README.md](tasks-web/README.md) |
+| `uv run tools/tasks-web/tasks-web.py [--port N] [--brain DIR]` | Local web interface for actions (Today, Actions, Board, Timeline, Notes, Search, Tools, Git) on `http://127.0.0.1:8765/`; a selector at the top left switches between the brains of the workspace without a restart (`?brain=<name>`, `GET /api/brains`; `--brain` sets the default brain); the Tools view runs predefined commands (links, brains, transcripts, actions, repositories) | [README.md](tasks-web/README.md) |
 | `./tools/tasks-web/build-dock-app.sh` | Builds the macOS "Actions Brain" app to put in the Dock (macOS) | [README.md](tasks-web/README.md) |
 | `tools/tasks-web/launcher.sh` | Launcher called by the app: starts the server if needed and opens the page | [README.md](tasks-web/README.md) |
 

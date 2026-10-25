@@ -4,6 +4,7 @@ The memory is the index of the brain owner's work; the repos are the territory. 
 
 ## Get oriented before writing
 
+- To find the client, project, page or register to work in, start with `uv run tools/brain/brain-state.py map` from the workspace root: one line per project with its page, register prefix, action counts, proposed decisions and last timeline entry.
 - For tasks: the `state/actions.md` registers are the source of truth; `tasks.md` gathers the daily focus, the per-project list and the kanban, and is not read as a data file. Outside Obsidian: `uv run tools/brain/action.py board` in a terminal, or `uv run tools/tasks-web/tasks-web.py` for the local interface.
 - For a client: `projects/clients/<client>/<client>.md`, then `missions/<mission>/<mission>.md`, and only the useful files of `state/`, `workstreams/` or `sources/`. For the brain's own tooling: `projects/internal/setup/setup.md`. For a person: `people/<first-last>.md`.
 - Before drafting in the brain owner's name, read the Voice section of `me/about-me.md`, pick its register, deliver a draft in a code block and never send anything without an explicit request.
@@ -42,7 +43,7 @@ The memory is the index of the brain owner's work; the repos are the territory. 
 | Scratch, intermediate builds | `../agents/` | — | An agent deletes only what it created in the session |
 | Code and technical documentation | `../repos/` | — | The page points, it does not copy |
 
-- **Monthly moves, without asking.** As soon as an agent writes in a project in a new month, or the `brain-clean` doctor reports it, it moves the timeline entries of past months into `journal/YYYY-MM.md`, runs `uv run tools/brain/action.py archive --write` and mentions it in its summary. Any other archiving waits for an explicit request from the brain owner.
+- **Monthly moves, without asking.** As soon as an agent writes in a project in a new month, or the `brain-clean` doctor reports it, it moves the timeline entries of past months into `journal/YYYY-MM.md` with `uv run tools/brain/timeline.py roll --write` (`timeline.py add` already does it for the page it writes in), runs `uv run tools/brain/action.py archive --write` and mentions it in its summary. Any other archiving waits for an explicit request from the brain owner.
 - The conventions and guides are in `kit/brain/docs/`, the templates in `kit/brain/templates/` (`../kit/brain/` from a brain); they never receive a project note, and a brain's own `docs/` keeps only `LOCAL-WORKFLOWS.md`. Every new page starts from `kit/brain/templates/_<TYPE>-TEMPLATE.md`. `kit/brain/templates/templater/` holds Templater commands, not page templates to copy.
 - Meeting minutes (CR) go through `cr-reunion`, messages through `veille-messages`, and the triage of `inbox/` (the scratchpad `inbox/inbox.md` and the notes next to it) through `inbox`, each with its validation step. When the filing is uncertain, put the question in `inbox/inbox.md`.
 - No Markdown file cites a document located outside the workspace: no local path, no file name. Web links may stay for traceability. Copy a document that must stay cited into `../artifacts/` with its provenance README; otherwise describe its provenance in words. The input folders of the skills live in `.data/local-paths.json`.
@@ -60,7 +61,7 @@ The memory is the index of the brain owner's work; the repos are the territory. 
 
 ## Finish the work
 
-- Leave a short dated entry in the project's timeline, current month only, with the model in parentheses; update the action in its register. A session must leave a useful trace without copying the sources.
+- Leave a short dated entry in the project's timeline, current month only, with the model in parentheses, written with `uv run tools/brain/timeline.py add --project <project> --model "<model>" "<text>"`; update the action in its register. A session must leave a useful trace without copying the sources.
 - Check the links, the diff and the Git state. Flag any changes already present at the start and do not overwrite them. **No commit or push without a separate explicit request**: propose the files and a Conventional Commits message; flag unpushed local commits. Never read a `.env` or add an AI mention to a commit or a PR. The brain stays private.
 
 ## References to open when needed

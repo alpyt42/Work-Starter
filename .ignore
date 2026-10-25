@@ -1,0 +1,5 @@
+# Search tools (ripgrep, and the search of Claude Code and Codex built on it) follow .gitignore, which
+# leaves out the brains because they are separate repositories. Bring them back into searches started
+# at the Work root; each brain's own .gitignore still applies inside it. Git ignores this file's rules.
+!/brain/
+!/brain-*/

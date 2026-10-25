@@ -23,7 +23,7 @@ In one line: **inbox = thoughts land here · registers = actions, once · tasks 
 
 The [conventions](CONVENTIONS.md#tasks-board-and-inbox) detail the filters and the required plugins; the guide `kit/obsidian/README.md` explains how to set up Obsidian on another machine.
 
-In a local browser, `uv run tools/tasks-web/tasks-web.py` opens a sidebar with the Today, Actions, Board, Notes, Search, Tools and Git views, with the **New action** and **New note** buttons ([guide](../../../tools/tasks-web/README.md)). The interface edits the same registers; refresh the page after an edit made elsewhere.
+In a local browser, `uv run tools/tasks-web/tasks-web.py` opens a sidebar with the Today, Actions, Board, Timeline, Notes, Search, Tools and Git views, with the **New action** and **New note** buttons ([guide](../../../tools/tasks-web/README.md)). The interface edits the same registers; refresh the page after an edit made elsewhere.
 
 ## The two ways to interact (use both)
 
@@ -66,4 +66,4 @@ Code tasks run against the real repo under `../repos/` + git. A register action 
 - **Maintain the links** whenever a file is created or moved; check with `uv run tools/brain/check-links.py` from the workspace root. A link to another brain is refused (each brain is a trust boundary). Orphan files must be linked or explicitly classified, with no automatic inference that they can be deleted.
 - **Capitalize at the right time**: end of a phase, debrief, handoff, an incident of more than 30 minutes or "next time, I will…" are the moments to ask whether there is a lesson. If so, propose a short dated note following the [criteria in the conventions](CONVENTIONS.md#people-notes-and-voice); do not create an empty note or change the Voice section of `me/about-me.md` without a proposal.
 - **Month change** (without asking): move the entries of past months to `journal/YYYY-MM.md` and run `uv run tools/brain/action.py archive --write`, following the [conventions](CONVENTIONS.md#sources-state-and-journal); mention it in the summary. Never rewrite a source.
-- **End of session**: a short dated entry in the timeline of the project concerned (current month only), with the model in parentheses; actions updated in their register; useful checks; memory commit proposed (files and message), never run without a GO. Flag any unpushed local commit.
+- **End of session**: a short dated entry in the timeline of the project concerned (current month only), with the model in parentheses, written with `uv run tools/brain/timeline.py add` (it first moves past months into `journal/`); actions updated in their register; useful checks; memory commit proposed (files and message), never run without a GO. Flag any unpushed local commit.

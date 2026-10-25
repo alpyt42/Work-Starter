@@ -4,21 +4,22 @@ const token = document.querySelector('meta[name="csrf-token"]').content;
 const ids = Object.fromEntries([
   'app', 'sidebar', 'scrim', 'sidebarToggle', 'brainMini', 'sidebarClose', 'mainContent',
   'brainSwitch', 'brainStatic', 'brainStaticName', 'brainButton', 'brainName', 'brainMenu',
-  'todayButton', 'listButton', 'boardButton', 'notesButton', 'searchButton', 'toolsButton', 'gitButton',
+  'todayButton', 'listButton', 'boardButton', 'timelineButton', 'notesButton', 'searchButton', 'toolsButton', 'gitButton',
   'todayCount', 'openCount', 'gitCount', 'projectNav', 'lastSync',
   'moreButton', 'moreMenu', 'refreshButton', 'undoButton', 'undoLabel', 'shortcutsButton', 'quitButton',
   'viewTitle', 'resultCount', 'gitStatus', 'searchField', 'searchInput', 'docQuery', 'toolSearch', 'newNoteButton', 'newButton',
   'filters', 'projectChip', 'projectChipValue', 'projectChipClear', 'ownerChip', 'ownerFilter', 'scopeChip', 'scopeFilter',
   'groupChip', 'groupFilter', 'docProjectChip', 'docProject', 'resetFilters', 'foldAllButton', 'errorBanner',
-  'todayView', 'listView', 'boardView', 'docsView', 'docStatus', 'docList', 'docPane', 'docBack', 'docPaneTitle', 'docPaneMeta',
-  'docPanePath', 'docEdit', 'docCancel', 'docSave', 'docPaneEmpty', 'docPaneError', 'docArticle', 'docEditor',
+  'todayView', 'listView', 'boardView', 'timelineView', 'timelineBack', 'timelineToday', 'timelineForward', 'timelineLate', 'timelineDone',
+  'timelineScroll', 'timelineVague', 'timelineVagueCount', 'timelineVagueList', 'docsView', 'docStatus', 'docList', 'docPane', 'docBack', 'docPaneTitle', 'docPaneMeta',
+  'docPanePath', 'docEdit', 'docCancel', 'docSave', 'docPaneEmpty', 'docPaneError', 'docArticle', 'docEditorToolbar', 'docEditor',
   'toolsView', 'toolsCatalog', 'toolResult', 'toolResultTitle', 'toolResultCommand', 'toolResultStatus', 'toolResultEmpty', 'toolResultOutput',
   'gitView', 'gitRepos', 'gitDetail', 'gitDetailTitle', 'gitDetailStatus', 'gitDetailEmpty', 'gitDetailNote', 'gitDiff',
   'editor', 'editorForm', 'editorTitle', 'editorHint', 'closeEditor', 'editorProjectField', 'editorProject', 'editorActionTitle',
   'editorState', 'editorOwner', 'editorDue', 'editorScheduled', 'editorPriority', 'editorGroup', 'editorGroupNewLabel',
   'editorGroupNew', 'editorGroupHint', 'editorHistory', 'editorHistoryCount', 'addNoteButton', 'editorHistoryList', 'noteForm',
   'noteInput', 'submitNote', 'closeNoteForm', 'noteError', 'editorStamps', 'editorError', 'deleteEditor', 'cancelEditor', 'saveEditor',
-  'popover', 'newNoteDialog', 'newNoteForm', 'closeNewNote', 'newNoteTitle', 'newNoteProject', 'newNoteWhere', 'newNoteContent',
+  'popover', 'newNoteDialog', 'newNoteForm', 'closeNewNote', 'newNoteTitle', 'newNoteProject', 'newNoteWhere', 'newNoteToolbar', 'newNoteContent',
   'newNoteError', 'cancelNewNote', 'saveNewNote', 'quitDialog', 'quitConfirm', 'shortcutsDialog', 'toast', 'toastText', 'toastAction'
 ].map(id => [id, document.getElementById(id)]));
 
@@ -34,10 +35,10 @@ function readUIState() {
   } catch { return {}; }
 }
 const savedUI = readUIState();
-const VIEWS = ['today', 'list', 'board', 'notes', 'search', 'tools', 'git'];
-const ACTION_VIEWS = ['today', 'list', 'board'];
-const VIEW_TITLES = {today: 'Today', list: 'Actions', board: 'Board', notes: 'Notes', search: 'Search', tools: 'Tools', git: 'Git'};
-const NAV_BUTTONS = {today: 'todayButton', list: 'listButton', board: 'boardButton', notes: 'notesButton', search: 'searchButton', tools: 'toolsButton', git: 'gitButton'};
+const VIEWS = ['today', 'list', 'board', 'timeline', 'notes', 'search', 'tools', 'git'];
+const ACTION_VIEWS = ['today', 'list', 'board', 'timeline'];
+const VIEW_TITLES = {today: 'Today', list: 'Actions', board: 'Board', timeline: 'Timeline', notes: 'Notes', search: 'Search', tools: 'Tools', git: 'Git'};
+const NAV_BUTTONS = {today: 'todayButton', list: 'listButton', board: 'boardButton', timeline: 'timelineButton', notes: 'notesButton', search: 'searchButton', tools: 'toolsButton', git: 'gitButton'};
 let view = VIEWS.includes(savedUI.view) ? savedUI.view : 'today';
 // The project filter of the sidebar: '' (all), a register path, or a folder prefix ending with '/' (a client and its missions).
 let projectScope = typeof savedUI.project === 'string' ? savedUI.project : '';
@@ -45,6 +46,12 @@ let pendingGroup = typeof savedUI.group === 'string' ? savedUI.group : '';
 // Folded sections, shared by the list and the board: `register|slug` for a group, `register|` for the loose actions of a project,
 // `p:register` for a project, '|' for "No group" in a board column.
 const foldedGroups = new Set(Array.isArray(savedUI.foldedGroups) ? savedUI.foldedGroups.filter(key => typeof key === 'string') : []);
+// Timeline: the range (two, six, quarter), whether done actions show, whether the next draw brings today into view, the last layout.
+let timelineRange = ['two', 'six', 'quarter'].includes(savedUI.timelineRange) ? savedUI.timelineRange : 'six';
+let timelineDone = savedUI.timelineDone === true;
+let timelineAnchor = true;
+let timelineModel = null;
+let timelineNarrow = false;
 let snapshot = {actions: [], registers: [], owner: '', today: ''};
 let toastTimer;
 let tools = [];
@@ -83,7 +90,7 @@ function saveUIState() {
     sessionStorage.setItem(UI_STATE_KEY, JSON.stringify({
       view, search: ids.searchInput.value, project: projectScope, group: ids.groupFilter.value || pendingGroup,
       owner: ids.ownerFilter.value, scope: ids.scopeFilter.value, toolSearch: ids.toolSearch.value,
-      docQuery: ids.docQuery.value, docProject: ids.docProject.value, foldedGroups: [...foldedGroups], brain: currentBrain
+      docQuery: ids.docQuery.value, docProject: ids.docProject.value, foldedGroups: [...foldedGroups], brain: currentBrain, timelineRange, timelineDone
     }));
   } catch { /* The interface remains usable when browser storage is unavailable. */ }
 }
@@ -118,7 +125,22 @@ const ICONS = {
   plus: '<path d="M8 3.5v9M3.5 8h9"/>',
   chevron: '<path d="M4.5 6.25 8 9.75l3.5-3.5"/>',
   calendar: '<rect x="2.75" y="3.5" width="10.5" height="9.5" rx="1.5"/><path d="M2.75 6.5h10.5M5.5 2.5v2M10.5 2.5v2"/>',
-  check: '<path d="M3.5 8.5l3 3 6-6.5"/>'
+  check: '<path d="M3.5 8.5l3 3 6-6.5"/>',
+  // Markdown toolbar
+  bold: '<path stroke-width="1.9" d="M4.75 3h3.5a2.25 2.25 0 0 1 0 4.5h-3.5zM4.75 7.5h4a2.5 2.5 0 0 1 0 5h-4z"/>',
+  italic: '<path d="M10 3H7M9 13H6M9.2 3 6.8 13"/>',
+  underline: '<path d="M4.75 2.75v5a3.25 3.25 0 0 0 6.5 0v-5M3.5 13.5h9"/>',
+  strike: '<path d="M2.5 8h11M10.8 5.3c-.2-1.3-1.3-2.1-2.8-2.1-1.6 0-2.7.9-2.7 2.1 0 1 .6 1.6 1.7 2M8.6 8.5c1.4.4 2.1 1.1 2.1 2.2 0 1.3-1.2 2.2-2.7 2.2-1.5 0-2.6-.8-2.8-2.1"/>',
+  bullets: '<path d="M6.5 4.5h7M6.5 8h7M6.5 11.5h7"/><path stroke-width="2.4" d="M2.75 4.5h.01M2.75 8h.01M2.75 11.5h.01"/>',
+  numbers: '<path d="M7.25 4h6.25M7.25 8.2h6.25M7.25 12.4h6.25M2.3 3.2l1.3-1v3.3M2.3 7.2c.3-.6.8-.9 1.4-.9.7 0 1.2.4 1.2 1 0 1.2-1.8 1.7-2.6 2.9h2.7M2.3 11.7c.2-.5.7-.8 1.3-.8.7 0 1.1.4 1.1.9s-.5.9-1.2.9c.8 0 1.3.4 1.3 1s-.6 1-1.3 1c-.7 0-1.2-.3-1.3-.8"/>',
+  tasks: '<rect x="2.25" y="2.75" width="4" height="4" rx="1"/><path d="M3.3 4.8l.8.8 1.3-1.5M8 4.75h5.5M8 11.25h5.5"/><rect x="2.25" y="9.25" width="4" height="4" rx="1"/>',
+  quote: '<path d="M3.5 7.5V4h2.7v3.5c0 1.7-.7 2.9-2.4 3.5M9.8 7.5V4h2.7v3.5c0 1.7-.7 2.9-2.4 3.5"/>',
+  code: '<path d="M5.25 4.5 1.75 8l3.5 3.5M10.75 4.5 14.25 8l-3.5 3.5M9 3.25 7 12.75"/>',
+  link: '<path d="M6.75 9.25a2.5 2.5 0 0 0 3.5 0l2.25-2.25a2.5 2.5 0 0 0-3.5-3.5l-.75.75M9.25 6.75a2.5 2.5 0 0 0-3.5 0L3.5 9a2.5 2.5 0 0 0 3.5 3.5l.75-.75"/>',
+  arrow: '<path d="M2.5 8h11M9.5 4l4 4-4 4"/>',
+  // Timeline
+  late: '<circle cx="8" cy="8" r="5.75"/><path d="M8 4.9v3.6M8 10.9h.01"/>',
+  hourglass: '<path d="M4.75 2.75h6.5M4.75 13.25h6.5M5.5 2.75v1.6c0 1.7 2.5 2.4 2.5 3.65s-2.5 1.95-2.5 3.65v1.6M10.5 2.75v1.6c0 1.7-2.5 2.4-2.5 3.65s2.5 1.95 2.5 3.65v1.6"/>'
 };
 function plural(count, word, words = `${word}s`) { return `${count} ${count === 1 ? word : words}`; }
 const TIME_FORMAT = new Intl.DateTimeFormat(LOCALE, {hour: '2-digit', minute: '2-digit'});
@@ -539,7 +561,7 @@ function foldSection(key, headClass, toggle, extra, body) {
 
 // ---------- Today ----------
 function actionFiltersActive() {
-  return Boolean(projectScope || ids.searchInput.value.trim() || ids.ownerFilter.value || ids.groupFilter.value || (view !== 'today' && ids.scopeFilter.value !== 'active'));
+  return Boolean(projectScope || ids.searchInput.value.trim() || ids.ownerFilter.value || ids.groupFilter.value || (view !== 'today' && view !== 'timeline' && ids.scopeFilter.value !== 'active'));
 }
 // With filters on, the empty view offers to clear them; otherwise to create an action.
 function emptyState(title, text, withButton = true) {
@@ -763,15 +785,291 @@ function renderBoard(base) {
   applyFolds();
 }
 
+// ---------- Timeline ----------
+// The date logic is in timeline-view.js (range, weeks, placement, lanes, keyboard neighbours); this draws it. Wide: a frieze, one lane
+// per project and one column per day (weekends narrower and shaded). Narrow (under 700 px): an agenda, one row per day.
+const TL_AGENDA_WIDTH = 700;
+const SHORT_FORMAT = new Intl.DateTimeFormat(LOCALE, {day: 'numeric', month: 'short'});
+const WEEKDAY_FORMAT = new Intl.DateTimeFormat(LOCALE, {weekday: 'short'});
+const MONTH_FORMAT = new Intl.DateTimeFormat(LOCALE, {month: 'long'});
+const MONTH_YEAR_FORMAT = new Intl.DateTimeFormat(LOCALE, {month: 'long', year: 'numeric'});
+function dayText(iso, format = LONG_FORMAT) { return format.format(parseDay(iso)); }
+function entryName(entry) {
+  const action = entry.action;
+  const parts = [`${action.id}: ${action.title}`, `Status: ${statusLabel(action.state)}`];
+  if (entry.done && TimelineView.isPlainDate(action.done)) parts.push(`Done on ${dayText(action.done)}`);
+  else parts.push(`Due ${dayText(entry.date)}${entry.overdue ? `, ${plural(entry.overdue, 'day')} overdue` : ''}${entry.done ? ' (done)' : ''}`);
+  if (entry.scheduled) parts.push(`Scheduled ${dayText(entry.scheduled)}`);
+  parts.push(`Project: ${action.project}`, `Owner: ${action.owner}`);
+  return `${parts.join('. ')}.`;
+}
+function entryTitle(entry) {
+  const action = entry.action;
+  const lines = [action.title, `${action.project} · ${action.owner}`];
+  if (entry.done && TimelineView.isPlainDate(action.done)) lines.push(`Done on ${dayText(action.done)}`);
+  else lines.push(`Due on ${dayText(entry.date)}${entry.overdue ? ` (${plural(entry.overdue, 'day')} overdue)` : ''}`);
+  if (entry.scheduled) lines.push(`Scheduled for ${dayText(entry.scheduled)}`);
+  return lines.join('\n');
+}
+function openFromTimeline(action) {
+  selectAction(action.id, {focus: false, scroll: false});
+  openEditor(action);
+}
+// A chip: status, ID and a short title; late ones also carry their date (their column says only "Late"), the agenda their project.
+function timelineChip(entry, {date = false, where = false} = {}) {
+  const action = entry.action;
+  const cell = element('div', `tl-cell ${statusInfo(action.state).cls}${entry.overdue ? ' is-overdue' : ''}${entry.done ? ' is-done' : ''}`);
+  cell.dataset.id = action.id;
+  cell.setAttribute('role', 'listitem');
+  const button = element('button', 'tl-chip');
+  button.type = 'button';
+  button.tabIndex = -1;
+  button.setAttribute('aria-label', entryName(entry));
+  button.title = entryTitle(entry);
+  const top = element('span', 'tl-chip-top');
+  top.append(statusIcon(action.state), element('span', 'tl-chip-id', action.id));
+  if (entry.sameDay) top.append(svgIcon(ICONS.hourglass, 'tl-chip-sched'));
+  if (entry.overdue) top.append(svgIcon(ICONS.late, 'tl-chip-flag'));
+  button.append(top, element('span', 'tl-chip-title', action.title));
+  if (date) button.append(element('span', 'tl-chip-date', dayText(entry.date, SHORT_FORMAT)));
+  if (where) button.append(element('span', 'tl-chip-where', shortProject(action.project)));
+  cell.append(button);
+  cell.addEventListener('click', () => openFromTimeline(action));
+  return cell;
+}
+// The scheduled date: a hollow marker, not a second chip (the chip it belongs to is the one to focus).
+function timelineMarker(entry) {
+  const node = element('div', `tl-marker ${statusInfo(entry.action.state).cls}`);
+  node.setAttribute('aria-hidden', 'true');
+  node.title = `${entry.id} is scheduled for ${dayText(entry.scheduled)}, due on ${dayText(entry.date)}`;
+  node.append(svgIcon(ICONS.hourglass, 'tl-marker-icon'), element('span', '', entry.id));
+  node.addEventListener('click', () => openFromTimeline(entry.action));
+  return node;
+}
+function placed(node, column, row = null) {
+  node.style.gridColumn = column;
+  if (row !== null) node.style.gridRow = row;
+  return node;
+}
+function decoration(className, column, row = null) {
+  const node = element('div', className);
+  node.setAttribute('aria-hidden', 'true');
+  return placed(node, column, row);
+}
+function timelineHead(span, result) {
+  const head = element('div', 'tl-head');
+  head.setAttribute('aria-hidden', 'true');
+  head.append(placed(element('div', 'tl-corner'), '1', '1 / span 3'));
+  const late = placed(element('div', `tl-late-head${result.late.length ? ' has-late' : ''}`), '2', '1 / span 3');
+  late.append(element('span', 'tl-late-title', 'Late'), element('span', 'tl-late-count', result.late.length ? String(result.late.length) : ''));
+  head.append(late);
+  span.months.forEach((month, index) => {
+    const cell = placed(element('div', 'tl-month'), `${month.start + 3} / span ${month.span}`, '1');
+    const date = parseDay(`${month.year}-${String(month.month).padStart(2, '0')}-01`);
+    cell.append(element('span', '', (index === 0 || month.month === 1 ? MONTH_YEAR_FORMAT : MONTH_FORMAT).format(date)));
+    head.append(cell);
+  });
+  for (const week of span.weekSpans) {
+    const cell = placed(element('div', 'tl-week'), `${week.start + 3} / span ${week.span}`, '2');
+    cell.append(element('span', '', `W${week.week}`));
+    cell.title = `Week ${week.week}`;
+    head.append(cell);
+  }
+  for (const day of span.days) {
+    const cell = placed(element('div', `tl-day${day.weekend ? ' is-weekend' : ''}${day.today ? ' is-today' : ''}`), String(day.index + 3), '3');
+    cell.append(element('span', 'tl-dow', WEEKDAY_FORMAT.format(parseDay(day.iso))), element('span', 'tl-dom', String(day.day)));
+    if (day.today) cell.title = 'Today';
+    head.append(cell);
+  }
+  return head;
+}
+function timelineLane(lane, span) {
+  const node = element('div', 'tl-lane');
+  node.setAttribute('role', 'list');
+  node.setAttribute('aria-label', `${lane.project}, ${plural(lane.entries.length, 'action')}`);
+  node.style.gridTemplateRows = `repeat(${lane.tracks}, minmax(var(--chip-h), auto))`;
+  const label = placed(element('div', 'tl-label'), '1', `1 / span ${lane.tracks}`);
+  label.setAttribute('aria-hidden', 'true');
+  const [client, ...rest] = lane.project.split(' / ');
+  if (rest.length) label.append(element('span', 'tl-label-client', client), element('span', 'tl-label-mission', rest.join(' / ')));
+  else label.append(element('span', 'tl-label-mission', lane.project));
+  label.title = lane.project;
+  node.append(decoration('tl-late-bg', '2 / span 1'), label);
+  for (let week = 0; week < span.weeks; week += 1) node.append(decoration('tl-shade', `${week * 7 + 8} / span 2`));
+  const todayIndex = span.days.find(day => day.today)?.index;
+  if (todayIndex !== undefined) node.append(decoration('tl-today-line', `${todayIndex + 3} / span 1`));
+  for (const entry of lane.entries) {
+    const chip = timelineChip(entry, {date: entry.late});
+    if (entry.column % 7 >= 5) chip.classList.add('is-end'); // Saturday and Sunday columns are narrow
+    node.append(placed(chip, String(entry.column + 3), String(entry.track + 1)));
+    if (!entry.marker) continue;
+    node.append(placed(timelineMarker(entry), String(entry.marker.column + 3), String(entry.track + 1)));
+    if (entry.marker.from <= entry.marker.to) node.append(decoration('tl-join', `${entry.marker.from + 3} / ${entry.marker.to + 4}`, String(entry.track + 1)));
+  }
+  return node;
+}
+function timelineFrieze(span, result) {
+  const canvas = element('div', `tl-canvas${result.late.length ? ' has-late' : ''}`);
+  canvas.style.setProperty('--cols', `var(--label-w) var(--late-w) ${Array.from({length: span.weeks}, () => 'repeat(5, var(--day-w)) repeat(2, var(--end-w))').join(' ')}`);
+  canvas.append(timelineHead(span, result), ...result.lanes.map(lane => timelineLane(lane, span)));
+  return canvas;
+}
+function agendaList(label, entries, options) {
+  const list = element('div', 'tl-ag-items');
+  list.setAttribute('role', 'list');
+  list.setAttribute('aria-label', label);
+  list.append(...entries.map(entry => timelineChip(entry, options)));
+  return list;
+}
+// One row per day, weekends shaded; the late actions first, the weeks under their own headings.
+function timelineAgenda(span, result) {
+  const root = element('div', 'tl-agenda');
+  if (result.late.length) {
+    const section = element('section', 'tl-ag-section tl-ag-late');
+    section.setAttribute('aria-labelledby', 'tl-ag-late-title');
+    const title = element('h3', '', `Late (${result.late.length})`);
+    title.id = 'tl-ag-late-title';
+    section.append(title, agendaList('Late actions', result.late, {date: true, where: true}));
+    root.append(section);
+  }
+  const days = TimelineView.agenda(result, span.days);
+  for (let first = 0; first < days.length; first += 7) {
+    const week = days.slice(first, first + 7);
+    const section = element('section', 'tl-ag-section');
+    const head = week[0].day;
+    const title = element('h3', '', `Week ${head.week} · ${dayText(week[0].day.iso, SHORT_FORMAT)} to ${dayText(week[6].day.iso, SHORT_FORMAT)}`);
+    title.id = `tl-ag-week-${head.weekYear}-${head.week}`;
+    section.setAttribute('aria-labelledby', title.id);
+    section.append(title);
+    for (const {day, entries, markers} of week) {
+      const empty = !entries.length && !markers.length;
+      const row = element('div', `tl-ag-day${day.weekend ? ' is-weekend' : ''}${day.today ? ' is-today' : ''}${empty ? ' is-empty' : ''}`);
+      const date = element('div', 'tl-ag-date');
+      date.append(element('span', 'tl-dow', WEEKDAY_FORMAT.format(parseDay(day.iso))), element('span', 'tl-dom', String(day.day)));
+      if (day.today) date.append(element('span', 'tl-ag-today', 'Today'));
+      row.append(date);
+      if (empty) row.setAttribute('aria-hidden', 'true');
+      else {
+        const list = agendaList(dayText(day.iso), entries, {where: true});
+        for (const entry of markers) list.append(timelineMarker(entry));
+        row.append(list);
+      }
+      section.append(row);
+    }
+    root.append(section);
+  }
+  return root;
+}
+function renderVague(items) {
+  ids.timelineVague.hidden = !items.length;
+  ids.timelineVagueCount.textContent = items.length ? String(items.length) : '';
+  ids.timelineVagueList.replaceChildren(...items.map(({action, text}) => {
+    const item = element('li', `tl-vague-item ${statusInfo(action.state).cls}`);
+    item.dataset.id = action.id;
+    const button = element('button', 'tl-vague-main');
+    button.type = 'button';
+    button.tabIndex = -1;
+    button.setAttribute('aria-label', `${action.id}: ${action.title}. Status: ${statusLabel(action.state)}. Deadline: ${text}. Project: ${action.project}. Owner: ${action.owner}.`);
+    button.title = `${action.title}\n${action.project} · ${action.owner}\nDeadline: ${text}`;
+    const top = element('span', 'tl-chip-top');
+    top.append(statusIcon(action.state), element('span', 'tl-chip-id', action.id), element('span', 'tl-vague-where', shortProject(action.project)));
+    button.append(top, element('span', 'tl-chip-title', action.title), element('span', 'tl-vague-note', text));
+    item.append(button);
+    item.addEventListener('click', () => openFromTimeline(action));
+    return item;
+  }));
+}
+function timelineScrollOptions(left, top) {
+  return {left, top, behavior: window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 'auto' : 'smooth'};
+}
+// Bring today into view: its column a day and a half after the project labels, or its row at the top of the agenda.
+function scrollTimelineToToday(animate = false) {
+  const scroll = ids.timelineScroll;
+  const box = scroll.getBoundingClientRect();
+  const cell = scroll.querySelector(timelineNarrow ? '.tl-ag-day.is-today' : '.tl-day.is-today');
+  if (!cell) return;
+  const at = cell.getBoundingClientRect();
+  if (timelineNarrow) {
+    const top = Math.max(0, at.top - box.top + scroll.scrollTop - 44); // under the sticky week heading
+    if (animate) scroll.scrollTo(timelineScrollOptions(0, top)); else scroll.scrollTop = top;
+    return;
+  }
+  const label = scroll.querySelector('.tl-corner').offsetWidth;
+  const left = Math.max(0, at.left - box.left + scroll.scrollLeft - label - at.width * 1.5);
+  if (animate) scroll.scrollTo(timelineScrollOptions(left, scroll.scrollTop)); else scroll.scrollLeft = left;
+}
+function scrollTimelineToLate() { ids.timelineScroll.scrollTo(timelineScrollOptions(0, 0)); }
+function scrollTimelineByWeeks(direction) {
+  const days = ids.timelineScroll.querySelectorAll('.tl-day');
+  if (days.length < 8) return;
+  const week = days[7].getBoundingClientRect().left - days[0].getBoundingClientRect().left;
+  ids.timelineScroll.scrollBy(timelineScrollOptions(direction * week, 0));
+}
+function syncTimelineControls(result) {
+  for (const button of ids.timelineView.querySelectorAll('[data-range]')) button.setAttribute('aria-pressed', String(button.dataset.range === timelineRange));
+  ids.timelineDone.setAttribute('aria-checked', String(timelineDone));
+  ids.timelineLate.hidden = !result.late.length;
+  ids.timelineLate.textContent = `Late ${result.late.length}`;
+  ids.timelineView.classList.toggle('is-agenda', timelineNarrow);
+}
+// Beside or under the frieze; in the agenda, inside the scrolling list, right after the late actions.
+function placeVague() {
+  if (!timelineNarrow) {
+    if (ids.timelineVague.parentElement !== ids.timelineScroll.parentElement) ids.timelineScroll.after(ids.timelineVague);
+    return;
+  }
+  const agenda = ids.timelineScroll.querySelector('.tl-agenda');
+  const first = agenda?.querySelector('.tl-ag-section:not(.tl-ag-late)');
+  if (first) agenda.insertBefore(ids.timelineVague, first); else ids.timelineScroll.append(ids.timelineVague);
+}
+function renderTimeline(base) {
+  const span = TimelineView.range(today(), timelineRange);
+  const result = TimelineView.layout(base, {today: today(), start: span.start, end: span.end, showDone: timelineDone, order: snapshot.registers.map(register => register.path)});
+  timelineNarrow = ids.mainContent.getBoundingClientRect().width < TL_AGENDA_WIDTH;
+  timelineModel = {span, result};
+  ids.timelineScroll.setAttribute('aria-label', timelineNarrow ? 'Timeline agenda' : 'Timeline frieze');
+  ids.resultCount.textContent = plural(result.total, 'action');
+  syncTimelineControls(result);
+  renderVague(result.vague);
+  if (!result.total) {
+    const range = `${dayText(span.start, SHORT_FORMAT)} to ${dayText(span.end, SHORT_FORMAT)}`;
+    ids.timelineScroll.replaceChildren(emptyState('No deadlines in this range.', `Actions with a due date between ${range}, and the late ones, appear here.`));
+    placeVague();
+    return;
+  }
+  ids.timelineScroll.replaceChildren(timelineNarrow ? timelineAgenda(span, result) : timelineFrieze(span, result));
+  placeVague();
+  if (timelineAnchor) {
+    timelineAnchor = false;
+    scrollTimelineToToday();
+  }
+}
+// Left and right walk a project by date, up and down change project (on the closest date); in the agenda they follow the list.
+const TIMELINE_KEYS = {ArrowLeft: 'left', ArrowRight: 'right', ArrowUp: 'up', ArrowDown: 'down', Home: 'home', End: 'end'};
+function timelineKey(event) {
+  const direction = TIMELINE_KEYS[event.key];
+  const cell = event.target instanceof Element ? event.target.closest('.tl-chip')?.closest('[data-id]') : null;
+  if (!direction || !cell || event.altKey || event.ctrlKey || event.metaKey || event.shiftKey || !timelineModel) return;
+  event.preventDefault();
+  if (timelineNarrow) {
+    if (direction === 'home' || direction === 'end') return;
+    moveSelection(direction === 'left' || direction === 'up' ? -1 : 1);
+    return;
+  }
+  const next = TimelineView.neighbour(timelineModel.result.lanes, cell.dataset.id, direction);
+  if (next) selectAndFollow(next);
+}
+
 // ---------- Selection and keyboard navigation over rows and cards ----------
 function activeRoot() {
-  return view === 'today' ? ids.todayView : view === 'list' ? ids.listView : view === 'board' ? ids.boardView : null;
+  return view === 'today' ? ids.todayView : view === 'list' ? ids.listView : view === 'board' ? ids.boardView : view === 'timeline' ? ids.timelineView : null;
 }
 function visibleRows() {
   const root = activeRoot();
   return root ? [...root.querySelectorAll('[data-id]')].filter(row => row.offsetParent !== null) : [];
 }
-const ROW_CONTROLS = '.status-button, .row-title, .card-title, .due-button, .row-action';
+const ROW_MAIN = '.row-title, .card-title, .tl-chip, .tl-vague-main';
+const ROW_CONTROLS = `.status-button, ${ROW_MAIN}, .due-button, .row-action`;
 function setStops(row, on) { for (const control of row.querySelectorAll(ROW_CONTROLS)) control.tabIndex = on ? 0 : -1; }
 // The selected row (else the first one) is the list's single tab stop: its controls are reachable with Tab, the others with j/k.
 function markSelection() {
@@ -798,16 +1096,20 @@ function selectAction(id, {focus = true, scroll = true} = {}) {
   const row = rowFor(id);
   if (!row) return;
   if (scroll) row.scrollIntoView({block: 'nearest'});
-  if (focus) row.querySelector('.row-title, .card-title')?.focus({preventScroll: true});
+  if (focus) row.querySelector(ROW_MAIN)?.focus({preventScroll: true});
 }
 function moveSelection(delta) {
   const rows = visibleRows();
   if (!rows.length) return;
   const index = rows.findIndex(row => row.dataset.id === selectedId);
   const next = rows[index === -1 ? (delta > 0 ? 0 : rows.length - 1) : Math.max(0, Math.min(rows.length - 1, index + delta))];
-  selectAction(next.dataset.id);
-  if (editorOpen() && editorAction && editorAction.id !== next.dataset.id && !editorDirty()) {
-    const action = findAction(next.dataset.id);
+  selectAndFollow(next.dataset.id);
+}
+// Select an action, and let an open (unmodified) detail panel follow it.
+function selectAndFollow(id) {
+  selectAction(id);
+  if (editorOpen() && editorAction && editorAction.id !== id && !editorDirty()) {
+    const action = findAction(id);
     if (action) openEditor(action, null, {focus: 'none'});
   }
 }
@@ -826,7 +1128,7 @@ function focusAction(id, part = 'title', formerIndex = -1) {
   selectedId = row.dataset.id;
   markSelection();
   const target = part === 'status' ? row.querySelector('.status-button') : part === 'due' ? row.querySelector('.due-button') : null;
-  (target || row.querySelector('.row-title, .card-title')).focus({preventScroll: true});
+  (target || row.querySelector(ROW_MAIN)).focus({preventScroll: true});
 }
 
 // ---------- Popovers: status menu and due date ----------
@@ -940,7 +1242,7 @@ document.addEventListener('pointerdown', event => {
   if (brainMenuOpen() && !ids.brainSwitch.contains(event.target)) closeBrainMenu(false);
 });
 window.addEventListener('resize', () => closePopover(false));
-for (const root of [ids.todayView, ids.listView, ids.boardView]) root.addEventListener('scroll', () => closePopover(false), {passive: true, capture: true});
+for (const root of [ids.todayView, ids.listView, ids.boardView, ids.timelineScroll]) root.addEventListener('scroll', () => closePopover(false), {passive: true, capture: true});
 
 // ---------- Render ----------
 function isDocsView() { return view === 'notes' || view === 'search'; }
@@ -974,6 +1276,7 @@ function render() {
     const base = filteredBase();
     if (view === 'today') renderToday(base);
     else if (view === 'list') renderList(scoped(base));
+    else if (view === 'timeline') renderTimeline(base);
     else renderBoard(base);
     markSelection();
   }
@@ -986,6 +1289,8 @@ function setView(next, persist = true) {
   ids.todayView.hidden = next !== 'today';
   ids.listView.hidden = next !== 'list';
   ids.boardView.hidden = next !== 'board';
+  ids.timelineView.hidden = next !== 'timeline';
+  if (next === 'timeline') timelineAnchor = true;
   ids.docsView.hidden = !isDocsView();
   ids.toolsView.hidden = next !== 'tools';
   ids.gitView.hidden = next !== 'git';
@@ -1176,7 +1481,7 @@ function closeEditor({force = false, refocus = true} = {}) {
   noteState = null;
   if (refocus) {
     const row = wasEditing && rowFor(wasEditing);
-    const target = row?.querySelector('.row-title, .card-title') || (editorReturnFocus?.isConnected && !ids.editor.contains(editorReturnFocus) ? editorReturnFocus : null);
+    const target = row?.querySelector(ROW_MAIN) || (editorReturnFocus?.isConnected && !ids.editor.contains(editorReturnFocus) ? editorReturnFocus : null);
     (target || ids.resultCount).focus({preventScroll: true});
   }
   editorReturnFocus = null;
@@ -1566,6 +1871,8 @@ function resetBrainState() {
   snapshot = {actions: [], registers: [], owner: '', today: ''};
   detailCache.clear();
   selectedId = null;
+  timelineAnchor = true;
+  timelineModel = null;
   closePopover(false);
   closeEditor({force: true, refocus: false});
   gitLoadId += 1;
@@ -2073,6 +2380,8 @@ async function undoLast() {
 function viewScrolls() {
   return {
     today: ids.todayView.scrollTop, list: ids.listView.scrollTop, board: ids.boardView.scrollLeft,
+    // Not while the next draw still has to bring today into view.
+    timeline: timelineAnchor ? null : {left: ids.timelineScroll.scrollLeft, top: ids.timelineScroll.scrollTop},
     columns: [...ids.boardView.querySelectorAll('.board-cards')].map(cards => cards.scrollTop)
   };
 }
@@ -2080,6 +2389,7 @@ function restoreViewScrolls(scrolls) {
   ids.todayView.scrollTop = scrolls.today;
   ids.listView.scrollTop = scrolls.list;
   ids.boardView.scrollLeft = scrolls.board;
+  if (scrolls.timeline) { ids.timelineScroll.scrollLeft = scrolls.timeline.left; ids.timelineScroll.scrollTop = scrolls.timeline.top; }
   ids.boardView.querySelectorAll('.board-cards').forEach((cards, index) => { cards.scrollTop = scrolls.columns[index] || 0; });
 }
 function showError(message) {
@@ -2362,12 +2672,14 @@ function renderDocPane() {
   ids.docPaneEmpty.hidden = Boolean(doc);
   ids.docArticle.hidden = !doc || docEditing;
   ids.docEditor.hidden = !doc || !docEditing;
+  ids.docEditorToolbar.hidden = ids.docEditor.hidden;
   ids.docEdit.hidden = !doc || !doc.note || docEditing;
   ids.docCancel.hidden = !doc || !docEditing;
   ids.docSave.hidden = !doc || !docEditing;
   ids.docSave.disabled = docSaving;
   ids.docCancel.disabled = docSaving;
   ids.docEditor.disabled = docSaving;
+  ids.docEditorToolbar.inert = docSaving;
   ids.docPaneMeta.hidden = !doc;
   ids.docPanePath.hidden = !doc;
   if (!doc) {
@@ -2542,6 +2854,7 @@ function openNewNote() {
   ids.newNoteProject.value = paths.includes(preferred) ? preferred : INBOX_REGISTER;
   ids.newNoteTitle.value = '';
   ids.newNoteContent.value = '';
+  newNoteBar.closeMenu(false);
   ids.newNoteError.hidden = true;
   ids.saveNewNote.disabled = false;
   updateNewNoteWhere();
@@ -2733,13 +3046,13 @@ document.addEventListener('keydown', event => {
   if (key === 'Escape') { handleEscape(event); return; }
   if (event.metaKey || event.ctrlKey || typing) return;
   if (document.querySelector('dialog[open]') || popoverState || brainMenuOpen() || !ids.moreMenu.hidden) return;
-  const digit = /^[1-5]$/.test(key) ? key : /^Digit[1-5]$/.test(event.code) && !event.altKey ? event.code.slice(5) : null;
+  const digit = /^[1-6]$/.test(key) ? key : /^Digit[1-6]$/.test(event.code) && !event.altKey ? event.code.slice(5) : null;
   const inRows = ACTION_VIEWS.includes(view);
   const onBody = event.target === document.body || event.target === ids.mainContent || event.target === ids.editorTitle;
   if (key === '/') { event.preventDefault(); focusSearch(); }
   else if (key === '?') { event.preventDefault(); ids.shortcutsDialog.showModal(); }
   else if (key === '[') { event.preventDefault(); toggleSidebar(); }
-  else if (digit && !event.altKey) { event.preventDefault(); setView(['today', 'list', 'board', 'notes', 'search'][Number(digit) - 1]); }
+  else if (digit && !event.altKey) { event.preventDefault(); setView(['today', 'list', 'board', 'timeline', 'notes', 'search'][Number(digit) - 1]); }
   else if (key === 'n' && !event.altKey) { event.preventDefault(); openEditor(); }
   else if (inRows && (key === 'j' || key === 'ArrowDown') && !event.altKey) {
     if (key === 'ArrowDown' && !onBody && !activeRoot().contains(event.target)) return;
@@ -2757,15 +3070,173 @@ document.addEventListener('keydown', event => {
     const row = action && rowFor(action.id);
     if (!row) return;
     event.preventDefault();
-    if (key === 's') openStatusMenu(action, row.querySelector('.status-button'));
-    else {
-      const due = row.querySelector('.due-button');
-      openDueMenu(action, due || row.querySelector('.status-button'));
-    }
+    // A timeline chip has no status or date button of its own: the menus open from the chip.
+    const main = row.querySelector(ROW_MAIN) || row;
+    if (key === 's') openStatusMenu(action, row.querySelector('.status-button') || main);
+    else openDueMenu(action, row.querySelector('.due-button') || row.querySelector('.status-button') || main);
   }
 });
 
+// ---------- Markdown toolbar (new note dialog and note editor share it) ----------
+// The text edits live in md-edit.js; this is the buttons, the arrow menu and the keyboard.
+const MAC_KEYS = /Mac|iPhone|iPad|iPod/i.test(navigator.userAgentData?.platform || navigator.platform || '');
+const MD_TOOLS = [
+  [
+    {id: 'bold', label: 'Bold', icon: ICONS.bold, key: 'b'},
+    {id: 'italic', label: 'Italic', icon: ICONS.italic, key: 'i'},
+    {id: 'underline', label: 'Underline', icon: ICONS.underline, key: 'u'},
+    {id: 'strike', label: 'Strikethrough', icon: ICONS.strike, key: 'x', shift: true}
+  ],
+  [
+    {id: 'bullets', label: 'Bulleted list', icon: ICONS.bullets},
+    {id: 'numbers', label: 'Numbered list', icon: ICONS.numbers},
+    {id: 'tasks', label: 'Checklist', icon: ICONS.tasks},
+    {id: 'quote', label: 'Quote', icon: ICONS.quote}
+  ],
+  [
+    {id: 'code', label: 'Inline code', icon: ICONS.code},
+    {id: 'link', label: 'Link', icon: ICONS.link, key: 'k'},
+    {id: 'arrow', label: 'Arrow', icon: ICONS.arrow, title: 'Arrow (hold for more)'}
+  ]
+];
+const MD_ARROWS = [['→', 'Right arrow'], ['←', 'Left arrow'], ['⇒', 'Double arrow'], ['↔', 'Both directions']];
+// The shortcut is ⌘ on a Mac (Ctrl+B, F, K... are text-editing keys there) and Ctrl elsewhere.
+function mdKeys(tool) {
+  const letter = tool.key.toUpperCase();
+  return MAC_KEYS
+    ? {label: `${tool.shift ? '⇧' : ''}⌘${letter}`, aria: `Meta+${tool.shift ? 'Shift+' : ''}${letter}`}
+    : {label: `Ctrl+${tool.shift ? 'Shift+' : ''}${letter}`, aria: `Control+${tool.shift ? 'Shift+' : ''}${letter}`};
+}
+function mountMarkdownToolbar(bar, area) {
+  const buttons = [];
+  for (const group of MD_TOOLS) {
+    const box = element('div', 'md-group');
+    for (const tool of group) {
+      const keys = tool.key ? mdKeys(tool) : null;
+      const button = iconButton('icon-button md-tool', tool.label, tool.icon, keys ? `${tool.label} (${keys.label})` : tool.title || tool.label);
+      button.dataset.tool = tool.id;
+      button.tabIndex = buttons.length ? -1 : 0; // roving tabindex: one stop in the Tab order
+      if (keys) button.setAttribute('aria-keyshortcuts', keys.aria);
+      buttons.push(button);
+      box.append(button);
+    }
+    bar.append(box);
+  }
+  const arrowButton = buttons.find(button => button.dataset.tool === 'arrow');
+  arrowButton.setAttribute('aria-haspopup', 'menu');
+  arrowButton.setAttribute('aria-expanded', 'false');
+  const menu = element('div', 'menu md-menu');
+  menu.setAttribute('role', 'menu');
+  menu.setAttribute('aria-label', 'Arrows');
+  menu.hidden = true;
+  for (const [symbol, name] of MD_ARROWS) {
+    const item = element('button', 'menu-item');
+    item.type = 'button';
+    item.setAttribute('role', 'menuitem');
+    const glyph = element('span', 'md-glyph', symbol);
+    glyph.setAttribute('aria-hidden', 'true');
+    item.append(glyph, element('span', 'menu-item-text', name));
+    item.addEventListener('click', () => { closeMenu(false); run('arrow', symbol); });
+    menu.append(item);
+  }
+  bar.append(menu);
+
+  // One edit, applied the way typing is, so the browser's undo and redo keep working; setRangeText is the fallback.
+  function run(id, argument) {
+    if (area.disabled || area.readOnly) return;
+    const value = area.value;
+    const change = MarkdownEdit.edit(id, value, area.selectionStart, area.selectionEnd, argument);
+    if (!change.text && change.from === change.to) return;
+    const expected = value.slice(0, change.from) + change.text + value.slice(change.to);
+    area.focus();
+    area.setSelectionRange(change.from, change.to);
+    try { if (change.text) document.execCommand('insertText', false, change.text); else document.execCommand('delete'); } catch { /* handled below */ }
+    if (area.value !== expected) {
+      if (area.value !== value) area.value = value;
+      area.setRangeText(change.text, change.from, change.to, 'end');
+      area.dispatchEvent(new Event('input', {bubbles: true}));
+    }
+    area.setSelectionRange(change.select[0], change.select[1]);
+  }
+  let held = false;
+  function openMenu() {
+    menu.hidden = false;
+    arrowButton.setAttribute('aria-expanded', 'true');
+    menu.style.left = `${Math.max(0, Math.min(arrowButton.offsetLeft, bar.clientWidth - menu.offsetWidth))}px`;
+    menu.style.top = `${arrowButton.offsetTop + arrowButton.offsetHeight + 2}px`;
+    menu.firstElementChild.focus();
+  }
+  function closeMenu(refocus = true) {
+    held = false;
+    if (menu.hidden) return;
+    menu.hidden = true;
+    arrowButton.setAttribute('aria-expanded', 'false');
+    if (refocus) arrowButton.focus();
+  }
+
+  // Keep the field focused (and its selection) while a button is pressed with the mouse.
+  bar.addEventListener('mousedown', event => { if (event.target.closest('.md-tool, .menu-item')) event.preventDefault(); });
+  bar.addEventListener('click', event => {
+    const button = event.target.closest('.md-tool');
+    if (!button) return;
+    if (held) { held = false; return; } // the press that opened the menu is not a click on the arrow
+    run(button.dataset.tool);
+  });
+  // A long press on the arrow opens the menu of the other arrows (the contextual menu key does too).
+  let pressTimer = 0;
+  arrowButton.addEventListener('pointerdown', event => {
+    held = false;
+    if (event.button === 0) pressTimer = setTimeout(() => { held = true; openMenu(); }, 450);
+  });
+  for (const type of ['pointerup', 'pointerleave', 'pointercancel']) arrowButton.addEventListener(type, () => clearTimeout(pressTimer));
+  arrowButton.addEventListener('contextmenu', event => { event.preventDefault(); openMenu(); });
+  bar.addEventListener('focusin', event => {
+    const index = buttons.indexOf(event.target);
+    if (index >= 0) buttons.forEach((button, position) => { button.tabIndex = position === index ? 0 : -1; });
+  });
+  bar.addEventListener('focusout', event => { if (!bar.contains(event.relatedTarget)) closeMenu(false); });
+  bar.addEventListener('keydown', event => {
+    if (menu.contains(event.target) || event.altKey || event.ctrlKey || event.metaKey) return;
+    const index = buttons.indexOf(event.target);
+    if (index < 0) return;
+    const last = buttons.length - 1;
+    if (event.key === 'ArrowRight') buttons[index === last ? 0 : index + 1].focus();
+    else if (event.key === 'ArrowLeft') buttons[index === 0 ? last : index - 1].focus();
+    else if (event.key === 'Home') buttons[0].focus();
+    else if (event.key === 'End') buttons[last].focus();
+    else if (event.key === 'ArrowDown' && event.target === arrowButton) openMenu();
+    else return;
+    event.preventDefault();
+  });
+  menu.addEventListener('keydown', event => {
+    const items = [...menu.children];
+    const index = items.indexOf(document.activeElement);
+    if (event.key === 'ArrowDown') items[(index + 1) % items.length].focus();
+    else if (event.key === 'ArrowUp') items[(index + items.length - 1) % items.length].focus();
+    else if (event.key === 'Home') items[0].focus();
+    else if (event.key === 'End') items[items.length - 1].focus();
+    else if (event.key === 'Escape') { event.stopPropagation(); closeMenu(); } // closes the menu, not the dialog
+    else if (event.key === 'Tab') { closeMenu(false); return; }
+    else return;
+    event.preventDefault();
+  });
+  document.addEventListener('pointerdown', event => { if (!menu.hidden && !menu.contains(event.target) && !arrowButton.contains(event.target)) closeMenu(false); });
+
+  area.addEventListener('keydown', event => {
+    if (event.defaultPrevented || event.isComposing || event.altKey) return;
+    if (MAC_KEYS ? !event.metaKey || event.ctrlKey : !event.ctrlKey || event.metaKey) return;
+    const key = /^[a-z]$/i.test(event.key) ? event.key.toLowerCase() : /^Key[A-Z]$/.test(event.code) ? event.code.slice(3).toLowerCase() : '';
+    const tool = MD_TOOLS.flat().find(item => item.key === key && Boolean(item.shift) === event.shiftKey);
+    if (!tool) return;
+    event.preventDefault();
+    run(tool.id);
+  });
+  return {closeMenu};
+}
+
 // ---------- Wiring ----------
+const newNoteBar = mountMarkdownToolbar(ids.newNoteToolbar, ids.newNoteContent);
+mountMarkdownToolbar(ids.docEditorToolbar, ids.docEditor);
 for (const [name, id] of Object.entries(NAV_BUTTONS)) ids[id].addEventListener('click', () => setView(name));
 ids.newButton.addEventListener('click', () => openEditor());
 ids.newNoteButton.addEventListener('click', openNewNote);
@@ -2874,6 +3345,29 @@ ids.noteInput.addEventListener('keydown', event => {
   if (event.key === 'Escape') { event.preventDefault(); event.stopPropagation(); closeNoteForm(); }
   else if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); if (!event.shiftKey) submitNote(); }
 });
+
+// Timeline controls
+for (const button of ids.timelineView.querySelectorAll('[data-range]')) {
+  button.addEventListener('click', () => {
+    if (timelineRange === button.dataset.range) return;
+    timelineRange = button.dataset.range;
+    timelineAnchor = true;
+    saveUIState();
+    render();
+  });
+}
+ids.timelineToday.addEventListener('click', () => scrollTimelineToToday(true));
+ids.timelineBack.addEventListener('click', () => scrollTimelineByWeeks(-1));
+ids.timelineForward.addEventListener('click', () => scrollTimelineByWeeks(1));
+ids.timelineLate.addEventListener('click', scrollTimelineToLate);
+ids.timelineDone.addEventListener('click', () => { timelineDone = !timelineDone; saveUIState(); render(); });
+ids.timelineScroll.addEventListener('keydown', timelineKey);
+// The agenda replaces the frieze under 700 px wide (the sidebar, shown or hidden, changes the width of the page too).
+new ResizeObserver(() => {
+  if (view !== 'timeline' || ids.mainContent.getBoundingClientRect().width < TL_AGENDA_WIDTH === timelineNarrow) return;
+  timelineAnchor = true;
+  render();
+}).observe(ids.mainContent);
 
 // ---------- Start ----------
 applyAccent(brainFromUrl() || readStoredBrain());

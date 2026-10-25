@@ -44,3 +44,25 @@ class RootIgnoreRulesTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+@unittest.skipUnless(shutil.which("git") and shutil.which("rg"), "git and ripgrep are required")
+class SearchIgnoreRulesTest(unittest.TestCase):
+    """The root .ignore brings the brains back into searches (ripgrep) that .gitignore leaves out."""
+
+    def test_search_from_the_root_reaches_the_brains_but_not_the_local_folders(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            work = Path(tmp).resolve()
+            subprocess.run(["git", "init", "-q", str(work)], check=True, env=GIT_ENV)
+            for name in (".gitignore", ".ignore"):
+                shutil.copy(REPO / name, work / name)
+            for relative in ("brain/notes.md", "brain-acme/notes.md", "brain-acme/.cache/state.md", "repos/app/notes.md",
+                             "agents/try/notes.md", "artifacts/deck/notes.md", "kit/notes.md"):
+                (work / relative).parent.mkdir(parents=True, exist_ok=True)
+                (work / relative).write_text("needle\n", encoding="utf-8")
+            (work / "brain-acme/.gitignore").write_text(".cache/\n", encoding="utf-8")
+            # An explicit path: without one, ripgrep reads a piped stdin instead of the folder.
+            result = subprocess.run(["rg", "-l", "needle", "."], cwd=work, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+            found = sorted(path.removeprefix("./") for path in result.stdout.split())
+            self.assertEqual(found, ["brain-acme/notes.md", "brain/notes.md", "kit/notes.md"])
+            self.assertFalse(ignored(work, ".ignore"))  # versioned with Work

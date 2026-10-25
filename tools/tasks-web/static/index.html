@@ -9,6 +9,8 @@
   <meta name="csrf-token" content="__CSRF_TOKEN__">
   <title>Actions</title>
   <link rel="stylesheet" href="/app.css">
+  <script src="/md-edit.js" defer></script>
+  <script src="/timeline-view.js" defer></script>
   <script src="/app.js" defer></script>
 </head>
 <body>
@@ -43,11 +45,15 @@
             <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true"><rect x="2.5" y="3" width="3" height="10" rx="1"/><rect x="6.5" y="3" width="3" height="7" rx="1"/><rect x="10.5" y="3" width="3" height="5" rx="1"/></svg>
             <span class="nav-label">Board</span>
           </button>
-          <button id="notesButton" class="nav-item" type="button" data-view="notes" title="Notes (4)">
+          <button id="timelineButton" class="nav-item" type="button" data-view="timeline" title="Timeline (4)">
+            <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M2.5 8h11"/><circle cx="5" cy="5.25" r="1.25"/><circle cx="8.5" cy="10.75" r="1.25"/><circle cx="12" cy="5.25" r="1.25"/></svg>
+            <span class="nav-label">Timeline</span>
+          </button>
+          <button id="notesButton" class="nav-item" type="button" data-view="notes" title="Notes (5)">
             <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 2.5h5l2.5 2.5v8.5h-7.5z"/><path d="M6.5 8h3.5M6.5 10.5h3.5"/></svg>
             <span class="nav-label">Notes</span>
           </button>
-          <button id="searchButton" class="nav-item" type="button" data-view="search" title="Search (5)">
+          <button id="searchButton" class="nav-item" type="button" data-view="search" title="Search (6)">
             <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="4"/><path d="M10 10l3.5 3.5"/></svg>
             <span class="nav-label">Search</span>
           </button>
@@ -139,6 +145,30 @@
         <div id="todayView" class="view-scroll today-view" aria-label="Today" hidden></div>
         <div id="listView" class="view-scroll list-view" aria-label="Action list" hidden></div>
         <div id="boardView" class="board-view" aria-label="Action board" hidden></div>
+        <div id="timelineView" class="timeline-view" aria-label="Timeline" hidden>
+          <div class="tl-bar" role="group" aria-label="Timeline controls">
+            <div class="tl-seg" role="group" aria-label="Range">
+              <button class="tl-seg-button" type="button" data-range="two" aria-pressed="false" title="Two weeks, from Monday of last week">2 weeks</button>
+              <button class="tl-seg-button" type="button" data-range="six" aria-pressed="false" title="Six weeks, from Monday of last week">6 weeks</button>
+              <button class="tl-seg-button" type="button" data-range="quarter" aria-pressed="false" title="Thirteen weeks, from Monday of last week">Quarter</button>
+            </div>
+            <div class="tl-nav">
+              <button id="timelineBack" class="icon-button tl-step" type="button" aria-label="Back one week" title="Back one week"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.75 4.5 6.25 8l3.5 3.5"/></svg></button>
+              <button id="timelineToday" class="button button-small" type="button" title="Bring today into view">Today</button>
+              <button id="timelineForward" class="icon-button tl-step" type="button" aria-label="Forward one week" title="Forward one week"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.25 4.5 9.75 8l-3.5 3.5"/></svg></button>
+            </div>
+            <button id="timelineLate" class="tl-late-jump" type="button" title="Go to the late actions" hidden></button>
+            <button id="timelineDone" class="tl-switch" type="button" role="switch" aria-checked="false" title="Show the actions already done, at their done date"><span class="tl-switch-track" aria-hidden="true"></span><span>Show done</span></button>
+          </div>
+          <div class="tl-body">
+            <div id="timelineScroll" class="tl-scroll" role="region" aria-label="Timeline frieze"></div>
+            <aside id="timelineVague" class="tl-vague" aria-labelledby="timelineVagueTitle" hidden>
+              <div class="section-head"><h2 id="timelineVagueTitle">Vague deadlines</h2><span id="timelineVagueCount" class="section-count"></span></div>
+              <p class="tl-vague-hint">The deadline is a wording, not a date: these actions stay off the frieze.</p>
+              <ul id="timelineVagueList" class="tl-vague-list"></ul>
+            </aside>
+          </div>
+        </div>
         <div id="docsView" class="docs-view" hidden>
           <section class="docs-side" aria-label="Documents">
             <p id="docStatus" class="doc-status" role="status" aria-live="polite"></p>
@@ -161,6 +191,7 @@
             <p id="docPaneEmpty" class="doc-pane-empty">Choose a document to read it.</p>
             <p id="docPaneError" class="form-error doc-pane-error" role="alert" hidden></p>
             <article id="docArticle" class="markdown-body" tabindex="0" aria-label="Document" hidden></article>
+            <div id="docEditorToolbar" class="md-toolbar" role="toolbar" aria-label="Markdown formatting" aria-controls="docEditor" hidden></div>
             <textarea id="docEditor" class="doc-pane-editor" aria-label="Markdown content of the note" spellcheck="false" hidden></textarea>
           </section>
         </div>
@@ -256,7 +287,11 @@
         <label class="field"><span class="field-label">Title</span><input id="newNoteTitle" maxlength="150" required autocomplete="off" placeholder="Note title"></label>
         <label class="field"><span class="field-label">Project</span><select id="newNoteProject" required aria-describedby="newNoteWhere"></select></label>
         <p id="newNoteWhere" class="new-note-where"></p>
-        <label class="field"><span class="field-label">Content</span><textarea id="newNoteContent" rows="10" placeholder="Markdown text" spellcheck="false"></textarea></label>
+        <div class="field">
+          <label class="field-label" for="newNoteContent">Content</label>
+          <div id="newNoteToolbar" class="md-toolbar" role="toolbar" aria-label="Markdown formatting" aria-controls="newNoteContent"></div>
+          <textarea id="newNoteContent" rows="10" placeholder="Markdown text" spellcheck="false"></textarea>
+        </div>
       </div>
       <p id="newNoteError" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button id="cancelNewNote" class="button" type="button">Cancel</button><button id="saveNewNote" class="button button-primary" type="submit">Create note</button></div>
@@ -275,14 +310,16 @@
       <dl class="shortcuts">
         <div><dt><kbd>/</kbd></dt><dd>Search or filter</dd></div>
         <div><dt><kbd>n</kbd></dt><dd>New action</dd></div>
-        <div><dt><kbd>1</kbd> to <kbd>5</kbd></dt><dd>Today, Actions, Board, Notes, Search</dd></div>
+        <div><dt><kbd>1</kbd> to <kbd>6</kbd></dt><dd>Today, Actions, Board, Timeline, Notes, Search</dd></div>
         <div><dt><kbd>j</kbd> <kbd>k</kbd> or <kbd>↓</kbd> <kbd>↑</kbd></dt><dd>Next or previous action</dd></div>
+        <div><dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>On the Timeline: by date, and by project</dd></div>
         <div><dt><kbd>Enter</kbd></dt><dd>Open the details</dd></div>
         <div><dt><kbd>s</kbd></dt><dd>Change the status of the selected action</dd></div>
         <div><dt><kbd>d</kbd></dt><dd>Change its due date</dd></div>
         <div><dt><kbd>Esc</kbd></dt><dd>Close the panel or the menu</dd></div>
         <div><dt><kbd>⌘</kbd> <kbd>Enter</kbd></dt><dd>Save the panel or the note</dd></div>
         <div><dt><kbd>⌘</kbd> <kbd>Z</kbd></dt><dd>Undo the last write (outside a field)</dd></div>
+        <div><dt><kbd>⌘</kbd> <kbd>B</kbd> <kbd>I</kbd> <kbd>U</kbd> <kbd>K</kbd></dt><dd>In a note: bold, italic, underline, link (<kbd>⇧</kbd> <kbd>X</kbd>: strikethrough)</dd></div>
         <div><dt><kbd>[</kbd></dt><dd>Show or hide the sidebar</dd></div>
         <div><dt><kbd>?</kbd></dt><dd>This help</dd></div>
       </dl>

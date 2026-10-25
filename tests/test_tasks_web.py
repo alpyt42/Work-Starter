@@ -10,6 +10,8 @@ import hashlib
 import importlib.util
 import json
 import os
+import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -77,6 +79,25 @@ class TasksWebTest(unittest.TestCase):
         self.assertEqual(labels["projects/clients/acme/missions/rollout/state/actions.md"], "acme / rollout")
         self.assertEqual(labels["projects/clients/example/missions/test/state/actions.md"], "example / test")
 
+    def test_vague_due_wording_is_exposed_as_due_note_only_without_a_date(self):
+        self.register.write_text(
+            "# Actions\n\n## Open\n"
+            "- [ ] **EXM-001** — Jane Doe — Dated 📅 2026-10-15\n    - due: before 15/10\n"
+            "- [ ] **EXM-002** — Jane Doe — Vague\n    - source: kickoff\n    - DUE:   week   of 05/10  \n"
+            "- [ ] **EXM-003** — Jane Doe — Explicitly none\n    - due: —\n"
+            "- [ ] **EXM-004** — Jane Doe — Nothing at all\n"
+            "- [ ] **EXM-005** — Jane Doe — Long\n    - due: " + "x" * 300 + "\n"
+            "\n## Done\n- [x] **EXM-009** — Jane Doe — Closed\n", encoding="utf-8")
+        status, data = self.request("GET", "/api/actions")
+        self.assertEqual(status, 200)
+        notes = {action["id"]: (action["due"], action["due_note"]) for action in data["actions"]}
+        self.assertEqual(notes["EXM-001"], ("2026-10-15", ""))  # the 📅 date is authoritative
+        self.assertEqual(notes["EXM-002"], ("", "week of 05/10"))
+        self.assertEqual(notes["EXM-003"], ("", ""))
+        self.assertEqual(notes["EXM-004"], ("", ""))
+        self.assertEqual(notes["EXM-005"], ("", "x" * 200))
+        self.assertEqual(notes["EXM-009"], ("", ""))
+
     def test_reads_real_register_format(self):
         status, data = self.request("GET", "/api/actions")
         self.assertEqual(status, 200)
@@ -106,6 +127,15 @@ class TasksWebTest(unittest.TestCase):
         self.assertIsNone(by_id["archive_preview"]["confirm"])
         self.assertEqual({tool_id for tool_id, tool in by_id.items() if tool["confirm"]}, {"archive_write", "sweep_write"})
         self.assertFalse(any("client-repos.py clone" in command for command in commands))
+        # The memory tools added next to "brains" only read: no `--write`, no confirmation, and the brain map is limited to the chosen brain.
+        self.assertEqual(by_id["map"]["command"], "uv run tools/brain/brain-state.py map --brain <brain>")
+        self.assertEqual(by_id["timeline-roll"]["command"], "uv run tools/brain/timeline.py roll")
+        for tool_id in ("map", "timeline-roll"):
+            self.assertEqual(by_id[tool_id]["group"], "Memory")
+            self.assertIsNone(by_id[tool_id]["confirm"])
+            self.assertNotIn("--write", by_id[tool_id]["command"])
+        self.assertEqual(by_id["map"]["label"], "Brain map")
+        self.assertEqual(by_id["timeline-roll"]["label"], "Timeline months to move")
         self.assertEqual({tool["group"] for tool in catalog["tools"]}, {"Memory", "Actions", "Repositories"})
         for tool_id, (_group, _label, _description, script, _args) in tasks_web.TOOLS.items():
             self.assertTrue((tasks_web.TOOLS_ROOT / "tools" / script).is_file(), f"{tool_id}: tools/{script} not found")
@@ -1569,6 +1599,53 @@ class DocsTest(unittest.TestCase):
         self.assertIn("print('&lt;tag&gt;')", html)
         self.assertIn("<blockquote>", html)
 
+    def test_render_underline_tags_become_underline_and_nothing_else_does(self):
+        self.write("context/underline.md", "# Plan <u>acme</u>\n\nA <u>word</u>, <U>another</U> and <u>**bold** inside</u>.\n\n- <u>item</u>\n\n"
+                   "| head |\n|---|\n| <u>cell</u> |\n\n[<u>link</u>](https://example.com)\n\n`<u>code</u>`\n\n```\n<u>block</u>\n```\n")
+        html = self.render("context/underline.md")["html"]
+        self.assertIn('<h1 id="h-plan-acme">Plan <u>acme</u></h1>', html)
+        self.assertIn("<p>A <u>word</u>, <u>another</u> and <u><strong>bold</strong> inside</u>.</p>", html)
+        self.assertIn("<li><u>item</u></li>", html)
+        self.assertIn("<td><u>cell</u></td>", html)
+        self.assertIn('rel="noopener noreferrer"><u>link</u></a>', html)
+        self.assertIn("<code>&lt;u&gt;code&lt;/u&gt;</code>", html)
+        self.assertIn("&lt;u&gt;block&lt;/u&gt;", html)
+        self.assertEqual(html.count("<u>"), html.count("</u>"))
+
+    def test_render_underline_keeps_every_other_piece_of_html_escaped(self):
+        payloads = [
+            '<u onclick="alert(1)">x</u>', "<u style=x>x</u>", "<u/onclick=alert(1)>x</u>", "< u>x</u>", "<u\n>x</u>", "<u >x</u>",
+            "<uu>x</uu>", "<u>x</u onclick=y>", "<u><img src=x onerror=alert(1)></u>", "<u><script>alert(1)</script></u>",
+            "<u>a<b>b</b></u>", "<u>&lt;b&gt;</u><script>", "<u><svg onload=alert(1)></u>", "<u>x</u><iframe src=//evil.example>",
+        ]
+        for payload in payloads:
+            with self.subTest(payload=payload):
+                html = tasks_web.MARKDOWN.render(payload)
+                self.assertOnlyPlainMarkup(html)
+                for tag in ("<script", "<img", "<svg", "<iframe", "<b>"):
+                    self.assertNotIn(tag, html)
+                for tag in re.findall(r"</?u[^<>]*>", html):
+                    self.assertIn(tag, ("<u>", "</u>"))
+        self.assertIn("&lt;u onclick=&quot;alert(1)&quot;&gt;x&lt;/u&gt;", tasks_web.MARKDOWN.render(payloads[0]))
+        self.assertEqual(tasks_web.MARKDOWN.render("<u><script>alert(1)</script></u>"), "<p><u>&lt;script&gt;alert(1)&lt;/script&gt;</u></p>\n")
+
+    def test_render_underline_tags_stay_balanced_whatever_the_input(self):
+        texts = ["<u>", "</u>", "<u></u>", "<u>open only", "close only</u>", "</u>before<u>", "<u>a<u>b</u>c</u>", "<u>a\n\nb</u>",
+                 "<u>**a</u>**", "**<u>a**</u>", "<u>`</u>`", "<u>[a</u>](b)", "<u>a</u> <u>b", "> <u>quote\n\n</u>", "- <u>a\n- b</u>"]
+        for text in texts:
+            with self.subTest(text=text):
+                html = tasks_web.MARKDOWN.render(text)
+                self.assertOnlyPlainMarkup(html)
+                self.assertEqual(html.count("<u>"), html.count("</u>"))
+        # An unmatched tag is shown as text, like the raw HTML it is.
+        self.assertEqual(tasks_web.MARKDOWN.render("<u>open only"), "<p>&lt;u&gt;open only</p>\n")
+        self.assertEqual(tasks_web.MARKDOWN.render("a</u>"), "<p>a&lt;/u&gt;</p>\n")
+
+    def assertOnlyPlainMarkup(self, html):
+        """Nothing but the tags the Markdown rules produce (here: paragraphs, emphasis, code and the bare underline) is unescaped."""
+        rest = re.sub(r"</?(?:p|u|strong|em|code|blockquote|ul|li)>", "", html)
+        self.assertEqual(re.findall(r"<[^>]*>", rest), [], html)
+
     def test_render_note_flag_and_version_match_the_patch_contract(self):
         note_id = f"{self.CLIENT}/notes/2026-10-01-compte-rendu.md"
         data = self.render(note_id)
@@ -1911,6 +1988,18 @@ class BrainSwitchTest(unittest.TestCase):
         self.assertEqual(runner.call_args.kwargs["env"]["BRAIN_DIR"], str(self.other.resolve()))
         self.assertEqual(runner.call_args.args[0][2], str(tasks_web.TOOLS_ROOT / "tools/brain/check-links.py"))
 
+    def test_read_only_memory_tools_run_on_the_selected_brain(self):
+        completed = tasks_web.subprocess.CompletedProcess([], 0, stdout="ok\n", stderr="")
+        for tool_id, script, tail in (("map", "brain-state.py", ["map", "--brain", "brain-perso"]), ("timeline-roll", "timeline.py", ["roll"])):
+            with self.subTest(tool=tool_id), patch.object(tasks_web.shutil, "which", return_value="/usr/bin/uv"), \
+                    patch.object(tasks_web.subprocess, "run", return_value=completed) as runner:
+                self.assertTrue(tasks_web.run_tool(tool_id, self.other.resolve())["ok"])
+            command = runner.call_args.args[0]
+            self.assertEqual(command, ["/usr/bin/uv", "run", str(tasks_web.TOOLS_ROOT / "tools/brain" / script), *tail])
+            self.assertNotIn("--write", command)
+            self.assertEqual(runner.call_args.kwargs["env"]["BRAIN_DIR"], str(self.other.resolve()))
+            self.assertEqual(runner.call_args.kwargs["cwd"], tasks_web.WORK)
+
     def test_git_repositories_follow_the_selected_brain(self):
         store = self.server.store_for("brain-perso")
         self.assertEqual(self.server.git_repos_for(store), [("work", "Work", self.root.resolve()), ("brain", "brain-perso", self.other.resolve())])
@@ -1991,6 +2080,383 @@ class BrainSwitchTest(unittest.TestCase):
             self.assertNotIn("brain-option-scope", text)
         self.assertIn("option.title = brainTitle(brain);", script)
         self.assertIn("brain.scope ? `${brain.name} (${brain.scope})`", script)
+
+
+class MarkdownToolbarTest(unittest.TestCase):
+    """The Markdown toolbar of the note editors: its markup in the page, its tool table, and the text edits (run under node)."""
+    STATIC = TOOL.parent / "static"
+    EDITORS = {"newNoteToolbar": "newNoteContent", "docEditorToolbar": "docEditor"}
+    # «…» marks the selection (an empty pair is a caret) before and after the edit.
+    EDITS = [
+        ("bold", "say «hi» now", "say **«hi»** now"),
+        ("bold", "say «» now", "say **«»** now"),
+        ("bold", "say **«hi»** now", "say «hi» now"),
+        ("bold", "say «**hi**» now", "say «hi» now"),
+        ("bold", "say **«»** now", "say «» now"),
+        ("bold", "say« hi »now", "say **«hi»** now"),
+        ("italic", "«hi»", "*«hi»*"),
+        ("italic", "*«hi»*", "«hi»"),
+        ("italic", "**«hi»**", "***«hi»***"),
+        ("italic", "***«hi»***", "**«hi»**"),
+        ("bold", "***«hi»***", "*«hi»*"),
+        ("underline", "«hi»", "<u>«hi»</u>"),
+        ("underline", "<u>«hi»</u>", "«hi»"),
+        ("underline", "«<u>hi</u>»", "«hi»"),
+        ("strike", "«hi»", "~~«hi»~~"),
+        ("strike", "~~«hi»~~", "«hi»"),
+        ("code", "«hi»", "`«hi»`"),
+        ("code", "`«hi»`", "«hi»"),
+        ("bullets", "«a\nb»", "«- a\n- b»"),
+        ("bullets", "«- a\n- b»", "«a\nb»"),
+        ("bullets", "a«»b", "- a«»b"),
+        ("bullets", "«a\n\nb»", "«- a\n\n- b»"),
+        ("bullets", "«- a\nb»", "«- a\n- b»"),
+        ("bullets", "«a\nb\n»c", "«- a\n- b»\nc"),
+        ("bullets", "\n«»a", "\n- «»a"),
+        ("bullets", "«  - a»", "«  a»"),
+        ("bullets", "«- [ ] a»", "«- a»"),
+        ("numbers", "«a\nb\nc»", "«1. a\n2. b\n3. c»"),
+        ("numbers", "«- a\n- b»", "«1. a\n2. b»"),
+        ("numbers", "«1. a\n1. b\nc»", "«1. a\n2. b\n3. c»"),
+        ("numbers", "«3. a\n7. b»", "«a\nb»"),
+        ("numbers", "1. a\n2. b\nc«»", "1. a\n2. b\n3. c«»"),
+        ("numbers", "«  a»", "«  1. a»"),
+        ("tasks", "«a\nb»", "«- [ ] a\n- [ ] b»"),
+        ("tasks", "«- [ ] a\n- [x] b»", "«a\nb»"),
+        ("tasks", "«a\n- [x] b»", "«- [ ] a\n- [x] b»"),
+        ("tasks", "«- a»", "«- [ ] a»"),
+        ("quote", "«a\nb»", "«> a\n> b»"),
+        ("quote", "«> a\n> b»", "«a\nb»"),
+        ("quote", "«a\n\nb»", "«> a\n>\n> b»"),
+        ("quote", "«»", "> «»"),
+        ("link", "«hi»", "[hi](«url»)"),
+        ("link", "a«»b", "a[text](«url»)b"),
+        ("link", "say« hi »now", "say [hi](«url») now"),
+        ("link", "«https://example.com/x»", "[«text»](https://example.com/x)"),
+        ("link", "«[hi](https://example.com)»", "«hi»"),
+        ("arrow", "a«»b", "a→«»b"),
+        ("arrow", "a«b»c", "a→«»c"),
+    ]
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        brain = Path(self.temp.name) / "brain"
+        (brain / "projects/clients/acme/missions/rollout/state").mkdir(parents=True)
+        (brain / "projects/clients/acme/missions/rollout/state/actions.md").write_text("# Actions\n\n## Open\n- [ ] **ACM-001** — Jane — Prepare the globex demo\n", encoding="utf-8")
+        self.server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(brain))
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (self.server.shutdown(), self.server.server_close(), thread.join(timeout=2)))
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+        with urlopen(self.base + "/", timeout=3) as response:
+            self.page = response.read().decode("utf-8")
+        self.script = (self.STATIC / "app.js").read_text(encoding="utf-8")
+
+    def test_both_note_editors_have_the_toolbar_right_above_their_text(self):
+        self.assertEqual(sorted(re.findall(r'<div id="(\w+)" class="md-toolbar"', self.page)), sorted(self.EDITORS))
+        for toolbar, field in self.EDITORS.items():
+            with self.subTest(toolbar=toolbar):
+                self.assertRegex(self.page, rf'<div id="{toolbar}" class="md-toolbar" role="toolbar" aria-label="Markdown formatting" aria-controls="{field}"[^>]*></div>\s*<textarea id="{field}"')
+        self.assertEqual(sorted(re.findall(r"mountMarkdownToolbar\(ids\.(\w+), ids\.(\w+)\)", self.script)), sorted(self.EDITORS.items()))
+
+    def test_the_history_note_form_of_an_action_has_no_toolbar(self):
+        form = self.page[self.page.index('<div id="noteForm"'):self.page.index('<p id="noteError"')]
+        self.assertIn('<textarea id="noteInput"', form)
+        self.assertNotIn("toolbar", form)
+        self.assertNotIn("md-toolbar", form)
+        self.assertEqual(self.page.count('role="toolbar"'), 2)
+        self.assertNotIn("noteInput", "".join(re.findall(r"mountMarkdownToolbar\([^)]*\)", self.script)))
+
+    def test_the_text_edits_are_served_before_the_app(self):
+        self.assertLess(self.page.index('src="/md-edit.js"'), self.page.index('src="/app.js"'))
+        with urlopen(self.base + "/md-edit.js", timeout=3) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue(response.headers["Content-Type"].startswith("text/javascript"))
+            self.assertIn("const MarkdownEdit", response.read().decode("utf-8"))
+
+    def test_every_button_has_a_label_an_icon_a_tool_and_the_shortcuts_stay_clear_of_the_app(self):
+        table = self.script[self.script.index("const MD_TOOLS = ["):self.script.index("const MD_ARROWS")]
+        tools = re.findall(r"\{id: '(\w+)', label: '([^']+)', icon: ICONS\.(\w+)(?:, key: '(\w)')?(, shift: true)?", table)
+        icons = self.script[self.script.index("const ICONS = {"):self.script.index("function plural")]
+        edits = (self.STATIC / "md-edit.js").read_text(encoding="utf-8")
+        implemented = re.findall(r"^    (\w+)[:,]", edits[edits.index("const TOOLS = {"):edits.index("function edit(")], re.M)
+        self.assertEqual(sorted(tool[0] for tool in tools), sorted(implemented))
+        self.assertEqual(len(tools), 11)
+        for _id, label, icon, _key, _shift in tools:
+            self.assertTrue(label)
+            self.assertRegex(icons, rf"\n  {icon}: '<")
+        shortcuts = {(key, bool(shift)) for _id, _label, _icon, key, shift in tools if key}
+        self.assertEqual(shortcuts, {("b", False), ("i", False), ("u", False), ("x", True), ("k", False)})
+        # The app's own shortcuts with a modifier (⌘ Z, ⌘ Enter) differ from them; its single keys are ignored while typing.
+        app_keys = {key.lower() for key in re.findall(r"\(event\.metaKey \|\| event\.ctrlKey\)[^\n]*?key(?:\.toLowerCase\(\))? === '(\w+)'", self.script)}
+        self.assertEqual(app_keys, {"z", "enter"})
+        self.assertTrue(app_keys.isdisjoint(key for key, _shift in shortcuts))
+        self.assertRegex(self.script, r"function isTyping\(target\)")
+        self.assertIn("aria-keyshortcuts", self.script)
+        self.assertIn("setRangeText", self.script)
+        self.assertIn("document.execCommand('insertText'", self.script)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_text_edits(self):
+        script = """
+          const edits = require(process.argv[1]);
+          const cases = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+          process.stdout.write(JSON.stringify(cases.map(([tool, before]) => {
+            const start = before.indexOf('«'), end = before.indexOf('»') - 1;
+            const value = before.replace('«', '').replace('»', '');
+            const out = edits.apply(value, edits.edit(tool, value, start, end));
+            return out.value.slice(0, out.start) + '«' + out.value.slice(out.start, out.end) + '»' + out.value.slice(out.end);
+          })));
+        """
+        done = subprocess.run(["node", "-e", script, str(self.STATIC / "md-edit.js")], input=json.dumps(self.EDITS), capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        for (tool, before, expected), got in zip(self.EDITS, json.loads(done.stdout), strict=True):
+            with self.subTest(tool=tool, before=before):
+                self.assertEqual(got, expected)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_arrow_tool_inserts_the_chosen_symbol_and_exposes_every_tool(self):
+        script = """
+          const edits = require(process.argv[1]);
+          const out = edits.apply('a b', edits.edit('arrow', 'a b', 1, 1, '⇒'));
+          process.stdout.write(JSON.stringify([out.value, edits.tools]));
+        """
+        done = subprocess.run(["node", "-e", script, str(self.STATIC / "md-edit.js")], capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+        value, tools = json.loads(done.stdout)
+        self.assertEqual(value, "a⇒ b")
+        self.assertEqual(len(tools), 11)
+
+
+def node_json(script, payload=None):
+    """Run `script` under node (the module path is `process.argv[1]`, the payload is JSON on stdin) and return its JSON output."""
+    done = subprocess.run(["node", "-e", script, str(TOOL.parent / "static/timeline-view.js")], input=json.dumps(payload), capture_output=True, text=True, timeout=30)
+    if done.returncode:
+        raise AssertionError(done.stderr)
+    return json.loads(done.stdout)
+
+
+class TimelineViewTest(unittest.TestCase):
+    """The Timeline view: its markup and wiring in the page, and the date logic of timeline-view.js (run under node)."""
+    STATIC = TOOL.parent / "static"
+    ACM = "projects/clients/acme/missions/rollout/state/actions.md"
+    GLO = "projects/clients/globex/missions/pilot/state/actions.md"
+    TODAY = "2026-10-25"  # a Sunday; the default range is then 2026-10-12 to 2026-11-22
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        brain = Path(self.temp.name) / "brain"
+        (brain / "projects/clients/acme/missions/rollout/state").mkdir(parents=True)
+        (brain / "projects/clients/acme/missions/rollout/state/actions.md").write_text("# Actions\n\n## Open\n- [ ] **ACM-001** — Jane Doe — Prepare the globex demo 📅 2026-10-30\n", encoding="utf-8")
+        server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(brain))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join(timeout=2)))
+        self.base = f"http://127.0.0.1:{server.server_port}"
+        with urlopen(self.base + "/", timeout=3) as response:
+            self.page = response.read().decode("utf-8")
+        self.script = (self.STATIC / "app.js").read_text(encoding="utf-8")
+
+    def test_timeline_is_a_sidebar_view_right_after_the_board(self):
+        views = re.findall(r'<button id="(\w+)" class="nav-item[^"]*" type="button" data-view="(\w+)" title="([^"]*)"', self.page)
+        self.assertEqual([view for _id, view, _title in views], ["today", "list", "board", "timeline", "notes", "search", "tools", "git"])
+        titles = {view: title for _id, view, title in views}
+        self.assertEqual([titles[view] for view in ("timeline", "notes", "search")], ["Timeline (4)", "Notes (5)", "Search (6)"])
+        self.assertIn('<button id="timelineButton"', self.page)
+        self.assertIn("<kbd>1</kbd> to <kbd>6</kbd></dt><dd>Today, Actions, Board, Timeline, Notes, Search", self.page)
+
+    def test_keyboard_scheme_follows_the_sidebar_order(self):
+        self.assertIn("const VIEWS = ['today', 'list', 'board', 'timeline', 'notes', 'search', 'tools', 'git'];", self.script)
+        self.assertIn("setView(['today', 'list', 'board', 'timeline', 'notes', 'search'][Number(digit) - 1]);", self.script)
+        self.assertIn("/^[1-6]$/.test(key)", self.script)
+        self.assertIn("/^Digit[1-6]$/.test(event.code)", self.script)
+        # The timeline is an action view: filters, j/k, Enter, the detail panel and the quick edits work there as in the list and the board.
+        self.assertRegex(self.script, r"const ACTION_VIEWS = \[[^\]]*'timeline'[^\]]*\];")
+        self.assertIn("timeline: 'timelineButton'", self.script)
+
+    def test_timeline_markup(self):
+        view = self.page[self.page.index('<div id="timelineView"'):self.page.index('<div id="docsView"')]
+        self.assertTrue(view.startswith('<div id="timelineView" class="timeline-view" aria-label="Timeline" hidden>'))
+        self.assertLess(self.page.index('<div id="boardView"'), self.page.index('<div id="timelineView"'))
+        self.assertEqual(re.findall(r'data-range="(\w+)" aria-pressed="false"', view), ["two", "six", "quarter"])
+        for fragment in ('id="timelineToday"', 'id="timelineBack"', 'id="timelineForward"', 'id="timelineLate"', 'id="timelineScroll"',
+                         'id="timelineDone" class="tl-switch" type="button" role="switch" aria-checked="false"',
+                         '<aside id="timelineVague" class="tl-vague" aria-labelledby="timelineVagueTitle" hidden>', 'id="timelineVagueList"'):
+            self.assertIn(fragment, view)
+        self.assertIn("Show done", view)
+        self.assertIn("Vague deadlines", view)
+        # The Status filter does not apply there: "Show done" is its equivalent.
+        self.assertIn("(view === 'list' || view === 'board')", self.script)
+
+    def test_timeline_script_is_served_before_the_app(self):
+        self.assertLess(self.page.index('src="/timeline-view.js"'), self.page.index('src="/app.js"'))
+        self.assertLess(self.page.index('src="/md-edit.js"'), self.page.index('src="/app.js"'))
+        with urlopen(self.base + "/timeline-view.js", timeout=3) as response:
+            self.assertEqual(response.status, 200)
+            self.assertTrue(response.headers["Content-Type"].startswith("text/javascript"))
+            self.assertIn("const TimelineView", response.read().decode("utf-8"))
+
+    def test_chips_are_focusable_lists_with_full_names_and_the_page_respects_reduced_motion(self):
+        for fragment in ("role', 'list'", "role', 'listitem'", "button.setAttribute('aria-label', entryName(entry));", "TimelineView.neighbour(",
+                         "(prefers-reduced-motion: reduce)", "ids.timelineScroll.addEventListener('keydown', timelineKey);"):
+            self.assertIn(fragment, self.script)
+        for part in ("`Status: ${statusLabel(action.state)}`", "`Due ${dayText(entry.date)}", "`Scheduled ${dayText(entry.scheduled)}`"):
+            self.assertIn(part, self.script)
+        styles = (self.STATIC / "app.css").read_text(encoding="utf-8")
+        for selector in (".tl-chip:focus-visible", ".tl-shade", ".tl-today-line", ".timeline-view.is-agenda", ".tl-cell.is-overdue", ".tl-cell.is-done", ".tl-marker"):
+            self.assertIn(selector, styles)
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_dates_weekends_and_iso_weeks(self):
+        got = node_json("""
+          const T = require(process.argv[1]);
+          process.stdout.write(JSON.stringify({
+            weekdays: ['2026-10-26', '2026-10-31', '2026-11-01'].map(day => [T.weekday(day), T.isWeekend(day)]),
+            mondays: ['2026-10-25', '2026-10-26', '2027-01-03'].map(T.mondayOf),
+            weeks: ['2026-01-01', '2026-12-31', '2027-01-03', '2027-01-04', '2024-12-30', '2021-01-03', '2020-12-31'].map(T.isoWeek),
+            added: [T.addDays('2026-02-27', 2), T.addDays('2028-02-28', 1), T.addDays('2026-12-31', 1), T.addDays('2026-03-29', 1), T.addDays('2026-10-26', -7)],
+            diffs: [T.diffDays('2026-10-25', '2026-11-01'), T.diffDays('2026-11-01', '2026-10-25'), T.diffDays('2026-03-28', '2026-03-30'), T.diffDays('2026-10-25', '2026-10-25')],
+            plain: ['2026-10-25', '2026-02-30', '2026-1-5', 'week of 05/10', '', null, undefined, 20261025, '0050-01-01', '2026-10-25 '].map(T.isPlainDate)
+          }));
+        """)
+        self.assertEqual(got["weekdays"], [[0, False], [5, True], [6, True]])
+        self.assertEqual(got["mondays"], ["2026-10-19", "2026-10-26", "2026-12-28"])
+        self.assertEqual(got["weeks"], [{"year": 2026, "week": 1}, {"year": 2026, "week": 53}, {"year": 2026, "week": 53}, {"year": 2027, "week": 1},
+                                        {"year": 2025, "week": 1}, {"year": 2020, "week": 53}, {"year": 2020, "week": 53}])
+        self.assertEqual(got["added"], ["2026-03-01", "2028-02-29", "2027-01-01", "2026-03-30", "2026-10-19"])
+        self.assertEqual(got["diffs"], [7, -7, 2, 0])
+        self.assertEqual(got["plain"], [True, False, False, False, False, False, False, False, False, False])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_ranges_start_on_the_monday_of_last_week_and_cover_whole_weeks(self):
+        got = node_json("""
+          const T = require(process.argv[1]);
+          const brief = r => ({key: r.key, weeks: r.weeks, start: r.start, end: r.end, days: r.days.length, months: r.months, weekSpans: r.weekSpans.map(w => `${w.year}W${w.week}+${w.span}`),
+            weekend: r.days.map(d => d.weekend ? 1 : 0).join(''), today: r.days.filter(d => d.today).map(d => d.index)});
+          process.stdout.write(JSON.stringify({
+            ranges: T.ranges, six: brief(T.range('2026-10-25')), two: brief(T.range('2026-10-25', 'two')), quarter: brief(T.range('2026-10-25', 'quarter')),
+            unknown: T.range('2026-10-25', 'year').key, monday: T.range('2026-10-26').start, newYear: brief(T.range('2026-12-30', 'quarter')),
+            first: T.range('2026-10-25').days[13]
+          }));
+        """)
+        self.assertEqual(got["ranges"], ["two", "six", "quarter"])
+        six = got["six"]
+        self.assertEqual((six["key"], six["weeks"], six["start"], six["end"], six["days"]), ("six", 6, "2026-10-12", "2026-11-22", 42))
+        self.assertEqual(six["weekend"], "0000011" * 6)
+        self.assertEqual(six["today"], [13])
+        self.assertEqual(six["months"], [{"year": 2026, "month": 10, "start": 0, "span": 20}, {"year": 2026, "month": 11, "start": 20, "span": 22}])
+        self.assertEqual(six["weekSpans"], [f"2026W{week}+7" for week in range(42, 48)])
+        self.assertEqual((got["two"]["end"], got["two"]["days"], got["two"]["today"]), ("2026-10-25", 14, [13]))
+        self.assertEqual((got["quarter"]["end"], got["quarter"]["days"], got["quarter"]["weeks"]), ("2027-01-10", 91, 13))
+        self.assertEqual(got["unknown"], "six")
+        self.assertEqual(got["monday"], "2026-10-19")
+        new_year = got["newYear"]
+        self.assertEqual((new_year["start"], new_year["end"]), ("2026-12-21", "2027-03-21"))
+        self.assertEqual(new_year["weekSpans"][:4], ["2026W52+7", "2026W53+7", "2027W1+7", "2027W2+7"])
+        self.assertEqual([(month["year"], month["month"], month["span"]) for month in new_year["months"]], [(2026, 12, 11), (2027, 1, 31), (2027, 2, 28), (2027, 3, 21)])
+        self.assertEqual(got["first"], {"iso": "2026-10-25", "index": 13, "weekday": 6, "weekend": True, "today": True, "year": 2026, "month": 10, "day": 25, "week": 43, "weekYear": 2026})
+
+    def fixture(self):
+        def action(id_, register, project, **fields):
+            return {"id": id_, "state": " ", "owner": "Jane Doe", "title": f"Title of {id_}", "register": register, "project": project,
+                    "due": "", "scheduled": "", "done": "", "due_note": "", **fields}
+        acme = (self.ACM, "acme / rollout")
+        globex = (self.GLO, "globex / pilot")
+        return [
+            action("ACM-001", *acme, due="2026-10-30", scheduled="2026-10-27"),
+            action("ACM-002", *acme, due="2026-10-30"),
+            action("ACM-003", *acme, due="2026-10-03"),
+            action("ACM-004", *acme, state="/", due="2026-10-17"),
+            action("ACM-005", *acme, state="x", due="2026-10-31", done="2026-10-20"),
+            action("ACM-006", *acme, due_note="week of 05/10"),
+            action("ACM-007", *acme),
+            action("ACM-008", *acme, due="2027-02-01"),
+            action("ACM-009", *acme, state="-", due="2026-10-25"),
+            action("ACM-010", *acme, due="semaine du 05/10"),
+            action("ACM-011", *acme, scheduled="2026-10-27"),
+            action("ACM-012", *acme, due="2026-10-26", scheduled="2026-10-26"),
+            action("ACM-013", *acme, state="x", due="2026-10-01", done="2026-09-01"),
+            action("ACM-014", *acme, state="x", due="2026-10-21"),
+            action("GLO-001", *globex, state="w", due="2026-10-24"),
+            action("GLO-002", *globex, due="2026-10-25"),
+            action("GLO-003", "projects/internal/lab/state/actions.md", "lab", state="-", due="2026-10-27"),
+        ]
+
+    # Lanes in register order (globex, then acme), as the page gives them: the order of the registers of the brain.
+    SETUP = """
+      const T = require(process.argv[1]);
+      const {actions, showDone} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
+      const range = T.range('2026-10-25');
+      const result = T.layout(actions, {today: '2026-10-25', start: range.start, end: range.end, showDone,
+        order: ['projects/clients/globex/missions/pilot/state/actions.md', 'projects/clients/acme/missions/rollout/state/actions.md']});
+    """
+    LAYOUT = SETUP + """
+      const entry = e => [e.id, e.column, e.track, e.overdue, e.done, e.sameDay, e.marker && [e.marker.column, e.marker.from, e.marker.to]];
+      process.stdout.write(JSON.stringify({
+        lanes: result.lanes.map(lane => ({project: lane.project, tracks: lane.tracks, entries: lane.entries.map(entry)})),
+        late: result.late.map(e => e.id), vague: result.vague.map(v => [v.action.id, v.text]), later: result.later.map(a => a.id), total: result.total
+      }));
+    """
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_layout_places_lanes_chips_markers_late_and_vague(self):
+        got = node_json(self.LAYOUT, {"actions": self.fixture(), "showDone": False})
+        # Lanes follow the register order; the lane of a project with nothing to show (lab: cancelled only) is left out.
+        self.assertEqual([lane["project"] for lane in got["lanes"]], ["globex / pilot", "acme / rollout"])
+        globex, acme = got["lanes"]
+        self.assertEqual(globex["tracks"], 1)
+        self.assertEqual(globex["entries"], [["GLO-001", 12, 0, 1, False, False, None], ["GLO-002", 13, 0, 0, False, False, None]])
+        # Per lane: by date then ID. ACM-003 is before the range (column -1, the Late column), ACM-004 is a Saturday and late, ACM-001 is
+        # scheduled on the 27th (a marker on column 15, join over 16 and 17), ACM-012 is scheduled the day it is due (no marker),
+        # and ACM-002 stacks under ACM-001 on the 30th.
+        self.assertEqual(acme["tracks"], 2)
+        self.assertEqual(acme["entries"], [
+            ["ACM-003", -1, 0, 22, False, False, None], ["ACM-004", 5, 0, 8, False, False, None], ["ACM-012", 14, 0, 0, False, True, None],
+            ["ACM-001", 18, 0, 0, False, False, [15, 16, 17]], ["ACM-002", 18, 1, 0, False, False, None]])
+        self.assertEqual(got["late"], ["ACM-003"])
+        # A deadline that is not a date (a text `due`, or the `due:` wording of an action with no 📅) goes to the side list; no deadline, a
+        # scheduled date alone, a cancelled action and a done one (hidden by default) show nowhere; beyond the range: `later`.
+        self.assertEqual(got["vague"], [["ACM-006", "week of 05/10"], ["ACM-010", "semaine du 05/10"]])
+        self.assertEqual(got["later"], ["ACM-008"])
+        self.assertEqual(got["total"], 7)
+        shown = {entry[0] for lane in got["lanes"] for entry in lane["entries"]}
+        self.assertTrue({"ACM-005", "ACM-007", "ACM-009", "ACM-011", "ACM-013", "ACM-014", "GLO-003"}.isdisjoint(shown))
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_done_actions_show_on_request_at_their_done_date(self):
+        got = node_json(self.LAYOUT, {"actions": self.fixture(), "showDone": True})
+        acme = got["lanes"][1]["entries"]
+        done = {entry[0]: entry for entry in acme if entry[4]}
+        # At the done date when there is one (the 20th, column 8), else at the due date (the 21st); never before the range or as late;
+        # the cancelled action is still left out.
+        self.assertEqual(set(done), {"ACM-005", "ACM-014"})
+        self.assertEqual((done["ACM-005"][1], done["ACM-005"][3]), (8, 0))
+        self.assertEqual((done["ACM-014"][1], done["ACM-014"][3]), (9, 0))
+        self.assertEqual(got["late"], ["ACM-003"])
+        self.assertEqual(got["total"], 9)
+        self.assertNotIn("ACM-009", {entry[0] for entry in acme})
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_arrow_keys_walk_a_project_by_date_and_change_project_on_the_closest_date(self):
+        got = node_json(self.SETUP + """
+          const moves = [['ACM-001', 'right'], ['ACM-001', 'left'], ['ACM-001', 'up'], ['ACM-001', 'down'], ['GLO-002', 'down'], ['GLO-001', 'up'], ['ACM-002', 'home'],
+            ['ACM-003', 'end'], ['ACM-003', 'left'], ['ACM-002', 'right'], ['ACM-001', 'sideways'], ['NOPE-1', 'right']];
+          process.stdout.write(JSON.stringify({moves: moves.map(([id, direction]) => T.neighbour(result.lanes, id, direction))}));
+        """, {"actions": self.fixture(), "showDone": False})
+        self.assertEqual(got["moves"], ["ACM-002", "ACM-012", "GLO-002", None, "ACM-012", None, "ACM-003", "ACM-002", None, None, None, None])
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_agenda_lists_each_day_with_its_chips_and_markers(self):
+        got = node_json(self.SETUP + """
+          const agenda = T.agenda(result, range.days);
+          process.stdout.write(JSON.stringify({days: agenda.length,
+            agenda: agenda.filter(d => d.entries.length || d.markers.length).map(d => [d.day.iso, d.entries.map(e => e.id), d.markers.map(e => e.id)])}));
+        """, {"actions": self.fixture(), "showDone": False})
+        self.assertEqual(got["days"], 42)
+        self.assertEqual(got["agenda"], [["2026-10-17", ["ACM-004"], []], ["2026-10-24", ["GLO-001"], []], ["2026-10-25", ["GLO-002"], []],
+                                         ["2026-10-26", ["ACM-012"], []], ["2026-10-27", [], ["ACM-001"]], ["2026-10-30", ["ACM-001", "ACM-002"], []]])
 
 
 if __name__ == "__main__":

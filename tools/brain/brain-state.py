@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.9"
+# requires-python = ">=3.11"
 # dependencies = []
 # ///
-"""Merge skill states across every brain of the workspace.
+"""Map the brains of the workspace and merge their skill states.
 
 A brain is a directory at the Work root named `brain` or `brain-*` that holds
 an AGENTS.md and a .data/ folder. Each transcript belongs to exactly one brain:
@@ -20,8 +20,33 @@ Each brain is a trust boundary declared in its own .data/brain.json (`scope`,
 `description`, ...). `brains` prints the scope and the description next to each
 brain, so that an agent can pick the brain where new content belongs.
 
+Commands (from the Work root, `uv run tools/brain/brain-state.py <command> --help` for details):
+
+    map [--json] [--brain NAME] [--all]   where everything is: brains, clients, projects, pages, registers
+    brains                                the brains found, with their scope and description
+    transcripts [--new | --where FILE]    merged transcript states
+
+`map` is the first command of a session: it replaces the exploration calls that locate the
+brain, client, mission and register to work in. One block per brain (name, scope, `default`
+mark, number of people pages, lines waiting in `inbox/inbox.md`), then one line per project,
+grouped by client (with the client index page) and `internal`. A project is a folder holding
+`state/actions.md`; its line gives:
+
+    name, register ID prefix, actions to do / in progress / waiting / done (by `[ ]` `[/]` `[w]`
+    `[x]`), `late` = unfinished actions whose `📅` date is before today (Europe/Paris), `dec` =
+    decisions still proposed in `state/decisions.md`, `last` = date of the latest `## Timeline`
+    entry of the page, and the page path from the Work root (`<project>/<project>.md`, flagged
+    when missing). Archived projects (`projects/archive/…`, `projects/clients/<client>/archive/…`)
+    are hidden unless `--all`, which flags them `[archived]`. `--brain NAME` keeps one brain.
+    `--json` prints the same data with stable keys (`today`, then per brain `name`, `default`,
+    `scope`, `people`, `inbox_lines`, `clients`, `internal`; per project `label`, `name`, `kind`,
+    `client`, `archived`, `page`, `register`, `prefix`, `actions`, `decisions_proposed`,
+    `last_timeline`). Read-only, no network. `inbox_lines` counts the non-empty lines below the
+    first `---` of `inbox/inbox.md`, else below its title and quote, ignoring triage log lines.
+
 Run from the Work root with `uv run tools/brain/brain-state.py`. Set WORK_DIR to use
-another workspace and TRANSCRIPTS_DIR to override the transcript folder.
+another workspace and TRANSCRIPTS_DIR to override the transcript folder; ACTION_NOW
+(`YYYY-MM-DD HH:MM`) fixes the clock of `map`, as for `action.py`.
 """
 
 from __future__ import annotations
@@ -30,7 +55,9 @@ import argparse
 import importlib.util
 import json
 import os
+import re
 import sys
+from collections import Counter
 from pathlib import Path
 
 
@@ -164,10 +191,210 @@ def cmd_transcripts(brains: list[Path], new: bool, where: str | None) -> int:
     return 0
 
 
+# --- map: where everything is ---------------------------------------------------------------------
+
+STATE_KEYS = {" ": "open", "/": "in_progress", "w": "waiting", "x": "done"}
+TIMELINE_ENTRY = re.compile(r"^[-*]\s+(\d{4}-\d{2}-\d{2})\s+[—–-]")
+PREFIX_HINT = re.compile(r"(?i:pr[eé]fix\w*)[^`\n]{0,40}`([A-Z]{2,5})`")
+INBOX_SEPARATOR = re.compile(r"^-{3,}$")
+INBOX_LOG = re.compile(r"^[-*]\s+\d{4}-\d{2}-\d{2}\s+[—–-]\s+triage\b", re.IGNORECASE)
+
+
+def load_tools() -> tuple:
+    """action.py and decision.py, loaded as decision.py does (one copy of action.py in sys.modules)."""
+    here = Path(__file__).resolve().parent
+    modules = []
+    for file, name in (("action.py", "brain_action"), ("decision.py", "brain_decision")):
+        module = sys.modules.get(name)
+        if module is None:
+            spec = importlib.util.spec_from_file_location(name, here / file)
+            assert spec and spec.loader
+            module = importlib.util.module_from_spec(spec)
+            sys.modules[name] = module
+            spec.loader.exec_module(module)
+        modules.append(module)
+    return tuple(modules)
+
+
+def read_lines(path: Path) -> list[str]:
+    return path.read_text(encoding="utf-8", errors="replace").splitlines()
+
+
+def last_timeline(page: Path) -> str | None:
+    """Date of the most recent `- YYYY-MM-DD — …` entry under the page's `## Timeline`."""
+    if not page.is_file():
+        return None
+    inside, found = False, []
+    for line in read_lines(page):
+        if line.startswith("## "):
+            inside = line[3:].strip().lower() == "timeline"
+        elif inside and (entry := TIMELINE_ENTRY.match(line)):
+            found.append(entry.group(1))
+    return max(found) if found else None
+
+
+def inbox_lines(brain: Path) -> int:
+    """Non-empty lines of inbox/inbox.md left to triage: below the first `---`, else below the title and quote."""
+    path = brain / "inbox/inbox.md"
+    if not path.is_file():
+        return 0
+    lines = [line.strip() for line in read_lines(path)]
+    separator = next((index for index, line in enumerate(lines) if INBOX_SEPARATOR.match(line)), None)
+    if separator is not None:
+        lines = lines[separator + 1:]
+    else:
+        start = 0
+        while start < len(lines) and (not lines[start] or lines[start].startswith(("#", ">"))):
+            start += 1
+        lines = lines[start:]
+    return sum(1 for line in lines if line and not INBOX_LOG.match(line))
+
+
+def people_pages(brain: Path) -> int:
+    folder = brain / "people"
+    if not folder.is_dir():
+        return 0
+    return sum(1 for page in folder.glob("*.md") if page.is_file() and not page.is_symlink() and page.name.lower() != "readme.md")
+
+
+def project_entry(brain: Path, name: str, register: Path, today: str, tools: tuple) -> dict:
+    """One project (a folder holding state/actions.md) of the resolved `brain`, displayed under the brain's `name`."""
+    action, decision = tools
+    folder = register.parent.parent
+    parts = register.relative_to(brain / "projects").parts[:-2]
+    kind = "client" if parts[0] == "clients" else "internal"
+    client = parts[1] if kind == "client" and len(parts) > 1 else None
+    archived = parts[0] == "archive" or (kind == "client" and len(parts) > 2 and parts[2] == "archive")
+    base = f"{name}/projects/{'/'.join(parts)}"
+    page = folder / f"{folder.name}.md"
+
+    lines = read_lines(register)
+    counts = {"open": 0, "in_progress": 0, "waiting": 0, "done": 0, "overdue": 0}
+    prefixes: Counter = Counter()
+    for number, line in enumerate(lines, 1):
+        if not line.startswith("- ["):
+            continue
+        parsed = action.parse_action(line, register, brain, number)
+        if parsed is None:
+            continue
+        if parsed["state"] in STATE_KEYS:
+            counts[STATE_KEYS[parsed["state"]]] += 1
+        if parsed["state"] in action.OPEN_STATES and parsed["due"] and parsed["due"] < today:
+            counts["overdue"] += 1
+        prefixes[parsed["id"].split("-")[0]] += 1
+    prefix = prefixes.most_common(1)[0][0] if prefixes else None
+    if prefix is None:
+        header = next((index for index, line in enumerate(lines) if line.startswith("## ")), len(lines))
+        found = PREFIX_HINT.search("\n".join(lines[:header]))
+        prefix = found.group(1) if found else None
+
+    decisions = folder / "state/decisions.md"
+    proposed = None
+    if decisions.is_file() and not decisions.is_symlink():
+        proposed = sum(1 for item in decision.parse(read_lines(decisions)) if item.state == "proposed")
+
+    return {
+        "label": action.project_label(register, brain),
+        "name": folder.name,
+        "kind": kind,
+        "client": client,
+        "archived": archived,
+        "page": f"{base}/{folder.name}.md" if page.is_file() else None,
+        "register": f"{base}/state/actions.md",
+        "prefix": prefix,
+        "actions": counts,
+        "decisions_proposed": proposed,
+        "last_timeline": last_timeline(page),
+    }
+
+
+def brain_map(brain: Path, default: Path | None, include_archived: bool, today: str, tools: tuple) -> dict:
+    name = brain.name
+    declared = boundary(brain)
+    brain = brain.resolve()
+    action = tools[0]
+    registers = [register for register in action.registers(brain) if len(register.relative_to(brain / "projects").parts) > 2]
+    projects = [project_entry(brain, name, register, today, tools) for register in registers]
+    if not include_archived:
+        projects = [project for project in projects if not project["archived"]]
+    projects.sort(key=lambda project: (project["archived"], project["name"]))
+
+    clients: dict[str, dict] = {}
+    root = brain / "projects/clients"
+    if root.is_dir():
+        for folder in sorted(root.iterdir()):
+            if folder.is_dir() and not folder.is_symlink() and not folder.name.startswith("."):
+                index = folder / f"{folder.name}.md"
+                page = f"{name}/projects/clients/{folder.name}/{folder.name}.md" if index.is_file() else None
+                clients[folder.name] = {"name": folder.name, "page": page, "projects": []}
+    for project in projects:
+        if project["client"] is not None:
+            clients.setdefault(project["client"], {"name": project["client"], "page": None, "projects": []})["projects"].append(project)
+    return {
+        "name": name,
+        "default": default is not None and brain == default.resolve(),
+        "scope": one_line(declared.get("scope")),
+        "people": people_pages(brain),
+        "inbox_lines": inbox_lines(brain),
+        "clients": [clients[key] for key in sorted(clients)],
+        "internal": [project for project in projects if project["client"] is None],
+    }
+
+
+def render_map(data: dict) -> str:
+    """The map as text: a header per brain, then one aligned line per project, grouped by client."""
+    out: list[str] = []
+    for brain in data["brains"]:
+        tags = ", ".join(tag for tag in (brain["scope"], "default" if brain["default"] else "") if tag)
+        inbox = f"inbox {brain['inbox_lines']} to triage" if brain["inbox_lines"] else "inbox empty"
+        out.append(f"{brain['name']}" + (f" ({tags})" if tags else "") + f" — people {brain['people']} — {inbox}")
+        groups = [(f"client {client['name']}  {client['page'] or '(no index page)'}", client["projects"]) for client in brain["clients"]]
+        if brain["internal"]:
+            groups.append(("internal", brain["internal"]))
+        shown = [project for _, projects in groups for project in projects]
+        names = {id(project): project["name"] + (" [archived]" if project["archived"] else "") for project in shown}
+        name_width = max(map(len, names.values()), default=0)
+        prefix_width = max((len(project["prefix"] or "-") for project in shown), default=1)
+        numbers = [value for project in shown for value in (*project["actions"].values(), project["decisions_proposed"]) if value is not None]
+        digits = max((len(str(value)) for value in numbers), default=1)
+        for title, projects in groups:
+            out.append(f"  {title}")
+            for project in projects:
+                actions = project["actions"]
+                proposed = "-" if project["decisions_proposed"] is None else str(project["decisions_proposed"])
+                page = project["page"] or project["register"].removesuffix("/state/actions.md") + f"/{project['name']}.md (missing)"
+                out.append(
+                    f"    {names[id(project)]:<{name_width}}  {project['prefix'] or '-':<{prefix_width}}"
+                    f"  open {actions['open']:>{digits}}  doing {actions['in_progress']:>{digits}}  wait {actions['waiting']:>{digits}}"
+                    f"  done {actions['done']:>{digits}}  late {actions['overdue']:>{digits}}  dec {proposed:>{digits}}"
+                    f"  last {project['last_timeline'] or '-':<10}  {page}"
+                )
+    out.append("")
+    out.append("open/doing/wait/done: actions by state; late: unfinished actions past their due date; dec: proposed decisions; last: latest Timeline entry.")
+    return "\n".join(out)
+
+
+def cmd_map(brains: list[Path], only: str | None, as_json: bool, include_archived: bool) -> int:
+    if only is not None:
+        brains = [brain for brain in brains if brain.name == only]
+        if not brains:
+            raise SystemExit(f"unknown brain {only}: choose one of " + ", ".join(brain.name for brain in discover()))
+    tools = load_tools()
+    today = tools[0].now().date().isoformat()
+    default = default_brain()
+    data = {"today": today, "brains": [brain_map(brain, default, include_archived, today, tools) for brain in brains]}
+    print(json.dumps(data, ensure_ascii=False, indent=2) if as_json else render_map(data))
+    return 0
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("brains", help="list the brains found, their tracked transcripts, scope and description")
+    mp = sub.add_parser("map", help="where everything is: brains, clients, projects, pages, registers and their state (read-only)")
+    mp.add_argument("--json", action="store_true", help="structured output with stable keys instead of text")
+    mp.add_argument("--brain", metavar="NAME", help="only this brain (as listed by `brains`)")
+    mp.add_argument("--all", action="store_true", help="also show the archived projects, flagged [archived]")
     tr = sub.add_parser("transcripts", help="merged transcript states (status, brain, file)")
     group = tr.add_mutually_exclusive_group()
     group.add_argument("--new", action="store_true", help="transcripts listed by no brain")
@@ -178,6 +405,8 @@ def main() -> int:
     check_expected(brains)
     if args.command == "brains":
         return cmd_brains(brains)
+    if args.command == "map":
+        return cmd_map(brains, args.brain, args.json, args.all)
     return cmd_transcripts(brains, args.new, args.where)
 
 

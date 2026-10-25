@@ -65,6 +65,7 @@ _config_spec.loader.exec_module(work_config)
 ACTION_STATUS = {"bad_request": HTTPStatus.BAD_REQUEST, "not_found": HTTPStatus.NOT_FOUND, "conflict": HTTPStatus.CONFLICT}
 ASSETS = Path(__file__).resolve().parent / "static"
 DATE_RE = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+DUE_NOTE_RE = re.compile(r"-\s*due\s*:\s*(.*)", re.IGNORECASE | re.DOTALL)
 STATUS = {" ", "/", "w", "x", "-"}
 PRIORITY = {"", "⏫", "🔼", "🔽"}
 UNDO_LIMIT = 20
@@ -84,9 +85,13 @@ SOURCE_ENTERED = "entered in the local interface"
 NOTE_HEADER = {"note": "Note from", "project": "project: ", "register": "register", "triage": "to triage"}
 WRITE_LOCK = threading.Lock()
 TOOL_LOCK = threading.Lock()
+# In a tool's arguments: the folder name of the chosen brain, for a script that picks a brain by name rather than from BRAIN_DIR.
+BRAIN_ARG = "<brain>"
 TOOLS = {
     "links": ("Memory", "Check links", "Checks the Markdown links of the brain.", "brain/check-links.py", ()),
     "brains": ("Memory", "List brains", "Shows the memories present and the transcripts they track.", "brain/brain-state.py", ("brains",)),
+    "map": ("Memory", "Brain map", "One line per project: page, register prefix, actions by state, overdue, proposed decisions, last timeline entry.", "brain/brain-state.py", ("map", "--brain", BRAIN_ARG)),
+    "timeline-roll": ("Memory", "Timeline months to move", "Dry run: lists the timeline entries of past months that would move to journal/.", "brain/timeline.py", ("roll",)),
     "transcripts": ("Memory", "New transcripts", "Finds the transcripts that no brain tracks.", "brain/brain-state.py", ("transcripts", "--new")),
     "board": ("Actions", "Text view of actions", "Shows the registers by project in a terminal format.", "brain/action.py", ("board",)),
     "sweep_preview": ("Actions", "Actions to sort (preview)", "Lists the actions placed under a section that does not match their state (checked, cancelled or reopened), without changing anything.", "brain/action.py", ("sweep",)),
@@ -125,7 +130,7 @@ def run_tool(tool_id: str, brain: Path) -> dict:
     environment["BRAIN_DIR"] = str(brain)
     try:
         result = subprocess.run(
-            [uv, "run", str(TOOLS_ROOT / "tools" / script), *args], cwd=WORK, env=environment,
+            [uv, "run", str(TOOLS_ROOT / "tools" / script), *(brain.name if arg == BRAIN_ARG else arg for arg in args)], cwd=WORK, env=environment,
             capture_output=True, text=True, errors="replace", timeout=90, check=False,
         )
     except subprocess.TimeoutExpired:
@@ -828,6 +833,30 @@ def _render_table_close(self, tokens, idx, options, env) -> str:
     return self.renderToken(tokens, idx, options, env) + "</div>\n"
 
 
+UNDERLINE_CLOSE = re.compile(r"</u>", re.IGNORECASE)
+
+
+def _underline(state, silent: bool) -> bool:
+    """Inline rule for `<u>text</u>`, the underline Obsidian notes use and Markdown lacks. It matches the bare tags only: no
+    attribute, no other tag. The tags are emitted by the parser and so always balanced; an opening tag with no closing one in the
+    same block (and any stray closing tag) stays what raw HTML is everywhere else, escaped text."""
+    if state.src[state.pos : state.pos + 3].lower() != "<u>":
+        return False
+    close = UNDERLINE_CLOSE.search(state.src, state.pos + 3, state.posMax)
+    if not close:
+        return False
+    if not silent:
+        state.push("underline_open", "u", 1).markup = "<u>"
+        end = state.posMax
+        state.pos += 3
+        state.posMax = close.start()
+        state.md.inline.tokenize(state)
+        state.posMax = end
+        state.push("underline_close", "u", -1).markup = "</u>"
+    state.pos = close.end()
+    return True
+
+
 def _heading_ids(state) -> None:
     used: dict[str, int] = {}
     tokens = state.tokens
@@ -840,11 +869,12 @@ def _heading_ids(state) -> None:
 
 
 def build_markdown() -> MarkdownIt:
-    """Raw HTML in documents is escaped (never rendered); links and images are rewritten by the rules above."""
+    """Raw HTML in documents is escaped (never rendered), but for a bare `<u>…</u>` (underline); links and images are rewritten by the rules above."""
     markdown = MarkdownIt("commonmark", {"html": False, "linkify": False, "typographer": False}).enable(["table", "strikethrough"])
     for name, rule in (("link_open", _render_link_open), ("link_close", _render_link_close), ("image", _render_image),
                        ("table_open", _render_table_open), ("table_close", _render_table_close)):
         markdown.add_render_rule(name, rule)
+    markdown.inline.ruler.before("html_inline", "underline", _underline)
     markdown.core.ruler.push("heading_ids", _heading_ids)
     return markdown
 
@@ -905,10 +935,35 @@ class Store:
                 pass
         return os.environ.get("BRAIN_OWNER", "").strip()
 
+    @staticmethod
+    def _due_notes(path: Path, entries: list[dict]) -> None:
+        """Give each action `due_note`: the wording of its `due:` sub-bullet when it has no 📅 date ("week of 05/10"), else "".
+        The Timeline lists these as vague deadlines. A "—" (no deadline), or a register that changed meanwhile, gives an empty note."""
+        for entry in entries:
+            entry["due_note"] = ""
+        pending = [entry for entry in entries if not entry["due"]]
+        if not pending:
+            return
+        try:
+            lines = path.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            return
+        for entry in pending:
+            index = entry["line"] - 1
+            if index >= len(lines) or f"**{entry['id']}**" not in lines[index]:
+                continue
+            for start, end in action_tool.items(lines, index, action_tool.last_detail(lines, index)):
+                match = DUE_NOTE_RE.match(action_tool.item_text(lines, start, end))
+                if match:
+                    note = " ".join(match.group(1).split())
+                    entry["due_note"] = "" if note in {"", "—", "–", "-"} else note[:200]
+                    break
+
     def _scan_registers(self) -> list[dict]:
         infos = []
         for path in self.registers():
             entries = action_tool.load(path, self.brain)
+            self._due_notes(path, entries)
             label = entries[0]["project"] if entries else action_tool.project_label(path, self.brain)
             prefixes = {entry["id"].split("-", 1)[0] for entry in entries}
             infos.append({"file": path, "path": path.relative_to(self.brain).as_posix(), "label": label,
@@ -1448,7 +1503,7 @@ class Handler(BaseHTTPRequestHandler):
             with WRITE_LOCK:
                 self._json(HTTPStatus.OK, store.undo_state())
             return
-        assets = {"/": ("index.html", "text/html; charset=utf-8"), "/app.css": ("app.css", "text/css; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8")}
+        assets = {"/": ("index.html", "text/html; charset=utf-8"), "/app.css": ("app.css", "text/css; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8"), "/md-edit.js": ("md-edit.js", "text/javascript; charset=utf-8"), "/timeline-view.js": ("timeline-view.js", "text/javascript; charset=utf-8")}
         if path not in assets:
             self._json(HTTPStatus.NOT_FOUND, {"error": "Page not found."})
             return
