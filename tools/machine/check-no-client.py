@@ -1,15 +1,30 @@
 #!/usr/bin/env python3
-"""Reject known client and person names in publishable repository files.
+"""Reject known client, person and employer names in publishable repository files.
 
-Default mode: scan this Work repository (staged or worktree) against the names of
-the default brain (clients and people): BRAIN_DIR, else the default brain of the Work
-root or of the nearest parent folder that has one (see work_config.py).
+Work mode (no `--brain`): scan this Work repository (staged or worktree) against the
+names of EVERY brain at the Work root (folders named `brain` or `brain-<name>`, the
+default brain included), because the public repository must never carry a name from a
+private brain. A brain contributes:
+
+- its client folders (`projects/clients/<name>/`, except `_*`) and its people pages
+  (`people/<name>.md`, except `_*` and README), with dashes also read as spaces;
+- the suffix of its folder (`acme` for `brain-acme`, with the same dash/space forms),
+  unless its `.data/brain.json` declares `"scope": "personal"`. A missing, empty or
+  unreadable scope counts as not personal; the bare `brain` folder has no suffix.
+
+Names shorter than 4 characters are ignored. The Work root is the parent of BRAIN_DIR
+when set, else the Work root or the nearest parent folder that holds a brain (see
+work_config.py). A Work with no brain at all prints a notice and passes, so that a
+fresh starter clone can still commit.
 
 Brain mode (`--brain DIR`): scan the Git repository of one brain against the
 client names of the OTHER brains of the same Work root. A brain is a trust
 boundary: the client folders of another brain (`<other>/projects/clients/<name>/`)
 must not appear in its paths or content, except the names listed in the `allow`
 field of its own `.data/brain.json`.
+
+The Work pre-commit hook runs the Work mode with `--staged`; the brain pre-commit hook
+runs the brain mode with `--staged`.
 """
 
 from __future__ import annotations
@@ -21,27 +36,15 @@ import subprocess
 import sys
 from pathlib import Path
 
-import work_config  # next to this script; owns the default-brain rule
+import work_config  # next to this script; owns the rule that says what a brain folder is
 
 ROOT = Path(__file__).resolve().parents[2]
 BRAIN_NAME = re.compile(r"^brain(-[a-z0-9][a-z0-9-]*)?$")
-USAGE = "usage: check-no-client.sh [--staged|--worktree] | check-no-client.py --brain DIR --staged|--worktree"
-
-
-def brain_path() -> Path:
-    if "BRAIN_DIR" in os.environ:
-        return Path(os.environ["BRAIN_DIR"]).resolve()
-    for directory in (ROOT, *ROOT.parents):
-        try:
-            candidate = work_config.default_brain(directory)
-        except (work_config.ConfigError, OSError):
-            continue  # unreadable parent folder, or an invalid setting there: keep looking
-        if candidate is not None and (candidate / "projects/clients").is_dir() and (candidate / "people").is_dir():
-            return candidate
-    return ROOT / "brain"
-
-
-BRAIN = brain_path()
+PERSONAL_SCOPE = "personal"
+USAGE = (
+    "usage: check-no-client.sh [--staged|--worktree]  (this repository against the names of every brain)\n"
+    "       check-no-client.py --brain DIR --staged|--worktree  (one brain against the clients of the others)"
+)
 
 
 def git(repo: Path, *args: str) -> bytes:
@@ -53,20 +56,75 @@ def forms(name: str) -> set[str]:
     return {name.casefold(), name.replace("-", " ").casefold()}
 
 
-def names() -> set[str]:
-    roots = (BRAIN / "projects/clients", BRAIN / "people")
-    if not all(root.is_dir() for root in roots):
-        raise RuntimeError("private brain with projects/clients/ and people/ is required")
+def brain_dir() -> Path | None:
+    """BRAIN_DIR when set: a brain to scan even when its folder is not named brain-*."""
+    return Path(os.environ["BRAIN_DIR"]).resolve() if "BRAIN_DIR" in os.environ else None
+
+
+def work_root() -> Path:
+    """The folder that holds the brains: the parent of BRAIN_DIR, else the Work root or the nearest parent with a brain."""
+    explicit = brain_dir()
+    if explicit is not None:
+        return explicit.parent
+    for directory in (ROOT, *ROOT.parents):
+        try:
+            if work_config.find_brains(directory):
+                return directory
+        except OSError:
+            continue  # unreadable parent folder: keep looking
+    return ROOT
+
+
+def work_brains() -> list[Path]:
+    """Every brain of the Work root (folders named brain or brain-*) and BRAIN_DIR when it is set."""
+    root = work_root()
+    if not root.is_dir():
+        return []
+    found = {path.resolve(): path for path in root.iterdir() if BRAIN_NAME.fullmatch(path.name) and path.is_dir()}
+    explicit = brain_dir()
+    if explicit is not None and explicit.is_dir():
+        found.setdefault(explicit, explicit)
+    return sorted(found.values(), key=lambda path: path.name)
+
+
+def declared_scope(brain: Path) -> str:
+    """The `scope` of the brain's .data/brain.json, casefolded; empty when missing, unreadable or not text."""
+    try:
+        declared = json.loads((brain / ".data/brain.json").read_bytes()).get("scope")
+    except (OSError, ValueError, AttributeError):  # no declaration, invalid JSON, or not an object
+        return ""
+    return declared.strip().casefold() if isinstance(declared, str) else ""
+
+
+def folder_suffix(brain: Path) -> str:
+    """`acme` for `brain-acme`; empty for the bare `brain` folder and for a folder that is not named brain-<name>."""
+    return brain.name.removeprefix("brain-") if BRAIN_NAME.fullmatch(brain.name) and brain.name != "brain" else ""
+
+
+def brain_names(brain: Path) -> set[str]:
+    """The names one brain keeps out of the public repository, casefolded, of 4 characters or more.
+
+    Its client folders, its people pages and, unless the brain is personal, its folder suffix
+    (the employer or client the brain is named after).
+    """
     found: set[str] = set()
-    for path in roots[0].iterdir():
-        if path.is_dir() and not path.name.startswith("_"):
-            found.add(path.name)
-            found.add(path.name.replace("-", " "))
-    for path in roots[1].glob("*.md"):
-        if not path.name.startswith("_") and path.name.casefold() != "readme.md":
-            found.add(path.stem)
-            found.add(path.stem.replace("-", " "))
-    return {name.casefold() for name in found if len(name) >= 4}
+    clients, people = brain / "projects/clients", brain / "people"
+    if clients.is_dir():
+        for path in clients.iterdir():
+            if path.is_dir() and not path.name.startswith("_"):
+                found |= forms(path.name)
+    if people.is_dir():
+        for path in people.glob("*.md"):
+            if not path.name.startswith("_") and path.name.casefold() != "readme.md":
+                found |= forms(path.stem)
+    if declared_scope(brain) != PERSONAL_SCOPE and folder_suffix(brain):
+        found |= forms(folder_suffix(brain))
+    return {name for name in found if len(name) >= 4}
+
+
+def names(brains: list[Path]) -> set[str]:
+    """The names of every brain: what the Work repository must never contain."""
+    return {name for brain in brains for name in brain_names(brain)}
 
 
 def other_brains(brain: Path) -> list[Path]:
@@ -181,7 +239,11 @@ def main() -> int:
     mode, brain = parsed
     try:
         if brain is None:
-            repo, blocked, label = ROOT, {name: "" for name in names()}, "known name"
+            brains = work_brains()
+            if not brains:
+                print("Known-name scan: no brain at the Work root, nothing to check")
+                return 0
+            repo, blocked, label = ROOT, {name: "" for name in names(brains)}, "known name"
         else:
             if not brain.is_dir():
                 raise RuntimeError(f"brain not found: {brain}")

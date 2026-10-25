@@ -1,0 +1,12 @@
+#!/usr/bin/env bash
+# pre-push hook (Work and brain): the identity and safety checks of tools/machine/GIT-IDENTITY.md before a push
+# (environment overrides, effective author and SSH command with their origin, brain trust boundary, SSH account,
+# fast-forward of every pushed ref). Git passes the remote name as $1 and the ref updates on stdin.
+# Installed by tools/machine/bootstrap.sh.
+set -euo pipefail
+export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
+TOP="$(git rev-parse --show-toplevel)"
+WORK="$TOP"; [[ -f "$WORK/tools/machine/preflight-push.py" ]] || WORK="$(dirname "$TOP")"
+[[ -f "$WORK/tools/machine/preflight-push.py" ]] || { echo "pre-push: preflight-push.py not found, check skipped" >&2; exit 0; }
+command -v uv >/dev/null || { echo "pre-push: uv not found, check skipped" >&2; exit 0; }
+exec uv run "$WORK/tools/machine/preflight-push.py" --hook --repo "$TOP" -- ${1:+"$1"} >&2

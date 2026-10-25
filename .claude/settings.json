@@ -1,1 +1,16 @@
-{}
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "uv run --quiet --no-project \"$CLAUDE_PROJECT_DIR/tools/machine/hooks/claude-bash-guard.py\"",
+            "timeout": 10
+          }
+        ]
+      }
+    ]
+  }
+}

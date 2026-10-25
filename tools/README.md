@@ -49,4 +49,6 @@ Installation, update, Git hooks and checks of the workspace on a machine: see [m
 | `uv run tools/machine/work_config.py <command>` | Skill configuration (`check`, `list-brains`, `default-brain`, `list-own`, `list-third-party`, `list-catalog`, `lock`, `adopt [--brain B]`, `stamp`, `status`) | [README.md](machine/README.md) |
 | `uv run tools/machine/doctor.py` | Read-only local diagnosis of the workspace, the brains and their boundaries | [README.md](machine/README.md) |
 | `tools/machine/check-links.sh` | Checks the configuration, the skill links and copies and the Markdown links of every brain | [README.md](machine/README.md) |
-| `tools/machine/check-no-client.sh [--staged \| --worktree]` | Optional manual scan for the client and person names known to the default brain | [README.md](machine/README.md) |
+| `tools/machine/check-no-client.sh [--staged \| --worktree]` | Scan for the client and person names of every brain and the employer name; run on the staged files by the Work pre-commit hook | [README.md](machine/README.md) |
+| `uv run tools/machine/preflight-push.py [--repo DIR] [REMOTE]` | Identity, SSH account, `brain.json` boundary and fast-forward checks before a push; run by the `pre-push` hook of Work and of every brain | [GIT-IDENTITY.md](machine/GIT-IDENTITY.md) |
+| `tools/machine/hooks/claude-bash-guard.py` | Claude Code hook (`.claude/settings.json`): refuses direct `python`, deletions or moves out of `artifacts/`, and Git hook bypasses | [README.md](machine/README.md) |

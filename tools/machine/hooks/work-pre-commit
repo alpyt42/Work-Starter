@@ -1,7 +1,21 @@
 #!/usr/bin/env bash
-# pre-commit hook of the Work repository: refuse staged credentials. Installed by tools/machine/bootstrap.sh.
+# pre-commit hook of the Work repository: refuse staged credentials, and staged content that names a
+# client, a person or an employer known to a private brain (the client folders and people pages of every
+# brain at the Work root, and the folder suffix of each brain that is not personal): this repository is
+# public. A hit is reported by file and matched name, never as the list of names. Installed by tools/machine/bootstrap.sh.
 set -euo pipefail
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 WORK="$(git rev-parse --show-toplevel)"
 command -v uv >/dev/null || { echo "pre-commit: uv not found, check skipped" >&2; exit 0; }
-uv run "$WORK/tools/machine/hooks/check-staged-secrets.py"
+status=0
+
+# Credentials in the staged additions.
+uv run "$WORK/tools/machine/hooks/check-staged-secrets.py" || status=1
+
+# Known names of the private brains in the staged files (a Work without any brain passes).
+if [[ -f "$WORK/tools/machine/check-no-client.py" ]]; then
+  uv run "$WORK/tools/machine/check-no-client.py" --staged || status=1
+fi
+
+[[ $status -eq 0 ]] || echo "Commit refused: fix the problems and stage again." >&2
+exit $status

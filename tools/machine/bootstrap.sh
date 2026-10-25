@@ -16,14 +16,17 @@ if [[ -z "$brains" ]]; then
 fi
 
 # Git hooks (local to each clone, so they are installed here): secrets and message checks in Work,
-# action sections, links, secrets and message checks in every brain.
+# action sections, links, secrets and message checks in every brain; identity and fast-forward
+# checks before every push (pre-push, in Work and in every brain).
 install -m 755 tools/machine/hooks/work-pre-commit .git/hooks/pre-commit
 install -m 755 tools/machine/hooks/commit-msg .git/hooks/commit-msg
+install -m 755 tools/machine/hooks/pre-push .git/hooks/pre-push
 while IFS= read -r brain; do
   if [[ -n "$brain" && -d "$brain/.git" ]]; then
     mkdir -p "$brain/.git/hooks"
     install -m 755 tools/machine/hooks/brain-pre-commit "$brain/.git/hooks/pre-commit"
     install -m 755 tools/machine/hooks/commit-msg "$brain/.git/hooks/commit-msg"
+    install -m 755 tools/machine/hooks/pre-push "$brain/.git/hooks/pre-push"
   fi
 done <<< "$brains"
 
