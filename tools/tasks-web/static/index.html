@@ -153,20 +153,27 @@
               <button class="tl-seg-button" type="button" data-range="quarter" aria-pressed="false" title="Thirteen weeks, from Monday of last week">Quarter</button>
             </div>
             <div class="tl-nav">
-              <button id="timelineBack" class="icon-button tl-step" type="button" aria-label="Back one week" title="Back one week"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.75 4.5 6.25 8l3.5 3.5"/></svg></button>
+              <button id="timelineBack" class="icon-button tl-step" type="button" aria-label="Back one week" title="Back one week" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M9.75 4.5 6.25 8l3.5 3.5"/></svg></button>
               <button id="timelineToday" class="button button-small" type="button" title="Bring today into view">Today</button>
-              <button id="timelineForward" class="icon-button tl-step" type="button" aria-label="Forward one week" title="Forward one week"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.25 4.5 9.75 8l-3.5 3.5"/></svg></button>
+              <button id="timelineForward" class="icon-button tl-step" type="button" aria-label="Forward one week" title="Forward one week" hidden><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M6.25 4.5 9.75 8l-3.5 3.5"/></svg></button>
             </div>
-            <button id="timelineLate" class="tl-late-jump" type="button" title="Go to the late actions" hidden></button>
+            <span id="timelineScale" class="tl-scale"></span>
+            <button id="timelineLate" class="tl-late-jump" type="button" title="Go to the first overdue action" hidden></button>
             <button id="timelineDone" class="tl-switch" type="button" role="switch" aria-checked="false" title="Show the actions already done, at their done date"><span class="tl-switch-track" aria-hidden="true"></span><span>Show done</span></button>
           </div>
+          <div id="timelineSummary" class="tl-summary" role="group" aria-label="Deadlines at a glance"></div>
           <div class="tl-body">
             <div id="timelineScroll" class="tl-scroll" role="region" aria-label="Timeline frieze"></div>
-            <aside id="timelineVague" class="tl-vague" aria-labelledby="timelineVagueTitle" hidden>
-              <div class="section-head"><h2 id="timelineVagueTitle">Vague deadlines</h2><span id="timelineVagueCount" class="section-count"></span></div>
-              <p class="tl-vague-hint">The deadline is a wording, not a date: these actions stay off the frieze.</p>
-              <ul id="timelineVagueList" class="tl-vague-list"></ul>
-            </aside>
+            <section id="timelineTray" class="tl-tray" aria-labelledby="timelineTrayTitle" hidden>
+              <div class="tl-tray-head">
+                <h2 id="timelineTrayTitle" class="tl-tray-title">
+                  <button id="timelineTrayToggle" class="tl-tray-toggle" type="button" aria-expanded="true" aria-controls="timelineTrayBody"><svg class="fold-chevron" viewBox="0 0 16 16" aria-hidden="true"><path d="M4.5 6.25 8 9.75l3.5-3.5"/></svg><span>No deadline</span><span id="timelineTrayCount" class="section-count"></span><span id="timelineTrayMore" class="tl-tray-more"></span></button>
+                </h2>
+                <span id="timelineTrayHint" class="tl-tray-hint">Drag a card onto a day to plan it.</span>
+                <label class="tl-tray-search"><span class="sr-only">Search the actions without a deadline</span><input id="timelineTraySearch" type="search" placeholder="Search" autocomplete="off" spellcheck="false"></label>
+              </div>
+              <div id="timelineTrayBody" class="tl-tray-body"><div id="timelineTrayList"></div></div>
+            </section>
           </div>
         </div>
         <div id="docsView" class="docs-view" hidden>
@@ -313,6 +320,7 @@
         <div><dt><kbd>1</kbd> to <kbd>6</kbd></dt><dd>Today, Actions, Board, Timeline, Notes, Search</dd></div>
         <div><dt><kbd>j</kbd> <kbd>k</kbd> or <kbd>↓</kbd> <kbd>↑</kbd></dt><dd>Next or previous action</dd></div>
         <div><dt><kbd>←</kbd> <kbd>→</kbd> <kbd>↑</kbd> <kbd>↓</kbd></dt><dd>On the Timeline: by date, and by project</dd></div>
+        <div><dt><kbd>Alt</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>On the Timeline: move the deadline by a day (with <kbd>Shift</kbd>, a week)</dd></div>
         <div><dt><kbd>Enter</kbd></dt><dd>Open the details</dd></div>
         <div><dt><kbd>s</kbd></dt><dd>Change the status of the selected action</dd></div>
         <div><dt><kbd>d</kbd></dt><dd>Change its due date</dd></div>

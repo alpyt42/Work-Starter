@@ -98,6 +98,58 @@ class TasksWebTest(unittest.TestCase):
         self.assertEqual(notes["EXM-005"], ("", "x" * 200))
         self.assertEqual(notes["EXM-009"], ("", ""))
 
+    def test_planning_a_deadline_by_dragging_is_the_due_date_update_and_undo_restores_the_register(self):
+        # What the Timeline sends when a card is dropped on a day, a chip is moved, or a chip goes back to the tray: the line of the action
+        # as the page holds it, with the one new `due`.
+        self.register.write_text(
+            "# Actions\n\n## Open\n"
+            "- [ ] **EXM-001** — Jane Doe — Dated 📅 2026-10-15\n"
+            "- [/] **EXM-002** — Jane Doe — Undated\n    - source: kickoff\n"
+            "- [ ] **EXM-003** — Jane Doe — Vague\n    - due: week of 05/10\n", encoding="utf-8")
+        original = self.register.read_bytes()
+
+        def change(action_id, **fields):
+            current = next(item for item in self.request("GET", "/api/actions")[1]["actions"] if item["id"] == action_id)
+            body = {"title": current["raw_title"], "owner": current["owner"], "state": current["state"], "priority": current["priority"],
+                    "due": current["due"], "scheduled": current["scheduled"], **fields}
+            status, result = self.request("PATCH", f"/api/actions/{action_id}", {"version": current["version"], "action": body})
+            self.assertEqual(status, 200, result)
+            return result
+
+        def due(action_id):
+            return next(item for item in self.request("GET", "/api/actions")[1]["actions"] if item["id"] == action_id)
+
+        # A card from the tray onto a day: the undated action gets its 📅 date, nothing else changes.
+        result = change("EXM-002", due="2026-10-28")
+        self.assertEqual(due("EXM-002")["due"], "2026-10-28")
+        self.assertIn("**EXM-002** — Jane Doe — Undated 📅 2026-10-28", self.register.read_text(encoding="utf-8"))
+        self.assertTrue(result["undo"]["available"])
+        # A vague action: it gets a date too, its `due:` wording stays in the register but is no longer what the page shows.
+        change("EXM-003", due="2026-11-02")
+        vague = due("EXM-003")
+        self.assertEqual((vague["due"], vague["due_note"]), ("2026-11-02", ""))
+        self.assertIn("    - due: week of 05/10", self.register.read_text(encoding="utf-8"))
+        # A chip moved by a day (Alt+→), then back onto the tray (no deadline): the date is replaced, then removed.
+        change("EXM-001", due="2026-10-16")
+        self.assertEqual(due("EXM-001")["due"], "2026-10-16")
+        change("EXM-001", due="")
+        self.assertEqual(due("EXM-001")["due"], "")
+        self.assertNotIn("📅 2026-10-15", self.register.read_text(encoding="utf-8").split("EXM-002")[0])
+        # Each of them is one undo step, newest first, and the register comes back byte for byte.
+        for _step in range(4):
+            state = self.request("GET", "/api/undo")[1]
+            self.assertTrue(state["available"])
+            status, _ = self.request("POST", "/api/undo", {"label": state["label"]})
+            self.assertEqual(status, 200)
+        self.assertEqual(self.register.read_bytes(), original)
+        # A drop on an action another write has changed meanwhile is refused, not applied.
+        stale = due("EXM-002")
+        change("EXM-002", due="2026-10-29")
+        status, _ = self.request("PATCH", "/api/actions/EXM-002", {"version": stale["version"], "action": {
+            "title": stale["raw_title"], "owner": stale["owner"], "state": stale["state"], "priority": stale["priority"], "due": "2026-10-30", "scheduled": ""}})
+        self.assertEqual(status, 409)
+        self.assertEqual(due("EXM-002")["due"], "2026-10-29")
+
     def test_reads_real_register_format(self):
         status, data = self.request("GET", "/api/actions")
         self.assertEqual(status, 200)
@@ -2238,10 +2290,12 @@ def node_json(script, payload=None):
 
 
 class TimelineViewTest(unittest.TestCase):
-    """The Timeline view: its markup and wiring in the page, and the date logic of timeline-view.js (run under node)."""
+    """The Timeline view: its markup and wiring in the page, and the logic of timeline-view.js (run under node)."""
     STATIC = TOOL.parent / "static"
     ACM = "projects/clients/acme/missions/rollout/state/actions.md"
     GLO = "projects/clients/globex/missions/pilot/state/actions.md"
+    SET = "projects/internal/setup/state/actions.md"
+    LAB = "projects/clients/initech/missions/lab/state/actions.md"
     TODAY = "2026-10-25"  # a Sunday; the default range is then 2026-10-12 to 2026-11-22
 
     def setUp(self):
@@ -2258,6 +2312,7 @@ class TimelineViewTest(unittest.TestCase):
         with urlopen(self.base + "/", timeout=3) as response:
             self.page = response.read().decode("utf-8")
         self.script = (self.STATIC / "app.js").read_text(encoding="utf-8")
+        self.styles = (self.STATIC / "app.css").read_text(encoding="utf-8")
 
     def test_timeline_is_a_sidebar_view_right_after_the_board(self):
         views = re.findall(r'<button id="(\w+)" class="nav-item[^"]*" type="button" data-view="(\w+)" title="([^"]*)"', self.page)
@@ -2266,6 +2321,7 @@ class TimelineViewTest(unittest.TestCase):
         self.assertEqual([titles[view] for view in ("timeline", "notes", "search")], ["Timeline (4)", "Notes (5)", "Search (6)"])
         self.assertIn('<button id="timelineButton"', self.page)
         self.assertIn("<kbd>1</kbd> to <kbd>6</kbd></dt><dd>Today, Actions, Board, Timeline, Notes, Search", self.page)
+        self.assertIn("<kbd>Alt</kbd> <kbd>←</kbd> <kbd>→</kbd></dt><dd>On the Timeline: move the deadline by a day", self.page)
 
     def test_keyboard_scheme_follows_the_sidebar_order(self):
         self.assertIn("const VIEWS = ['today', 'list', 'board', 'timeline', 'notes', 'search', 'tools', 'git'];", self.script)
@@ -2281,16 +2337,25 @@ class TimelineViewTest(unittest.TestCase):
         self.assertTrue(view.startswith('<div id="timelineView" class="timeline-view" aria-label="Timeline" hidden>'))
         self.assertLess(self.page.index('<div id="boardView"'), self.page.index('<div id="timelineView"'))
         self.assertEqual(re.findall(r'data-range="(\w+)" aria-pressed="false"', view), ["two", "six", "quarter"])
-        for fragment in ('id="timelineToday"', 'id="timelineBack"', 'id="timelineForward"', 'id="timelineLate"', 'id="timelineScroll"',
+        for fragment in ('id="timelineToday"', 'id="timelineBack"', 'id="timelineForward"', 'id="timelineLate"', 'id="timelineScale"',
                          'id="timelineDone" class="tl-switch" type="button" role="switch" aria-checked="false"',
-                         '<aside id="timelineVague" class="tl-vague" aria-labelledby="timelineVagueTitle" hidden>', 'id="timelineVagueList"'):
+                         '<div id="timelineSummary" class="tl-summary" role="group" aria-label="Deadlines at a glance"></div>',
+                         '<div id="timelineScroll" class="tl-scroll" role="region" aria-label="Timeline frieze"></div>'):
             self.assertIn(fragment, view)
+        # The tray of the actions with no deadline sits under the frieze: collapsible, searchable, with its list.
+        self.assertLess(view.index('id="timelineScroll"'), view.index('id="timelineTray"'))
+        self.assertIn('<section id="timelineTray" class="tl-tray" aria-labelledby="timelineTrayTitle" hidden>', view)
+        self.assertIn('<button id="timelineTrayToggle" class="tl-tray-toggle" type="button" aria-expanded="true" aria-controls="timelineTrayBody">', view)
+        self.assertIn('<input id="timelineTraySearch" type="search"', view)
+        self.assertIn("Search the actions without a deadline", view)
+        self.assertIn('id="timelineTrayBody"', view)
+        self.assertIn('id="timelineTrayList"', view)
         self.assertIn("Show done", view)
-        self.assertIn("Vague deadlines", view)
+        self.assertNotIn("timelineVague", self.page)
         # The Status filter does not apply there: "Show done" is its equivalent.
         self.assertIn("(view === 'list' || view === 'board')", self.script)
 
-    def test_timeline_script_is_served_before_the_app(self):
+    def test_timeline_scripts_are_served_before_the_app(self):
         self.assertLess(self.page.index('src="/timeline-view.js"'), self.page.index('src="/app.js"'))
         self.assertLess(self.page.index('src="/md-edit.js"'), self.page.index('src="/app.js"'))
         with urlopen(self.base + "/timeline-view.js", timeout=3) as response:
@@ -2300,13 +2365,29 @@ class TimelineViewTest(unittest.TestCase):
 
     def test_chips_are_focusable_lists_with_full_names_and_the_page_respects_reduced_motion(self):
         for fragment in ("role', 'list'", "role', 'listitem'", "button.setAttribute('aria-label', entryName(entry));", "TimelineView.neighbour(",
-                         "(prefers-reduced-motion: reduce)", "ids.timelineScroll.addEventListener('keydown', timelineKey);"):
+                         "(prefers-reduced-motion: reduce)", "ids.timelineScroll.addEventListener('keydown', timelineKey);", "ids.timelineTray.addEventListener('keydown', trayKey);"):
             self.assertIn(fragment, self.script)
-        for part in ("`Status: ${statusLabel(action.state)}`", "`Due ${dayText(entry.date)}", "`Scheduled ${dayText(entry.scheduled)}`"):
+        for part in ("`Status: ${statusLabel(action.state)}`", "`Due ${dayText(entry.date)}", "`Scheduled ${dayText(entry.scheduled)}`", "`Owner: ${action.owner}`"):
             self.assertIn(part, self.script)
-        styles = (self.STATIC / "app.css").read_text(encoding="utf-8")
-        for selector in (".tl-chip:focus-visible", ".tl-shade", ".tl-today-line", ".timeline-view.is-agenda", ".tl-cell.is-overdue", ".tl-cell.is-done", ".tl-marker"):
-            self.assertIn(selector, styles)
+        for selector in (".tl-chip:focus-visible", ".tl-card-main:focus-visible", ".tl-shade", ".tl-today", ".timeline-view.is-agenda", ".tl-cell.is-overdue", ".tl-cell.is-done",
+                         ".tl-marker", ".tl-late", ".tl-stat", ".tl-tray", ".tl-drop"):
+            self.assertIn(selector, self.styles)
+        # Dates are formatted like the rest of the app (the browser's locale, through the shared formatters), never capitalised by the style.
+        self.assertIn("new Intl.DateTimeFormat(LOCALE,", self.script)
+        self.assertNotIn("text-transform: capitalize", self.styles)
+
+    def test_planning_by_dragging_and_by_keyboard_goes_through_the_due_date_update(self):
+        # A chip or a tray card is dragged onto a day, a chip back onto the tray; Alt+arrows move the deadline; all of them are `updateDue`,
+        # the write of the quick edit (the same request as the detail panel, with its undo toast).
+        for fragment in ("cell.draggable = true;", "item.draggable = true;", "startTimelineDrag(event, action, 'chip')", "startTimelineDrag(event, action, 'card')",
+                         "updateDue(action, target.day.iso)", "updateDue(action, '')", "event.altKey && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')",
+                         "TimelineView.moveDue(action.due,", "if (pendingWrites > 0) return;", "openDueMenu(action, date)"):
+            self.assertIn(fragment, self.script)
+        # Clicking an empty day starts a new action in that project, due that day, through the existing form.
+        self.assertIn("openEditor(null, {register: event.target.closest('.tl-lane').dataset.register, due: target.day.iso});", self.script)
+        self.assertIn("ids.editorDue.value = action?.due || (!action && preset?.due) || '';", self.script)
+        # A plain wheel scrolls sideways when that is the only way to scroll.
+        self.assertIn("ids.timelineScroll.addEventListener('wheel'", self.script)
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_dates_weekends_and_iso_weeks(self):
@@ -2318,7 +2399,8 @@ class TimelineViewTest(unittest.TestCase):
             weeks: ['2026-01-01', '2026-12-31', '2027-01-03', '2027-01-04', '2024-12-30', '2021-01-03', '2020-12-31'].map(T.isoWeek),
             added: [T.addDays('2026-02-27', 2), T.addDays('2028-02-28', 1), T.addDays('2026-12-31', 1), T.addDays('2026-03-29', 1), T.addDays('2026-10-26', -7)],
             diffs: [T.diffDays('2026-10-25', '2026-11-01'), T.diffDays('2026-11-01', '2026-10-25'), T.diffDays('2026-03-28', '2026-03-30'), T.diffDays('2026-10-25', '2026-10-25')],
-            plain: ['2026-10-25', '2026-02-30', '2026-1-5', 'week of 05/10', '', null, undefined, 20261025, '0050-01-01', '2026-10-25 '].map(T.isPlainDate)
+            plain: ['2026-10-25', '2026-02-30', '2026-1-5', 'week of 05/10', '', null, undefined, 20261025, '0050-01-01', '2026-10-25 '].map(T.isPlainDate),
+            moves: [T.moveDue('2026-10-31', 1), T.moveDue('2026-10-31', -7), T.moveDue('2026-12-31', 1), T.moveDue('', 1), T.moveDue('week of 05/10', 1), T.moveDue(null, 1)]
           }));
         """)
         self.assertEqual(got["weekdays"], [[0, False], [5, True], [6, True]])
@@ -2328,6 +2410,8 @@ class TimelineViewTest(unittest.TestCase):
         self.assertEqual(got["added"], ["2026-03-01", "2028-02-29", "2027-01-01", "2026-03-30", "2026-10-19"])
         self.assertEqual(got["diffs"], [7, -7, 2, 0])
         self.assertEqual(got["plain"], [True, False, False, False, False, False, False, False, False, False])
+        # A deadline moves by calendar days (across a month and a year); no plain date, nothing to move.
+        self.assertEqual(got["moves"], ["2026-11-01", "2026-10-24", "2027-01-01", None, None, None])
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_ranges_start_on_the_monday_of_last_week_and_cover_whole_weeks(self):
@@ -2358,9 +2442,43 @@ class TimelineViewTest(unittest.TestCase):
         self.assertEqual([(month["year"], month["month"], month["span"]) for month in new_year["months"]], [(2026, 12, 11), (2027, 1, 31), (2027, 2, 28), (2027, 3, 21)])
         self.assertEqual(got["first"], {"iso": "2026-10-25", "index": 13, "weekday": 6, "weekend": True, "today": True, "year": 2026, "month": 10, "day": 25, "week": 43, "weekYear": 2026})
 
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_two_and_six_weeks_fit_the_width_and_a_quarter_compresses_to_week_ticks(self):
+        got = node_json("""
+          const T = require(process.argv[1]);
+          const brief = sc => ({dayW: Number(sc.dayW.toFixed(2)), endW: Number(sc.endW.toFixed(2)), total: sc.total, overflow: sc.overflow, density: sc.density, days: sc.days,
+            increasing: sc.xs.every((x, i) => i === 0 || x > sc.xs[i - 1]), first: sc.xs.slice(0, 8)});
+          const six = T.scale({width: 1192, weeks: 6, key: 'six'});
+          process.stdout.write(JSON.stringify({
+            six: brief(six), two: brief(T.scale({width: 1192, weeks: 2, key: 'two'})), quarter: brief(T.scale({width: 1192, weeks: 13, key: 'quarter'})),
+            narrowSix: brief(T.scale({width: 776, weeks: 6, key: 'six', labelW: 124, lateW: 120})), tooNarrow: brief(T.scale({width: 500, weeks: 6, key: 'six'})),
+            slim: brief(T.scale({width: 1192, weeks: 6, key: 'six', lateW: 44})),
+            at: [T.dayAt(six, 0), T.dayAt(six, six.xs[5]), T.dayAt(six, six.xs[5] - 1), T.dayAt(six, six.xs[6]), T.dayAt(six, six.total - 1), T.dayAt(six, six.total), T.dayAt(six, -1), T.dayAt(six, NaN)]
+          }));
+        """)
+        # 1192 px, less 150 for the projects and 148 for the overdue zone, shared by 30 weekdays and 12 weekend days at three quarters of one.
+        six = got["six"]
+        self.assertEqual((six["total"], six["overflow"], six["density"], six["days"]), (894, False, "day", 42))
+        self.assertAlmostEqual(six["dayW"], 894 / 39, places=2)
+        self.assertAlmostEqual(six["endW"] / six["dayW"], 0.75, places=2)
+        self.assertEqual(six["first"], [0, 23, 46, 69, 92, 115, 132, 149])
+        self.assertTrue(six["increasing"])
+        self.assertEqual((got["two"]["total"], got["two"]["overflow"], got["two"]["density"]), (894, False, "day"))
+        self.assertGreater(got["two"]["dayW"], 60)
+        quarter = got["quarter"]
+        self.assertEqual((quarter["total"], quarter["overflow"], quarter["density"], quarter["days"]), (894, False, "week", 91))
+        self.assertTrue(quarter["increasing"])
+        self.assertEqual((got["narrowSix"]["total"], got["narrowSix"]["overflow"]), (532, False))
+        # Only when even the narrowest day would not fit does the frieze scroll.
+        self.assertEqual((got["tooNarrow"]["overflow"], got["tooNarrow"]["dayW"]), (True, 12))
+        self.assertGreater(got["tooNarrow"]["total"], 202)
+        self.assertGreater(got["slim"]["dayW"], six["dayW"])  # an empty overdue zone gives its room to the days
+        # The day under a pointer, from the left edge of the days.
+        self.assertEqual(got["at"], [0, 5, 4, 6, 41, -1, -1, -1])
+
     def fixture(self):
         def action(id_, register, project, **fields):
-            return {"id": id_, "state": " ", "owner": "Jane Doe", "title": f"Title of {id_}", "register": register, "project": project,
+            return {"id": id_, "state": " ", "owner": "Jane Doe", "title": f"Title of {id_}", "register": register, "project": project, "priority": "",
                     "due": "", "scheduled": "", "done": "", "due_note": "", **fields}
         acme = (self.ACM, "acme / rollout")
         globex = (self.GLO, "globex / pilot")
@@ -2379,84 +2497,136 @@ class TimelineViewTest(unittest.TestCase):
             action("ACM-012", *acme, due="2026-10-26", scheduled="2026-10-26"),
             action("ACM-013", *acme, state="x", due="2026-10-01", done="2026-09-01"),
             action("ACM-014", *acme, state="x", due="2026-10-21"),
+            action("ACM-015", *acme, due="2026-11-20"),
             action("GLO-001", *globex, state="w", due="2026-10-24"),
             action("GLO-002", *globex, due="2026-10-25"),
-            action("GLO-003", "projects/internal/lab/state/actions.md", "lab", state="-", due="2026-10-27"),
+            action("SET-001", self.SET, "internal / setup"),
+            action("SET-002", self.SET, "internal / setup", owner="John Smith", priority="⏫"),
+            action("LAB-001", self.LAB, "initech / lab", state="-"),
         ]
 
-    # Lanes in register order (globex, then acme), as the page gives them: the order of the registers of the brain.
+    # Lanes in register order (globex, acme, internal, initech), as the page gives them; the axis is the one of a 1192 px page.
     SETUP = """
       const T = require(process.argv[1]);
       const {actions, showDone} = JSON.parse(require('fs').readFileSync(0, 'utf8'));
       const range = T.range('2026-10-25');
-      const result = T.layout(actions, {today: '2026-10-25', start: range.start, end: range.end, showDone,
-        order: ['projects/clients/globex/missions/pilot/state/actions.md', 'projects/clients/acme/missions/rollout/state/actions.md']});
+      const sc = T.scale({width: 1192, weeks: 6, key: 'six'});
+      const order = ['projects/clients/globex/missions/pilot/state/actions.md', 'projects/clients/acme/missions/rollout/state/actions.md',
+        'projects/internal/setup/state/actions.md', 'projects/clients/initech/missions/lab/state/actions.md'];
+      const result = T.layout(actions, {today: '2026-10-25', start: range.start, end: range.end, showDone, order, scale: sc, chipW: 132});
     """
     LAYOUT = SETUP + """
-      const entry = e => [e.id, e.column, e.track, e.overdue, e.done, e.sameDay, e.marker && [e.marker.column, e.marker.from, e.marker.to]];
+      const entry = e => [e.id, e.column, e.track, e.x, e.w, e.flip, e.overdue, e.done, e.sched, e.marker && e.marker.x];
       process.stdout.write(JSON.stringify({
-        lanes: result.lanes.map(lane => ({project: lane.project, tracks: lane.tracks, entries: lane.entries.map(entry)})),
-        late: result.late.map(e => e.id), vague: result.vague.map(v => [v.action.id, v.text]), later: result.later.map(a => a.id), total: result.total
+        lanes: result.lanes.map(lane => ({project: lane.project, tracks: lane.tracks, lateTracks: lane.lateTracks, open: lane.open, undated: lane.undated, entries: lane.entries.map(entry)})),
+        late: result.late.map(e => e.id), later: result.later.map(a => a.id), total: result.total
       }));
     """
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
-    def test_layout_places_lanes_chips_markers_late_and_vague(self):
+    def test_layout_gives_every_project_with_open_actions_a_lane_and_places_the_dated_ones(self):
         got = node_json(self.LAYOUT, {"actions": self.fixture(), "showDone": False})
-        # Lanes follow the register order; the lane of a project with nothing to show (lab: cancelled only) is left out.
-        self.assertEqual([lane["project"] for lane in got["lanes"]], ["globex / pilot", "acme / rollout"])
-        globex, acme = got["lanes"]
-        self.assertEqual(globex["tracks"], 1)
-        self.assertEqual(globex["entries"], [["GLO-001", 12, 0, 1, False, False, None], ["GLO-002", 13, 0, 0, False, False, None]])
-        # Per lane: by date then ID. ACM-003 is before the range (column -1, the Late column), ACM-004 is a Saturday and late, ACM-001 is
-        # scheduled on the 27th (a marker on column 15, join over 16 and 17), ACM-012 is scheduled the day it is due (no marker),
-        # and ACM-002 stacks under ACM-001 on the 30th.
-        self.assertEqual(acme["tracks"], 2)
+        # A lane for every project that has an open action, dated or not (setup has none dated); none for initech, whose only action is cancelled.
+        self.assertEqual([lane["project"] for lane in got["lanes"]], ["globex / pilot", "acme / rollout", "internal / setup"])
+        globex, acme, setup = got["lanes"]
+        # Each lane counts its open actions and the undated ones among them (a vague wording, a text due date, a scheduled date alone, nothing).
+        self.assertEqual((globex["open"], globex["undated"], acme["open"], acme["undated"], setup["open"], setup["undated"]), (2, 0, 11, 4, 2, 2))
+        self.assertEqual((setup["tracks"], setup["entries"]), (0, []))
+        # A chip starts on its day (x is the left edge of its column) and runs 132 px to the right: the two of globex overlap, so they stack.
+        self.assertEqual(globex["tracks"], 2)
+        self.assertEqual(globex["entries"], [["GLO-001", 12, 0, 264, 132, False, 1, False, "", None], ["GLO-002", 13, 1, 281, 132, False, 0, False, "", None]])
+        # Acme, by date then ID: ACM-003 is before the range (the overdue zone, column -1, stacked there), ACM-004 is a Saturday and overdue,
+        # ACM-012 is scheduled the day it is due (an hourglass on the chip, no marker), ACM-001 is scheduled on the 27th (a marker at its
+        # day, joined to the chip) and shares its day with ACM-002 (a third track), ACM-015 is on the last week and would leave the range
+        # to the right: it ends on its day instead (flip).
+        self.assertEqual(acme["tracks"], 3)
+        self.assertEqual(acme["lateTracks"], 1)
         self.assertEqual(acme["entries"], [
-            ["ACM-003", -1, 0, 22, False, False, None], ["ACM-004", 5, 0, 8, False, False, None], ["ACM-012", 14, 0, 0, False, True, None],
-            ["ACM-001", 18, 0, 0, False, False, [15, 16, 17]], ["ACM-002", 18, 1, 0, False, False, None]])
+            ["ACM-003", -1, 0, 0, 0, False, 22, False, "", None], ["ACM-004", 5, 0, 115, 132, False, 8, False, "", None],
+            ["ACM-012", 14, 0, 298, 132, False, 0, False, "same", None], ["ACM-001", 18, 1, 390, 132, False, 0, False, "before", 333],
+            ["ACM-002", 18, 2, 390, 132, False, 0, False, "", None], ["ACM-015", 39, 0, 728, 132, True, 0, False, "", None]])
         self.assertEqual(got["late"], ["ACM-003"])
-        # A deadline that is not a date (a text `due`, or the `due:` wording of an action with no 📅) goes to the side list; no deadline, a
-        # scheduled date alone, a cancelled action and a done one (hidden by default) show nowhere; beyond the range: `later`.
-        self.assertEqual(got["vague"], [["ACM-006", "week of 05/10"], ["ACM-010", "semaine du 05/10"]])
         self.assertEqual(got["later"], ["ACM-008"])
-        self.assertEqual(got["total"], 7)
+        self.assertEqual(got["total"], 8)
         shown = {entry[0] for lane in got["lanes"] for entry in lane["entries"]}
-        self.assertTrue({"ACM-005", "ACM-007", "ACM-009", "ACM-011", "ACM-013", "ACM-014", "GLO-003"}.isdisjoint(shown))
+        self.assertTrue({"ACM-005", "ACM-006", "ACM-007", "ACM-009", "ACM-010", "ACM-011", "ACM-013", "ACM-014", "LAB-001"}.isdisjoint(shown))
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_done_actions_show_on_request_at_their_done_date(self):
         got = node_json(self.LAYOUT, {"actions": self.fixture(), "showDone": True})
         acme = got["lanes"][1]["entries"]
-        done = {entry[0]: entry for entry in acme if entry[4]}
+        done = {entry[0]: entry for entry in acme if entry[7]}
         # At the done date when there is one (the 20th, column 8), else at the due date (the 21st); never before the range or as late;
         # the cancelled action is still left out.
         self.assertEqual(set(done), {"ACM-005", "ACM-014"})
-        self.assertEqual((done["ACM-005"][1], done["ACM-005"][3]), (8, 0))
-        self.assertEqual((done["ACM-014"][1], done["ACM-014"][3]), (9, 0))
+        self.assertEqual((done["ACM-005"][1], done["ACM-005"][6]), (8, 0))
+        self.assertEqual((done["ACM-014"][1], done["ACM-014"][6]), (9, 0))
         self.assertEqual(got["late"], ["ACM-003"])
-        self.assertEqual(got["total"], 9)
+        self.assertEqual(got["total"], 10)
         self.assertNotIn("ACM-009", {entry[0] for entry in acme})
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_summary_counts_and_spotlights(self):
+        got = node_json(self.SETUP + """
+          const spots = ['overdue', 'week', 'next'].map(kind => actions.filter(a => T.inSpot(a, kind, '2026-10-25')).map(a => a.id));
+          process.stdout.write(JSON.stringify({summary: T.summary(actions, '2026-10-25'), spots, other: T.inSpot(actions[0], 'unknown', '2026-10-25'),
+            monday: T.summary(actions, '2026-10-26')}));
+        """, {"actions": self.fixture(), "showDone": False})
+        # Today is a Sunday: this week is today alone, the next two weeks are the 26th to the 8th. Open actions only: done, cancelled and
+        # (for the counts of dates) the undated are not in them.
+        self.assertEqual(got["summary"], {"today": "2026-10-25", "weekEnd": "2026-10-25", "nextStart": "2026-10-26", "nextEnd": "2026-11-08",
+                                          "overdue": 3, "week": 1, "next": 3, "vague": 2, "none": 4})
+        self.assertEqual(got["spots"], [["ACM-003", "ACM-004", "GLO-001"], ["GLO-002"], ["ACM-001", "ACM-002", "ACM-012"]])
+        self.assertFalse(got["other"])
+        # On a Monday the week is seven days: the 26th is "this week", and the next two weeks start on the 2nd.
+        self.assertEqual((got["monday"]["weekEnd"], got["monday"]["nextStart"], got["monday"]["week"], got["monday"]["next"]), ("2026-11-01", "2026-11-02", 3, 0))
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_tray_lists_open_actions_without_a_date_by_project(self):
+        got = node_json(self.SETUP + """
+          const brief = data => ({counts: data.counts, vague: data.vague.map(g => [g.project, g.items.map(i => [i.action.id, i.text])]), none: data.none.map(g => [g.project, g.items.map(i => i.action.id)])});
+          process.stdout.write(JSON.stringify({all: brief(T.tray(actions, {order})), john: brief(T.tray(actions, {query: 'john', order})), week: brief(T.tray(actions, {query: 'WEEK of', order})),
+            project: brief(T.tray(actions, {query: 'acme rollout', order})), nothing: brief(T.tray(actions, {query: 'zzzz', order}))}));
+        """, {"actions": self.fixture(), "showDone": False})
+        # Vague deadlines first, then the rest; groups in register order; in a group the in-progress, then the to do, by priority, then ID.
+        self.assertEqual(got["all"], {"counts": {"vague": 2, "none": 4},
+                                      "vague": [["acme / rollout", [["ACM-006", "week of 05/10"], ["ACM-010", "semaine du 05/10"]]]],
+                                      "none": [["acme / rollout", ["ACM-007", "ACM-011"]], ["internal / setup", ["SET-002", "SET-001"]]]})
+        self.assertEqual(got["john"]["none"], [["internal / setup", ["SET-002"]]])
+        self.assertEqual(got["john"]["counts"], {"vague": 0, "none": 1})
+        self.assertEqual(got["week"]["vague"], [["acme / rollout", [["ACM-006", "week of 05/10"]]]])
+        self.assertEqual(got["project"]["counts"], {"vague": 2, "none": 2})
+        self.assertEqual(got["nothing"]["counts"], {"vague": 0, "none": 0})
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_initials_for_chips_of_other_owners(self):
+        got = node_json("""
+          const T = require(process.argv[1]);
+          process.stdout.write(JSON.stringify(['Jane Doe', 'John Smith', 'Marie-Claire de la Poe', 'Mary', 'Zoe', '', '  Sam   Poe  ', null].map(T.initials)));
+        """)
+        self.assertEqual(got, ["JD", "JS", "MP", "MA", "ZO", "", "SP", ""])
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_arrow_keys_walk_a_project_by_date_and_change_project_on_the_closest_date(self):
         got = node_json(self.SETUP + """
           const moves = [['ACM-001', 'right'], ['ACM-001', 'left'], ['ACM-001', 'up'], ['ACM-001', 'down'], ['GLO-002', 'down'], ['GLO-001', 'up'], ['ACM-002', 'home'],
-            ['ACM-003', 'end'], ['ACM-003', 'left'], ['ACM-002', 'right'], ['ACM-001', 'sideways'], ['NOPE-1', 'right']];
+            ['ACM-003', 'end'], ['ACM-003', 'left'], ['ACM-015', 'right'], ['ACM-001', 'sideways'], ['NOPE-1', 'right'], ['ACM-015', 'down']];
           process.stdout.write(JSON.stringify({moves: moves.map(([id, direction]) => T.neighbour(result.lanes, id, direction))}));
         """, {"actions": self.fixture(), "showDone": False})
-        self.assertEqual(got["moves"], ["ACM-002", "ACM-012", "GLO-002", None, "ACM-012", None, "ACM-003", "ACM-002", None, None, None, None])
+        # Up and down skip the lane that has no chip (setup): nothing under acme, and globex above it is reached on the closest date.
+        self.assertEqual(got["moves"], ["ACM-002", "ACM-012", "GLO-002", None, "ACM-012", None, "ACM-003", "ACM-015", None, None, None, None, None])
 
     @unittest.skipUnless(shutil.which("node"), "node is not installed")
     def test_agenda_lists_each_day_with_its_chips_and_markers(self):
-        got = node_json(self.SETUP + """
+        got = node_json(self.SETUP.replace("scale: sc, chipW: 132", "scale: null") + """
           const agenda = T.agenda(result, range.days);
           process.stdout.write(JSON.stringify({days: agenda.length,
             agenda: agenda.filter(d => d.entries.length || d.markers.length).map(d => [d.day.iso, d.entries.map(e => e.id), d.markers.map(e => e.id)])}));
         """, {"actions": self.fixture(), "showDone": False})
         self.assertEqual(got["days"], 42)
         self.assertEqual(got["agenda"], [["2026-10-17", ["ACM-004"], []], ["2026-10-24", ["GLO-001"], []], ["2026-10-25", ["GLO-002"], []],
-                                         ["2026-10-26", ["ACM-012"], []], ["2026-10-27", [], ["ACM-001"]], ["2026-10-30", ["ACM-001", "ACM-002"], []]])
+                                         ["2026-10-26", ["ACM-012"], []], ["2026-10-27", [], ["ACM-001"]], ["2026-10-30", ["ACM-001", "ACM-002"], []],
+                                         ["2026-11-20", ["ACM-015"], []]])
 
 
 if __name__ == "__main__":
