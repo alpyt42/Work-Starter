@@ -27,7 +27,7 @@ What stays here are the deliverables meant to be read by a human and their prove
 
 ## Artifacts are not versioned
 
-Apart from this README, the content of the folder is ignored by Git: files can be heavy and binaries do not diff. The memory keeps the pointer (the project page mentions the artifact and its path). A generator kept long term is versioned in a repo; in `agents/`, it stays disposable. If you want a backup of the deliverable, use a suitable storage location, not this Git repository.
+Apart from this README, the content of the folder is ignored by Git: files can be heavy and binaries do not diff. The memory keeps the pointer (the project page mentions the artifact and its path). A generator kept long term is versioned in a repo; in `agents/`, it stays disposable. If you want a backup of the deliverable, use a suitable storage location, not this Git repository. Only the owner removes anything here: an agent never deletes an artifact, even one it produced; it may only move one into an `archive/` folder inside `artifacts/`.
 
 **Received source material** (Excel workbook, PDF export, screenshot sent by a client): same rule — it goes here, not in a brain (versioned in Git, not made to carry binaries). The text extracted from it (analysis, figures, notes) stays in the relevant brain as `.md`, with a link to its matching `artifacts/` folder.
 

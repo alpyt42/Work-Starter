@@ -28,7 +28,7 @@ In both cases, never leave scratch lying around at the root of the workspace or 
 
 ## Retention — **promote or lose it**
 
-Apart from this README tracked by Git, the content of this folder is **disposable**: it is ignored by the `Work` repository and is not guaranteed to survive a cleanup.
+Apart from this README tracked by Git, the content of this folder is **disposable**: it is ignored by the `Work` repository and is not guaranteed to survive a cleanup. An agent may delete only what it created itself in the same session (its tests, fixtures, intermediate files). Anything older, from another session or from the owner stays, or moves into an `archive/` folder (`agents/archive/`, `agents/<project>/archive/`); the rest of the cleanup is the owner's.
 
 Corollary, the only rule that matters: **if something written here becomes durable, promote it before the end of the session** — a decision or minutes to the project page or a notes folder of the relevant brain, technical documentation to the repo, a deliverable to `artifacts/`. Whatever stays here is considered lost in advance.
 

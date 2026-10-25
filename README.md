@@ -18,7 +18,7 @@ The industrialisation and release-update roadmap is tracked in [`MIGRATION-TODO.
 | `brain/`, `brain-perso/`, `brain-<name>/` | Private memories, one trust boundary each (see the default brain below)       | One separate private repository each |
 | `repos/`                                  | Code clones                                                                   | Each clone has its own repository    |
 | `artifacts/`                              | Human-readable outputs and large inputs                                       | Local files, ignored                 |
-| `agents/`                                 | Disposable scratch                                                            | Local files, ignored                 |
+| `agents/`                                 | Scratch; an agent removes only its own session's files                        | Local files, ignored                 |
 
 Local to each machine and ignored: `.agents/` and `.claude/skills/` (skills exposed to the agents), `.obsidian/`, `work-config.local.json`, the generated `skills-lock.json` and `.work-state.json`, and `tools/.env`.
 

@@ -39,7 +39,7 @@ The memory is the index of the brain owner's work; the repos are the territory. 
 | Raw note to process | `inbox/` | `YYYY-MM-DD-<slug>.md` | Default for any note without a project; deleted after dispatch |
 | Content from another scope | the other brain, chosen from its `description` (see [Several brains](#several-brains)) | — | Do not mix scopes |
 | Deliverable shown to someone | `../artifacts/` | folder + provenance `README.md` | No `build/` in the brain |
-| Scratch, intermediate builds | `../agents/` | — | Disposable |
+| Scratch, intermediate builds | `../agents/` | — | An agent deletes only what it created in the session |
 | Code and technical documentation | `../repos/` | — | The page points, it does not copy |
 
 - **Monthly moves, without asking.** As soon as an agent writes in a project in a new month, or the `brain-clean` doctor reports it, it moves the timeline entries of past months into `journal/YYYY-MM.md`, runs `uv run tools/brain/action.py archive --write` and mentions it in its summary. Any other archiving waits for an explicit request from the brain owner.
@@ -47,6 +47,7 @@ The memory is the index of the brain owner's work; the repos are the territory. 
 - Meeting minutes (CR) go through `cr-reunion`, messages through `veille-messages`, and the triage of `inbox/` (the scratchpad `inbox/inbox.md` and the notes next to it) through `inbox`, each with its validation step. When the filing is uncertain, put the question in `inbox/inbox.md`.
 - No Markdown file cites a document located outside the workspace: no local path, no file name. Web links may stay for traceability. Copy a document that must stay cited into `../artifacts/` with its provenance README; otherwise describe its provenance in words. The input folders of the skills live in `.data/local-paths.json`.
 - Do not ingest secrets.
+- Never delete anything in `../artifacts/`; in `../agents/`, delete only what you created in the same session. The brain owner alone removes the rest; moving a file into an `archive/` folder inside them is allowed.
 - In Obsidian, the brain is read from the vault opened at the workspace root; do not create a `brain/.obsidian/` vault.
 - Links are relative Markdown links with the `.md` extension, no wikilinks. After a move, repair the backlinks and run `uv run tools/brain/check-links.py` from the workspace root.
 

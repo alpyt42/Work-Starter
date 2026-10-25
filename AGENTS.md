@@ -11,7 +11,7 @@ Portable agent instructions and tools for a `Work/` workspace. Reply in the user
 - Several brains: choose the brain from its `description` (`uv run tools/brain/brain-state.py brains`) and ask when the content fits two or none. No link from one brain to another, no client name of another brain (`kit/brain/AGENTS.md`, section « Several brains »).
 - `repos/` contains code repositories. Read a repository's own `AGENTS.md` before editing it. Respect client-specific gate decisions recorded in the private brain; do not re-propose an option already declined for that client.
 - `artifacts/` contains human-readable outputs and received large files, each folder with a provenance `README.md`. Its contents are local and are not backed up by this repository.
-- `agents/` is disposable scratch. Promote durable information to the right brain, durable code to a repository, and durable outputs to `artifacts/`.
+- `agents/` is scratch: an agent removes only what it created in the same session, the owner clears the rest. Promote durable information to the right brain, durable code to a repository, and durable outputs to `artifacts/`.
 - Obsidian opens `Work/` as the only vault. `.obsidian/` is ignored and set by hand on each machine (`kit/obsidian/README.md`).
 
 ## Skills and configuration
@@ -32,6 +32,7 @@ Portable agent instructions and tools for a `Work/` workspace. Reply in the user
 
 - Write every change to this workspace in English — code, comments, messages, documentation, templates, skills and commit messages — even when the conversation is in another language. Reply to the user in their language. A brain may keep content written in its owner's language (notes, minutes, people pages): edit that content in the language it is written in.
 - Never commit or push without a separate explicit request for each action. Stage only paths touched for that action, inspect the staged diff, and use Conventional Commits without AI attribution. The hooks installed by `bootstrap.sh` refuse staged secrets and non-conforming messages.
+- Never delete anything in `artifacts/`, even a file you produced. In `agents/`, delete only what you created yourself in the same session (tests, fixtures, intermediate files); never the files of an earlier session, of another agent or of the owner. The only other move allowed is into an `archive/` folder inside them (for example `agents/archive/`, `artifacts/archive/`); the owner removes the rest.
 - Do not read, print, or copy the contents of `.env`, private keys, or credentials. `tools/.env` is ignored; `tools/.env.example` contains names only.
 - Do not edit home-directory configuration, SSH files, cloud configuration, or keychains without explicit user confirmation.
 - Before any remote write or a first clone, read `tools/machine/GIT-IDENTITY.md`: how the Git author and SSH key are chosen per trust boundary, and how to verify them.
