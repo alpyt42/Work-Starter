@@ -58,12 +58,12 @@ def write_boundary(target: Path, fields: dict[str, str]) -> None:
 
 def create(name: str, git: bool = True, boundary: dict[str, str] | None = None) -> Path:
     if NAME.fullmatch(name) is None:
-        raise SystemExit(f"nom de brain invalide : {name} (attendu : brain ou brain-<nom>)")
+        raise SystemExit(f"invalid brain name: {name} (expected: brain or brain-<name>)")
     target = WORK / name
     if target.exists():
-        raise SystemExit(f"{name}/ existe déjà : rien n'est modifié")
+        raise SystemExit(f"{name}/ already exists: nothing was changed")
     if not SEED.is_dir():
-        raise SystemExit(f"seed introuvable : {SEED}")
+        raise SystemExit(f"seed not found: {SEED}")
     shutil.copytree(SEED, target)
     for path in target.rglob("*"):
         if path.is_file() and path.suffix in TEXT:
@@ -82,15 +82,15 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="Create a blank brain from kit/brain/seed/.")
     parser.add_argument("name", nargs="?", default="brain", help="folder at the Work root (default: brain)")
     parser.add_argument("--no-git", action="store_true", help="do not run git init in the new brain")
-    parser.add_argument("--scope", help="short label of the trust boundary, for example perso, employeur, client")
+    parser.add_argument("--scope", help="short label of the trust boundary, for example personal, employer, client")
     parser.add_argument("--description", help="what this brain holds and must never hold (agents route content with it)")
     parser.add_argument("--remote", help="fnmatch glob the brain's Git remote URL must match")
     parser.add_argument("--email", help="fnmatch glob the brain's commit e-mail must match")
     args = parser.parse_args(argv)
     boundary = {field: getattr(args, field) or "" for field in BOUNDARY_FIELDS}
     target = create(args.name, git=not args.no_git, boundary=boundary)
-    note = "" if args.no_git else ", dépôt Git sans commit ni remote"
-    print(f"{target.name}/ créé depuis kit/brain/seed/{note}.")
+    note = "" if args.no_git else ", Git repository with no commit and no remote"
+    print(f"{target.name}/ created from kit/brain/seed/{note}.")
     return 0
 
 

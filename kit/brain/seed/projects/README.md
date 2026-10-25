@@ -1,9 +1,9 @@
 # projects/
 
-Les fiches projet sont rangées par axe : `projects/<axe>/<projet>/`. Les axes actifs sont déclarés dans [`AGENTS.md`](../../kit/brain/AGENTS.md) ; ce starter fournit `clients` et `internal`.
+Project pages are filed by axis: `projects/<axis>/<project>/`. The active axes are declared in [`AGENTS.md`](../../kit/brain/AGENTS.md); this starter provides `clients` and `internal`.
 
-- [`clients/`](clients/README.md) : `clients/<client>/<client>.md` est l'index durable ; chaque mission vit sous `missions/<mission>/` avec `state/`, `workstreams/`, `sources/YYYY-MM/`, `notes/` et `journal/`.
-- `internal/<projet>/<projet>.md` : projets d'outillage ou d'organisation. [`internal/setup/setup.md`](internal/setup/setup.md) suit la maintenance du système lui-même.
-- [`archive/`](archive/README.md) : projets clos déplacés sur demande explicite.
+- [`clients/`](clients/README.md): `clients/<client>/<client>.md` is the durable index; each mission lives under `missions/<mission>/` with `state/`, `workstreams/`, `sources/YYYY-MM/`, `notes/` and `journal/`.
+- `internal/<project>/<project>.md`: tooling or organization projects. [`internal/setup/setup.md`](internal/setup/setup.md) tracks the maintenance of the system itself.
+- [`archive/`](archive/README.md): closed projects, moved on explicit request.
 
-Créer les fichiers à partir de [`kit/brain/templates/`](../../kit/brain/templates/README.md). La structure détaillée est décrite dans les [conventions](../../kit/brain/docs/CONVENTIONS.md).
+Create the files from [`kit/brain/templates/`](../../kit/brain/templates/README.md). The detailed structure is described in the [conventions](../../kit/brain/docs/CONVENTIONS.md).

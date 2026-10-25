@@ -4,6 +4,6 @@ set -euo pipefail
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 TOP="$(git rev-parse --show-toplevel)"
 WORK="$TOP"; [[ -f "$WORK/tools/machine/hooks/check-commit-msg.py" ]] || WORK="$(dirname "$TOP")"
-[[ -f "$WORK/tools/machine/hooks/check-commit-msg.py" ]] || { echo "commit-msg : contrôle introuvable, ignoré" >&2; exit 0; }
-command -v uv >/dev/null || { echo "commit-msg : uv introuvable, contrôle ignoré" >&2; exit 0; }
+[[ -f "$WORK/tools/machine/hooks/check-commit-msg.py" ]] || { echo "commit-msg: check not found, skipped" >&2; exit 0; }
+command -v uv >/dev/null || { echo "commit-msg: uv not found, check skipped" >&2; exit 0; }
 exec uv run "$WORK/tools/machine/hooks/check-commit-msg.py" "$1"

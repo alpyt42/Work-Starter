@@ -18,7 +18,7 @@ REPO = Path(__file__).resolve().parents[1]
 NEW_BRAIN = REPO / "tools/brain/new-brain.py"
 CHECK_NO_CLIENT = REPO / "tools/machine/check-no-client.py"
 HOOK = REPO / "tools/machine/hooks/brain-pre-commit"
-TEMPLATE = REPO / "kit/brain/templates/templater/nouvelle-action.md"
+TEMPLATE = REPO / "kit/brain/templates/templater/new-action.md"
 GIT_ENV = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
 
 
@@ -79,7 +79,7 @@ class ClientNameScanTest(WorkFolder):
         )
 
     def test_name_of_another_brains_client_is_blocked(self) -> None:
-        write(self.perso / "notes/a.md", "Réunion avec Acme Corp et GLOBEX.\n")
+        write(self.perso / "notes/a.md", "Meeting with Acme Corp and GLOBEX.\n")
         result = self.scan("--worktree")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("Blocked client name of another brain (brain) in notes/a.md: acme corp", result.stderr)
@@ -87,15 +87,15 @@ class ClientNameScanTest(WorkFolder):
         self.assertNotIn("asso", result.stderr)
 
     def test_dashed_spelling_and_file_names_are_scanned(self) -> None:
-        write(self.perso / "notes/acme-corp.md", "rien\n")
-        write(self.perso / "notes/b.md", "voir (acme-corp).\n")
+        write(self.perso / "notes/acme-corp.md", "nothing\n")
+        write(self.perso / "notes/b.md", "see (acme-corp).\n")
         result = self.scan("--worktree")
         self.assertEqual(result.returncode, 1)
         self.assertIn("in notes/acme-corp.md: acme-corp", result.stderr)
         self.assertIn("in notes/b.md: acme-corp", result.stderr)
 
     def test_allow_list_of_the_scanned_brain_lets_names_through(self) -> None:
-        write(self.perso / "notes/a.md", "Acme Corp et Globex.\n")
+        write(self.perso / "notes/a.md", "Acme Corp and Globex.\n")
         self.declare_allow(self.perso, "acme-corp")
         result = self.scan("--worktree")
         self.assertEqual(result.returncode, 1)
@@ -111,16 +111,16 @@ class ClientNameScanTest(WorkFolder):
         self.assertEqual(self.scan("--worktree").returncode, 1)
 
     def test_own_clients_short_names_and_underscore_folders_are_not_blocked(self) -> None:
-        write(self.perso / "notes/a.md", "perso-co, abc et _archive sont fictifs.\n")
+        write(self.perso / "notes/a.md", "perso-co, abc and _archive are fictitious.\n")
         result = self.scan("--worktree")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_only_whole_words_match(self) -> None:
-        write(self.perso / "notes/a.md", "globexcorp, acme-corporation et preglobex.\n")
+        write(self.perso / "notes/a.md", "globexcorp, acme-corporation and preglobex.\n")
         self.assertEqual(self.scan("--worktree").returncode, 0)
 
     def test_staged_mode_reads_the_index_not_the_worktree(self) -> None:
-        write(self.perso / "notes/ok.md", "Rien à signaler.\n")
+        write(self.perso / "notes/ok.md", "Nothing to report.\n")
         write(self.perso / "notes/bad.md", "Globex.\n")
         git(self.perso, "add", "notes/ok.md")
         staged = self.scan("--staged")
@@ -129,7 +129,7 @@ class ClientNameScanTest(WorkFolder):
         git(self.perso, "add", "notes/bad.md")
         self.assertEqual(self.scan("--staged").returncode, 1)
         # An edit that is not staged does not hide the staged content.
-        write(self.perso / "notes/bad.md", "Rien.\n")
+        write(self.perso / "notes/bad.md", "Nothing.\n")
         self.assertEqual(self.scan("--staged").returncode, 1)
 
     def test_staged_mode_uses_the_staged_allow_list(self) -> None:
@@ -142,7 +142,7 @@ class ClientNameScanTest(WorkFolder):
         self.assertEqual(self.scan("--worktree").returncode, 1)
 
     def test_default_brain_is_scanned_against_the_other_brains_too(self) -> None:
-        write(self.default / "notes/a.md", "Dossier asso-client.\n")
+        write(self.default / "notes/a.md", "Folder asso-client.\n")
         result = self.scan("--worktree", brain=self.default)
         self.assertEqual(result.returncode, 1)
         self.assertIn("(brain-asso)", result.stderr)
@@ -208,8 +208,8 @@ class PreCommitHookTest(WorkFolder):
 
     def setUp(self) -> None:
         super().setUp()
-        self.default = self.new_brain("brain", "--scope", "employeur", "--description", "Contexte de l'employeur.")
-        self.perso = self.new_brain("brain-perso", "--scope", "perso", "--description", "Perso uniquement.")
+        self.default = self.new_brain("brain", "--scope", "employer", "--description", "Employer context.")
+        self.perso = self.new_brain("brain-perso", "--scope", "personal", "--description", "Personal only.")
         write(self.default / "projects/clients/acme-corp/acme-corp.md", "# Acme Corp\n")
 
     def stage(self, brain: Path, files: dict[str, str]) -> None:
@@ -227,18 +227,18 @@ class PreCommitHookTest(WorkFolder):
             self.assertEqual(result.returncode, 0, brain.name + result.stdout + result.stderr)
 
     def test_link_into_another_brain_is_refused_from_any_brain(self) -> None:
-        self.stage(self.perso, {"notes/a.md": "Voir [tâches](../../brain/tasks.md).\n"})
+        self.stage(self.perso, {"notes/a.md": "See [tasks](../../brain/tasks.md).\n"})
         result = self.run_hook(self.perso)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("LIEN INTER-BRAINS (../../brain/tasks.md)", result.stdout + result.stderr)
-        self.assertIn("Commit refusé", result.stderr)
-        self.stage(self.default, {"notes/a.md": "Voir [tâches](../../brain-perso/tasks.md).\n"})
+        self.assertIn("CROSS-BRAIN LINK (../../brain/tasks.md)", result.stdout + result.stderr)
+        self.assertIn("Commit refused", result.stderr)
+        self.stage(self.default, {"notes/a.md": "See [tasks](../../brain-perso/tasks.md).\n"})
         result = self.run_hook(self.default)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("LIEN INTER-BRAINS (../../brain-perso/tasks.md)", result.stdout + result.stderr)
+        self.assertIn("CROSS-BRAIN LINK (../../brain-perso/tasks.md)", result.stdout + result.stderr)
 
     def test_client_name_of_another_brain_is_refused_unless_allowed(self) -> None:
-        self.stage(self.perso, {"notes/b.md": "Réunion avec Acme Corp.\n"})
+        self.stage(self.perso, {"notes/b.md": "Meeting with Acme Corp.\n"})
         result = self.run_hook(self.perso)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
         self.assertIn("Blocked client name of another brain (brain) in notes/b.md: acme corp", result.stderr)
@@ -248,52 +248,52 @@ class PreCommitHookTest(WorkFolder):
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_the_staged_content_decides_not_the_worktree(self) -> None:
-        self.stage(self.perso, {"notes/a.md": "Voir [tâches](../../brain/tasks.md) et Acme Corp.\n"})
-        write(self.perso / "notes/a.md", "Propre.\n")  # fixed but not staged
+        self.stage(self.perso, {"notes/a.md": "See [tasks](../../brain/tasks.md) and Acme Corp.\n"})
+        write(self.perso / "notes/a.md", "Clean.\n")  # fixed but not staged
         self.assertNotEqual(self.run_hook(self.perso).returncode, 0)
         git(self.perso, "add", "notes/a.md")
         self.assertEqual(self.run_hook(self.perso).returncode, 0)
-        write(self.perso / "notes/a.md", "Voir [tâches](../../brain/tasks.md) et Acme Corp.\n")  # broken but not staged
+        write(self.perso / "notes/a.md", "See [tasks](../../brain/tasks.md) and Acme Corp.\n")  # broken but not staged
         result = self.run_hook(self.perso)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_links_of_the_committed_brain_do_not_resolve_against_the_worktree(self) -> None:
         git(self.perso, "add", "-A")
-        write(self.perso / "notes/target.md", "# Cible non indexée\n")
-        self.stage_only(self.perso, "notes/source.md", "[cible](target.md)\n")
+        write(self.perso / "notes/target.md", "# Unindexed target\n")
+        self.stage_only(self.perso, "notes/source.md", "[target](target.md)\n")
         result = self.run_hook(self.perso)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("LIEN MD MORT (target.md)", result.stdout + result.stderr)
+        self.assertIn("DEAD MD LINK (target.md)", result.stdout + result.stderr)
 
     def stage_only(self, brain: Path, relative: str, text: str) -> None:
         write(brain / relative, text)
         git(brain, "add", relative)
 
     def test_existing_checks_are_kept(self) -> None:
-        self.stage(self.perso, {"notes/a.md": "[mort](absent.md)\n"})
+        self.stage(self.perso, {"notes/a.md": "[dead](absent.md)\n"})
         result = self.run_hook(self.perso)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("LIEN MD MORT (absent.md)", result.stdout + result.stderr)
-        self.stage(self.perso, {"notes/a.md": "ok\n", "notes/secret.md": "clé : AKIA" + "ABCDEFGHIJKLMNOP\n"})
+        self.assertIn("DEAD MD LINK (absent.md)", result.stdout + result.stderr)
+        self.stage(self.perso, {"notes/a.md": "ok\n", "notes/secret.md": "key: AKIA" + "ABCDEFGHIJKLMNOP\n"})
         result = self.run_hook(self.perso)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
 
     def test_missing_artifacts_and_repos_targets_do_not_block_a_commit(self) -> None:
         # Fresh machine: artifacts/ exists but holds nothing, repos/ does not exist yet.
         (self.work / "artifacts").mkdir()
-        self.stage(self.perso, {"notes/a.md": "[rapport](../../artifacts/rapport/README.md)\n[code](../../repos/app/README.md)\n"})
+        self.stage(self.perso, {"notes/a.md": "[report](../../artifacts/report/README.md)\n[code](../../repos/app/README.md)\n"})
         result = self.run_hook(self.perso)
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
         # Dead links inside the brain and links into another brain stay fatal.
-        self.stage(self.perso, {"notes/b.md": "[mort](absent.md)\n"})
+        self.stage(self.perso, {"notes/b.md": "[dead](absent.md)\n"})
         result = self.run_hook(self.perso)
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("LIEN MD MORT (absent.md)", result.stdout + result.stderr)
-        self.stage(self.perso, {"notes/b.md": "ok\n", "notes/c.md": "[tâches](../../brain/tasks.md)\n"})
+        self.assertIn("DEAD MD LINK (absent.md)", result.stdout + result.stderr)
+        self.stage(self.perso, {"notes/b.md": "ok\n", "notes/c.md": "[tasks](../../brain/tasks.md)\n"})
         self.assertNotEqual(self.run_hook(self.perso).returncode, 0)
 
     def test_the_hook_never_writes_to_the_brain(self) -> None:
-        self.stage(self.perso, {"notes/a.md": "Réunion avec Acme Corp.\n"})
+        self.stage(self.perso, {"notes/a.md": "Meeting with Acme Corp.\n"})
         before = subprocess.run(["git", "status", "--porcelain"], cwd=self.perso, env=GIT_ENV, capture_output=True, text=True).stdout
         self.run_hook(self.perso)
         after = subprocess.run(["git", "status", "--porcelain"], cwd=self.perso, env=GIT_ENV, capture_output=True, text=True).stdout
@@ -329,7 +329,7 @@ class ActionFormTest(unittest.TestCase):
 
     @unittest.skipUnless(shutil.which("node"), "node is required to run the form")
     def test_form_runs_against_the_chosen_brain(self) -> None:
-        register = "## Ouvertes\n\n- [ ] **{p}-{n}** — Alice — existante\n\n## Terminées\n"
+        register = "## Open\n\n- [ ] **{p}-{n}** — Alice — existante\n\n## Done\n"
         files = {
             "brain/projects/clients/acme/missions/m1/state/actions.md": register.format(p="ACM", n="001"),
             "brain/projects/internal/setup/state/actions.md": register.format(p="SET", n="050"),
@@ -347,7 +347,8 @@ class ActionFormTest(unittest.TestCase):
         self.assertEqual(list(several["written"]), ["brain-perso/projects/internal/setup/state/actions.md"])
         written = several["written"]["brain-perso/projects/internal/setup/state/actions.md"]
         self.assertIn("**SET-008** — Bob — Faire le point", written)
-        self.assertLess(written.index("SET-008"), written.index("## Terminées"))
+        self.assertLess(written.index("SET-008"), written.index("## Done"))
+        self.assertIn("    - source: owner, 21/10 (added from Obsidian)\n    - created: 2026-10-21 10:00\n    - updated: 2026-10-21 10:00", written)
 
         alone = {path: text for path, text in files.items() if path.startswith("brain/")}
         single = self.run_form(alone, "acme / m1")
@@ -372,12 +373,12 @@ const app = { vault: {
 const tp = {
   system: {
     suggester: async (labels, values, _throw, placeholder) => {
-      if (placeholder === "Projet") { seen.labels = labels; return values[labels.indexOf(scenario.choose)]; }
+      if (placeholder === "Project") { seen.labels = labels; return values[labels.indexOf(scenario.choose)]; }
       return values[0];
     },
     prompt: async (question, fallback) => {
-      if (question.startsWith("Intitulé")) return "Faire le point";
-      if (question.startsWith("Responsable")) { seen.owner = fallback; return fallback; }
+      if (question.startsWith("Title")) return "Faire le point";
+      if (question.startsWith("Owner")) { seen.owner = fallback; return fallback; }
       return "";
     },
   },

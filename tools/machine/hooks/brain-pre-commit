@@ -12,8 +12,8 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:$PATH"
 BRAIN="$(git rev-parse --show-toplevel)"
 NAME="$(basename "$BRAIN")"
 WORK="$(dirname "$BRAIN")"
-[[ -f "$WORK/tools/brain/action.py" ]] || { echo "pre-commit : tools/brain/action.py introuvable, contrôle ignoré" >&2; exit 0; }
-command -v uv >/dev/null || { echo "pre-commit : uv introuvable, contrôle ignoré" >&2; exit 0; }
+[[ -f "$WORK/tools/brain/action.py" ]] || { echo "pre-commit: tools/brain/action.py not found, check skipped" >&2; exit 0; }
+command -v uv >/dev/null || { echo "pre-commit: uv not found, check skipped" >&2; exit 0; }
 
 staged="$(git -C "$BRAIN" diff --cached --name-only --diff-filter=ACMRD)"
 registers="$(grep -E '^projects/.+/state/actions\.md$' <<<"$staged" || true)"
@@ -61,5 +61,5 @@ fi
 # Credentials in the staged additions.
 (cd "$BRAIN" && uv run "$WORK/tools/machine/hooks/check-staged-secrets.py") || status=1
 
-[[ $status -eq 0 ]] || echo "Commit refusé : corriger puis re-stager (ou --no-verify pour passer outre)." >&2
+[[ $status -eq 0 ]] || echo "Commit refused: fix the problems and stage again (or use --no-verify to bypass)." >&2
 exit $status

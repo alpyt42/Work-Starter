@@ -1,13 +1,13 @@
 # AGENTS.md — {{BRAIN}}
 
-Brain privé de son propriétaire. Les conventions communes à tous les brains de l'espace sont gérées par Work : lire [`../kit/brain/AGENTS.md`](../kit/brain/AGENTS.md) avant toute écriture, puis le `AGENTS.md` à la racine de l'espace. Les guides sont dans [`../kit/brain/docs/`](../kit/brain/docs/README.md) et les modèles dans [`../kit/brain/templates/`](../kit/brain/templates/README.md).
+Private brain of its owner. The conventions shared by every brain of the workspace are managed by Work: read [`../kit/brain/AGENTS.md`](../kit/brain/AGENTS.md) before any write, then the `AGENTS.md` at the workspace root. The guides are in [`../kit/brain/docs/`](../kit/brain/docs/README.md) and the templates in [`../kit/brain/templates/`](../kit/brain/templates/README.md).
 
-Ce fichier ne garde que les règles propres à ce brain ; elles priment sur les conventions communes en cas de conflit. Les chemins privés et exceptions locales vont dans [`docs/LOCAL-WORKFLOWS.md`](docs/LOCAL-WORKFLOWS.md).
+This file keeps only the rules specific to this brain; they take precedence over the shared conventions in case of conflict. Private paths and local exceptions go in [`docs/LOCAL-WORKFLOWS.md`](docs/LOCAL-WORKFLOWS.md).
 
-## Périmètre
+## Scope
 
-Ce brain est une frontière de confiance : ce qu'il contient et ne doit jamais contenir est déclaré dans [`.data/brain.json`](.data/brain.json) (à renseigner avant d'y écrire). Ses skills privés vivent dans [`skills/`](skills/README.md).
+This brain is a trust boundary: what it holds and must never hold is declared in [`.data/brain.json`](.data/brain.json) (to fill in before writing here). Its private skills live in [`skills/`](skills/README.md).
 
-## Règles propres à ce brain
+## Rules specific to this brain
 
-- (aucune pour l'instant)
+- (none for now)

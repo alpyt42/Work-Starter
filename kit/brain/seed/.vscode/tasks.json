@@ -3,7 +3,7 @@
   "tasks": [
     {
       "label": "Tasks board (live)",
-      "detail": "Garde agents/tasks-board.md à jour depuis les registres ; ouvrir son aperçu Markdown",
+      "detail": "Keeps agents/tasks-board.md up to date from the registers; open its Markdown preview",
       "type": "shell",
       "command": "uv run ../tools/brain/action.py board --write --watch",
       "options": {

@@ -1,10 +1,10 @@
-# 📥 Inbox — notes à retraiter
+# 📥 Inbox — notes to reprocess
 
-> Dépôt de notes **entières** à retraiter par l'agent : notes de réunion prises à la main, brouillons, texte collé. Pour une ligne rapide, utiliser [`../inbox.md`](../inbox.md).
+> Drop-off for **whole** notes that the agent reprocesses: meeting notes taken by hand, drafts, pasted text. For a quick line, use [`inbox.md`](inbox.md).
 >
-> - Un fichier par note, nommé `YYYY-MM-DD-<slug>.md`, sans format imposé.
-> - Dossier par défaut de toute nouvelle note sans projet précisé : nouvelle note Obsidian, **+ Note** de l'interface web sans filtre de projet, note demandée à un agent.
-> - Pas de rattachement à faire : l'agent le trouve au tri, et pose la question dans [`../inbox.md`](../inbox.md) s'il hésite.
-> - « Trie mon inbox » (skill `/inbox`) traite [`../inbox.md`](../inbox.md) puis chaque fichier d'ici selon la [table « où va quoi »](../../kit/brain/AGENTS.md#ranger-linformation) ; la note brute est ensuite supprimée (l'historique Git la garde). Voir [`../docs/WORKFLOWS.md`](../../kit/brain/docs/WORKFLOWS.md).
+> - One file per note, named `YYYY-MM-DD-<slug>.md`, with no required format.
+> - Default folder for any new note without a specified project: a new Obsidian note, **+ Note** in the web interface without a project filter, a note requested from an agent.
+> - No filing to do: the agent finds where it goes during triage, and asks in [`inbox.md`](inbox.md) if it hesitates.
+> - "Triage my inbox" (skill `/inbox`) processes [`inbox.md`](inbox.md) then every other file here according to the ["where information goes" table](../../kit/brain/AGENTS.md#where-information-goes); the raw note is then deleted (Git history keeps it). See [`kit/brain/docs/WORKFLOWS.md`](../../kit/brain/docs/WORKFLOWS.md).
 >
-> Ce `README.md` reste ; tout autre fichier est à trier.
+> This `README.md` stays; any other file is to be triaged.

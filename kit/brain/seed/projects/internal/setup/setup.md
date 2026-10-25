@@ -1,13 +1,13 @@
-# Setup du système
+# System setup
 
-> Projet interne dédié à l'installation, aux conventions, aux automatisations et à la maintenance de l'espace de travail.
+> Internal project dedicated to the installation, conventions, automations and maintenance of the workspace.
 
-## État
+## Current state
 
-- **Statut :** actif
-- **Objectif :** garder le brain et l'espace de travail cohérents, portables et vérifiables.
+- **Status:** active
+- **Goal:** keep the brain and the workspace consistent, portable and verifiable.
 
-## Liens
+## Read as needed
 
 - [Actions](state/actions.md)
 - [Conventions](../../../../kit/brain/docs/CONVENTIONS.md)
@@ -15,4 +15,4 @@
 
 ## Timeline
 
-- (aucune entrée pour l'instant)
+- (no entries yet)

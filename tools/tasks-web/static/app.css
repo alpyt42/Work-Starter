@@ -546,7 +546,7 @@ input:disabled, select:disabled, textarea:disabled { opacity: .6; }
 .markdown-body a:hover { text-decoration-color: currentColor; }
 .markdown-body .doc-link-off { color: var(--text-muted); border-bottom: 1px dotted var(--text-faint); cursor: help; }
 .markdown-body .doc-image-off { font-style: italic; color: var(--text-muted); }
-.markdown-body .doc-image-off::before { content: "Image : "; }
+.markdown-body .doc-image-off::before { content: "Image: "; }
 .markdown-body code { font-size: .86em; padding: .1em .35em; border-radius: 4px; background: var(--bg-sunken); }
 .markdown-body pre { padding: 10px 12px; border-radius: var(--radius-control); background: var(--bg-sunken); overflow: auto; line-height: 1.5; overflow-wrap: normal; }
 .markdown-body pre code { padding: 0; background: none; font-size: 12px; white-space: pre; }

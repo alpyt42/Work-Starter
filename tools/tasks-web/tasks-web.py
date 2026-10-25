@@ -5,7 +5,7 @@
 #   "markdown-it-py==3.0.0",
 # ]
 # ///
-"""Serve a private, local list/kanban task manager backed by brain action registers.
+"""Serve a private, local action manager (Today, list and board views, notes, search, tools, Git) backed by brain action registers.
 
 Run from Work with: uv run tools/tasks-web/tasks-web.py
 Only listens on 127.0.0.1. The Markdown registers remain the source of truth.
@@ -71,27 +71,32 @@ NOTE_SUMMARY_READ = 16384
 NOTE_EXCERPT_LIMIT = 160
 NOTE_DATE_PREFIX_RE = re.compile(r"^(\d{4}-\d{2}-\d{2})(?:-|$)")
 INBOX_DIR = "inbox"
+INBOX_FILE = "inbox.md"  # the capture scratchpad of inbox/, triaged line by line: not a note
 INBOX_LABEL = "Inbox"
 INBOX_REGISTER = "inbox"  # wire value of `register` for a note left in the root inbox, to be sorted later
+# What the interface writes into a brain file: the source of an action created from the interface and the
+# header of a new note.
+SOURCE_ENTERED = "entered in the local interface"
+NOTE_HEADER = {"note": "Note from", "project": "project: ", "register": "register", "triage": "to triage"}
 WRITE_LOCK = threading.Lock()
 TOOL_LOCK = threading.Lock()
 TOOLS = {
-    "links": ("Mémoire", "Vérifier les liens", "Contrôle les liens Markdown du brain.", "brain/check-links.py", ()),
-    "brains": ("Mémoire", "Lister les brains", "Affiche les mémoires présentes et leurs transcriptions suivies.", "brain/brain-state.py", ("brains",)),
-    "transcripts": ("Mémoire", "Nouvelles transcriptions", "Repère les transcriptions qui ne sont suivies par aucun brain.", "brain/brain-state.py", ("transcripts", "--new")),
-    "board": ("Actions", "Vue texte des actions", "Affiche les registres par projet dans un format de terminal.", "brain/action.py", ("board",)),
-    "sweep_preview": ("Actions", "Actions à ranger (aperçu)", "Liste les actions placées sous une section qui ne correspond pas à leur état (cochée, annulée ou rouverte), sans rien modifier.", "brain/action.py", ("sweep",)),
-    "sweep_write": ("Actions", "Ranger les actions par statut", "Déplace chaque action dans Ouvertes, Terminées ou Annulées selon son état (modifie les registres ; rattrapable avec git, mais hors de la pile d'annulation de l'interface).", "brain/action.py", ("sweep", "--write")),
-    "archive_preview": ("Actions", "Actions à archiver (aperçu)", "Liste les actions closes depuis plus de 30 jours qui partiraient dans state/actions-archive-AAAA.md, sans rien modifier.", "brain/action.py", ("archive",)),
-    "archive_write": ("Actions", "Archiver les actions", "Déplace les actions closes depuis plus de 30 jours dans state/actions-archive-AAAA.md (modifie les registres ; rattrapable avec git, mais hors de la pile d'annulation de l'interface).", "brain/action.py", ("archive", "--write")),
-    "repositories": ("Dépôts", "Vérifier les dépôts", "Compare les clones locaux au catalogue privé et contrôle leur identité Git.", "repos/client-repos.py", ("check",)),
+    "links": ("Memory", "Check links", "Checks the Markdown links of the brain.", "brain/check-links.py", ()),
+    "brains": ("Memory", "List brains", "Shows the memories present and the transcripts they track.", "brain/brain-state.py", ("brains",)),
+    "transcripts": ("Memory", "New transcripts", "Finds the transcripts that no brain tracks.", "brain/brain-state.py", ("transcripts", "--new")),
+    "board": ("Actions", "Text view of actions", "Shows the registers by project in a terminal format.", "brain/action.py", ("board",)),
+    "sweep_preview": ("Actions", "Actions to sort (preview)", "Lists the actions placed under a section that does not match their state (checked, cancelled or reopened), without changing anything.", "brain/action.py", ("sweep",)),
+    "sweep_write": ("Actions", "Sort actions by status", "Moves each action into Open, Done or Cancelled according to its state (changes the registers; recoverable with Git, but outside the interface's undo stack).", "brain/action.py", ("sweep", "--write")),
+    "archive_preview": ("Actions", "Actions to archive (preview)", "Lists the actions closed for more than 30 days that would move to state/actions-archive-YYYY.md, without changing anything.", "brain/action.py", ("archive",)),
+    "archive_write": ("Actions", "Archive actions", "Moves the actions closed for more than 30 days to state/actions-archive-YYYY.md (changes the registers; recoverable with Git, but outside the interface's undo stack).", "brain/action.py", ("archive", "--write")),
+    "repositories": ("Repositories", "Check repositories", "Compares the local clones with the private catalogue and checks their Git identity.", "repos/client-repos.py", ("check",)),
 }
 
 
 # Tools that write local brain files ask for a confirmation in the page before running.
 TOOL_CONFIRM = {
-    "sweep_write": "Ranger maintenant les actions selon leur statut ? Lance d'abord l'aperçu pour voir ce qui sera déplacé.",
-    "archive_write": "Archiver maintenant les actions closes depuis plus de 30 jours ? Lance d'abord l'aperçu pour voir ce qui sera déplacé.",
+    "sweep_write": "Sort the actions by status now? Run the preview first to see what will move.",
+    "archive_write": "Archive the actions closed for more than 30 days now? Run the preview first to see what will move.",
 }
 
 
@@ -105,12 +110,12 @@ def tool_catalog() -> list[dict]:
 
 def run_tool(tool_id: str, brain: Path) -> dict:
     if tool_id not in TOOLS:
-        raise TaskError(HTTPStatus.NOT_FOUND, "Outil inconnu.")
+        raise TaskError(HTTPStatus.NOT_FOUND, "Unknown tool.")
     uv = shutil.which("uv") or next((str(path) for path in
         (Path("/opt/homebrew/bin/uv"), Path("/usr/local/bin/uv"), Path.home() / ".local/bin/uv")
         if path.is_file()), None)
     if uv is None:
-        raise TaskError(HTTPStatus.SERVICE_UNAVAILABLE, "uv est introuvable sur cette machine.")
+        raise TaskError(HTTPStatus.SERVICE_UNAVAILABLE, "uv was not found on this machine.")
     script, args = TOOLS[tool_id][3:]
     environment = os.environ.copy()
     environment["BRAIN_DIR"] = str(brain)
@@ -120,12 +125,12 @@ def run_tool(tool_id: str, brain: Path) -> dict:
             capture_output=True, text=True, errors="replace", timeout=90, check=False,
         )
     except subprocess.TimeoutExpired:
-        return {"id": tool_id, "ok": False, "output": "Délai de 90 secondes dépassé. Relance la commande si nécessaire.", "truncated": False}
+        return {"id": tool_id, "ok": False, "output": "The 90-second limit was exceeded. Run the command again if needed.", "truncated": False}
     except OSError:
-        raise TaskError(HTTPStatus.INTERNAL_SERVER_ERROR, "Impossible de lancer cet outil.") from None
+        raise TaskError(HTTPStatus.INTERNAL_SERVER_ERROR, "Could not start this tool.") from None
     output = "\n".join(part.strip() for part in (result.stdout, result.stderr) if part.strip())
     if not output:
-        output = "Commande terminée sans sortie."
+        output = "Command finished with no output."
     truncated = len(output) > 60000
     return {"id": tool_id, "ok": result.returncode == 0, "output": output[:60000], "truncated": truncated}
 
@@ -139,11 +144,11 @@ class TaskError(Exception):
 
 def parse_date(value: object, field: str) -> str:
     if not isinstance(value, str) or not DATE_RE.fullmatch(value):
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} doit être au format AAAA-MM-JJ.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} must use the format YYYY-MM-DD.")
     try:
         datetime.strptime(value, "%Y-%m-%d")
     except ValueError as error:
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} n'est pas une date valide.") from error
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} is not a valid date.") from error
     return value
 
 
@@ -153,12 +158,12 @@ def optional_date(value: object, field: str) -> str:
 
 def clean_text(value: object, field: str, limit: int) -> str:
     if not isinstance(value, str):
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} est requis.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} is required.")
     value = value.strip()
     if not value or len(value) > limit or any(char in value for char in "\r\n\x00"):
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} doit contenir entre 1 et {limit} caractères sur une ligne.")
-    if (field == "Responsable" and " — " in value) or any(marker in value for marker in ("➕", "📅", "⏳", "⏫", "🔼", "🔽", "✅", "❌")):
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} contient un séparateur réservé aux registres.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} must be 1 to {limit} characters on one line.")
+    if (field == "Owner" and " — " in value) or any(marker in value for marker in ("➕", "📅", "⏳", "⏫", "🔼", "🔽", "✅", "❌")):
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"{field} contains a separator reserved for registers.")
     return value
 
 
@@ -166,16 +171,16 @@ def clean_group(value: object) -> str:
     """A group slug (same rule as action.py), or '' for none."""
     slug = value.strip() if isinstance(value, str) else None
     if slug is None or (slug and not action_tool.valid_group(slug)):
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"Groupe invalide : minuscules, chiffres et tirets, {action_tool.GROUP_LIMIT} caractères au plus.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"Invalid group: lowercase letters, digits and hyphens, {action_tool.GROUP_LIMIT} characters at most.")
     return slug
 
 
 def clean_note(value: object) -> str:
     if not isinstance(value, str):
-        raise TaskError(HTTPStatus.BAD_REQUEST, "Note invalide.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid note.")
     note = value.strip()
     if not note or len(note) > 1000 or note.splitlines() != [note] or "\x00" in note:
-        raise TaskError(HTTPStatus.BAD_REQUEST, "La note doit contenir entre 1 et 1000 caractères sur une ligne.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, "The note must be 1 to 1000 characters on one line.")
     return note
 
 
@@ -188,31 +193,31 @@ def slugify(title: str) -> str:
 
 def clean_note_title(value: object) -> str:
     if not isinstance(value, str):
-        raise TaskError(HTTPStatus.BAD_REQUEST, "Titre requis.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, "Title required.")
     value = value.strip()
     if not value or len(value) > NOTE_TITLE_LIMIT or any(unicodedata.category(char) in {"Cc", "Cs"} for char in value):
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"Le titre doit contenir entre 1 et {NOTE_TITLE_LIMIT} caractères sur une ligne.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"The title must be 1 to {NOTE_TITLE_LIMIT} characters on one line.")
     return value
 
 
 def clean_note_content(value: object, required: bool) -> str:
     """Normalize line endings and enforce size and character limits; the result ends with one newline (or is empty)."""
     if not isinstance(value, str):
-        raise TaskError(HTTPStatus.BAD_REQUEST, "Contenu invalide.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid content.")
     text = value.replace("\r\n", "\n").replace("\r", "\n")
     if "\x00" in text or any(unicodedata.category(char) == "Cs" for char in text):
-        raise TaskError(HTTPStatus.BAD_REQUEST, "Le contenu contient des caractères non autorisés.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, "The content contains disallowed characters.")
     if required and not text.strip():
-        raise TaskError(HTTPStatus.BAD_REQUEST, "Le contenu ne peut pas être vide.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, "The content cannot be empty.")
     text = text.rstrip() + "\n" if text.strip() else ""
     if len(text.encode("utf-8")) > NOTE_CONTENT_LIMIT:
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"Le contenu dépasse {NOTE_CONTENT_LIMIT // 1024} Ko.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"The content exceeds {NOTE_CONTENT_LIMIT // 1024} KB.")
     return text
 
 
 def note_label(title: str, verb: str) -> str:
     short = title if len(title) <= 40 else title[:40].rstrip() + "…"
-    return f"note « {short} » {verb}"
+    return f'note "{short}" {verb}'
 
 
 def note_summary(text: str, fallback: str) -> tuple[str, str]:
@@ -305,11 +310,11 @@ def run_git(repo: Path, *args: str) -> bytes:
             cwd=repo, capture_output=True, timeout=10, env=environment, check=False,
         )
     except subprocess.TimeoutExpired:
-        raise TaskError(HTTPStatus.BAD_GATEWAY, "Git n'a pas répondu en 10 secondes.") from None
+        raise TaskError(HTTPStatus.BAD_GATEWAY, "Git did not answer within 10 seconds.") from None
     except OSError:
-        raise TaskError(HTTPStatus.BAD_GATEWAY, "Git est introuvable sur cette machine.") from None
+        raise TaskError(HTTPStatus.BAD_GATEWAY, "Git was not found on this machine.") from None
     if result.returncode != 0:
-        raise TaskError(HTTPStatus.BAD_GATEWAY, "Git a renvoyé une erreur pour ce dépôt.")
+        raise TaskError(HTTPStatus.BAD_GATEWAY, "Git returned an error for this repository.")
     return result.stdout
 
 
@@ -487,7 +492,7 @@ def git_repo(repos: list[tuple[str, str, Path]], repo_id: str) -> Path:
     for known, _, path in repos:
         if known == repo_id and (path / ".git").exists():
             return path
-    raise TaskError(HTTPStatus.NOT_FOUND, "Dépôt introuvable.")
+    raise TaskError(HTTPStatus.NOT_FOUND, "Repository not found.")
 
 
 def untracked_diff(repo: Path, relative: str) -> dict:
@@ -495,12 +500,12 @@ def untracked_diff(repo: Path, relative: str) -> dict:
     try:
         root = repo.resolve()
         if full.is_symlink() or not full.is_file() or not full.resolve().is_relative_to(root):
-            raise TaskError(HTTPStatus.NOT_FOUND, "Ce fichier ne peut pas être affiché.")
+            raise TaskError(HTTPStatus.NOT_FOUND, "This file cannot be shown.")
         with full.open("rb") as handle:
             data = handle.read(GIT_READ_CAP)
         size = full.stat().st_size
     except OSError:
-        raise TaskError(HTTPStatus.NOT_FOUND, "Fichier introuvable.") from None
+        raise TaskError(HTTPStatus.NOT_FOUND, "File not found.") from None
     if b"\0" in data:
         return {"diff": "", "truncated": False, "binary": True}
     lines = data.decode("utf-8", "replace").split("\n")
@@ -523,7 +528,7 @@ def git_diff(repos: list[tuple[str, str, Path]], repo_id: str, relative: str, st
     repo = git_repo(repos, repo_id)
     item = next((entry for entry in git_status(repo)[1] if entry["path"] == relative), None)
     if item is None or (staged and not item["staged"]):
-        raise TaskError(HTTPStatus.NOT_FOUND, "Fichier sans changement local.")
+        raise TaskError(HTTPStatus.NOT_FOUND, "File without local changes.")
     result = {"repo": repo_id, "path": relative, "diff": "", "truncated": False, "binary": False, "hidden": False, "staged": False}
     if item["sensitive"]:
         return {**result, "hidden": True}
@@ -544,12 +549,12 @@ def git_commit(repos: list[tuple[str, str, Path]], repo_id: str, commit_hash: st
     except TaskError:
         recent = set()
     if not GIT_HASH_RE.fullmatch(commit_hash) or commit_hash not in recent:
-        raise TaskError(HTTPStatus.NOT_FOUND, "Commit introuvable parmi les derniers commits.")
+        raise TaskError(HTTPStatus.NOT_FOUND, "Commit not found among the latest commits.")
     summary = run_git(repo, "show", "--stat", "--no-ext-diff", "--no-textconv", "--format=fuller", commit_hash, "--")
     names = run_git(repo, "show", "--name-only", "--no-renames", "--format=", "-z", commit_hash, "--").decode("utf-8", "replace").split("\0")
     hidden = [name for name in names if name and is_sensitive(name)]
     patch = run_git(repo, "show", "--format=", "--patch", "--no-renames", "--no-ext-diff", "--no-textconv", commit_hash, "--", ".", *(f":(exclude,literal){name}" for name in hidden[:200]))
-    note = f"\n[Contenu masqué pour {len(hidden)} fichier{'s' if len(hidden) > 1 else ''} sensible{'s' if len(hidden) > 1 else ''}.]\n" if hidden else ""
+    note = f"\n[Content hidden for {len(hidden)} sensitive file{'s' if len(hidden) > 1 else ''}.]\n" if hidden else ""
     text, truncated = clip_output(summary.rstrip(b"\n") + b"\n" + note.encode() + b"\n" + patch)
     return {"repo": repo_id, "hash": commit_hash, "show": text, "truncated": truncated}
 
@@ -568,7 +573,7 @@ SEARCH_BODY_CAP = 20
 SEARCH_OCCURRENCE_CAP = 100
 SEARCH_CANDIDATE_CAP = 300
 HEADING_ID_PREFIX = "h-"
-DOC_OFF_TITLE = "Fichier non affiché ici"
+DOC_OFF_TITLE = "File not shown here"
 WHITESPACE_RE = re.compile(r"\s+")
 FENCE_RE = re.compile(r"^ {0,3}(?:`{3,}|~{3,})")
 HEADING_RE = re.compile(r"^ {0,3}(#{1,6})[ \t]+(.*?)(?:[ \t]+#+)?[ \t]*$")
@@ -616,13 +621,13 @@ def fold(text: str) -> str:
 def parse_query(raw: str) -> list[str]:
     """Normalised search terms: whitespace-separated words or "quoted phrases", all required."""
     if len(raw) > SEARCH_QUERY_LIMIT:
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"La recherche dépasse {SEARCH_QUERY_LIMIT} caractères.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"The search exceeds {SEARCH_QUERY_LIMIT} characters.")
     found = [fold(quoted or bare).strip() for quoted, bare in QUERY_TOKEN_RE.findall(raw)]
     found = [term for term in found if term]
     if len(found) > SEARCH_MAX_TERMS:
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"La recherche accepte {SEARCH_MAX_TERMS} termes au plus.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"The search accepts {SEARCH_MAX_TERMS} terms at most.")
     if any(len(term) > SEARCH_TERM_MAX for term in found):
-        raise TaskError(HTTPStatus.BAD_REQUEST, f"Un terme dépasse {SEARCH_TERM_MAX} caractères.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, f"A term exceeds {SEARCH_TERM_MAX} characters.")
     terms: list[str] = []
     for term in found:
         if len(term) >= 2 and term not in terms:
@@ -799,7 +804,7 @@ def _render_link_close(self, tokens, idx, options, env) -> str:
 def _render_image(self, tokens, idx, options, env) -> str:
     token = tokens[idx]
     alt = self.renderInlineAsText(token.children, options, env) if token.children else ""
-    return f'<span class="doc-image-off" title="Image non affichée ici">{escapeHtml(alt.strip() or "image")}</span>'
+    return f'<span class="doc-image-off" title="Image not shown here">{escapeHtml(alt.strip() or "image")}</span>'
 
 
 def _render_table_open(self, tokens, idx, options, env) -> str:
@@ -864,7 +869,7 @@ class Store:
         self.brain = brain.resolve()
         self.projects = self.brain / "projects"
         if not self.projects.is_dir():
-            raise ValueError(f"Registres introuvables sous {self.projects}")
+            raise ValueError(f"Registers not found under {self.projects}")
         self.undo_stack: list[dict] = []
         self._doc_cache: dict[str, DocEntry] = {}
         self._doc_lock = threading.Lock()
@@ -906,11 +911,11 @@ class Store:
 
     def _register(self, relative: object) -> Path:
         if not isinstance(relative, str):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Projet invalide.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid project.")
         for path in self.registers():
             if path.relative_to(self.brain).as_posix() == relative:
                 return path
-        raise TaskError(HTTPStatus.BAD_REQUEST, "Projet inconnu.")
+        raise TaskError(HTTPStatus.BAD_REQUEST, "Unknown project.")
 
     def _find(self, action_id: str) -> tuple[Path, list[str], int, dict]:
         try:
@@ -928,14 +933,14 @@ class Store:
     def _fields(data: dict) -> tuple[str, str, str, str, str, str, str | None]:
         # `group` is optional: absent means unchanged on update (a status change does not send it), none on create.
         if set(data) - {"group"} != {"title", "owner", "state", "priority", "due", "scheduled"}:
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Champs d'action invalides.")
-        title = clean_text(data["title"], "Intitulé", 300)
-        owner = clean_text(data["owner"], "Responsable", 120)
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid action fields.")
+        title = clean_text(data["title"], "Title", 300)
+        owner = clean_text(data["owner"], "Owner", 120)
         state = data["state"]
         priority = data["priority"]
         if not isinstance(state, str) or not isinstance(priority, str) or state not in STATUS or priority not in PRIORITY:
-            raise TaskError(HTTPStatus.BAD_REQUEST, "État ou priorité invalide.")
-        return (title, owner, state, priority, optional_date(data["due"], "Échéance"), optional_date(data["scheduled"], "Planification"),
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid status or priority.")
+        return (title, owner, state, priority, optional_date(data["due"], "Due date"), optional_date(data["scheduled"], "Scheduled date"),
                 clean_group(data["group"]) if "group" in data else None)
 
     @staticmethod
@@ -961,9 +966,9 @@ class Store:
                                     capture_output=True, text=True, timeout=30, check=False)
             payload = json.loads(result.stdout or "{}")
         except (OSError, subprocess.TimeoutExpired, ValueError):
-            raise TaskError(HTTPStatus.INTERNAL_SERVER_ERROR, "Impossible d'exécuter l'outil des actions.") from None
+            raise TaskError(HTTPStatus.INTERNAL_SERVER_ERROR, "Could not run the actions tool.") from None
         if result.returncode:
-            raise TaskError(ACTION_STATUS.get(payload.get("kind"), HTTPStatus.INTERNAL_SERVER_ERROR), payload.get("error") or "Échec de l'outil des actions.")
+            raise TaskError(ACTION_STATUS.get(payload.get("kind"), HTTPStatus.INTERNAL_SERVER_ERROR), payload.get("error") or "The actions tool failed.")
         after = path.read_bytes()
         if after != before:
             self.undo_stack.append({"path": path, "before": before, "after": after, "label": payload["label"],
@@ -977,12 +982,12 @@ class Store:
 
     def undo(self, payload: dict) -> dict:
         if set(payload) != {"label"} or not isinstance(payload["label"], str):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données d'annulation invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid undo data.")
         if not self.undo_stack:
-            raise TaskError(HTTPStatus.CONFLICT, "Rien à annuler.")
+            raise TaskError(HTTPStatus.CONFLICT, "Nothing to undo.")
         entry = self.undo_stack[-1]
         if payload["label"] != entry["label"]:
-            raise TaskError(HTTPStatus.CONFLICT, "La dernière modification a changé. Actualise avant d'annuler.")
+            raise TaskError(HTTPStatus.CONFLICT, "The last change is different. Refresh before undoing.")
         path = entry["path"]
         try:
             current = path.read_bytes()
@@ -990,7 +995,7 @@ class Store:
             current = None
         if current != entry["after"]:
             self.undo_stack[:] = [item for item in self.undo_stack if item["path"] != path]
-            raise TaskError(HTTPStatus.CONFLICT, f"{'La note' if entry.get('note') else 'Le registre'} a changé depuis cette modification ; annulation impossible.")
+            raise TaskError(HTTPStatus.CONFLICT, f"The {'note' if entry.get('note') else 'register'} changed since this edit; it cannot be undone.")
         if entry["before"] is None:
             path.unlink()
             for directory in entry.get("created_dirs", []):
@@ -1011,29 +1016,29 @@ class Store:
 
     def create(self, payload: dict) -> dict:
         if set(payload) != {"register", "action"} or not isinstance(payload["action"], dict):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de création invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid creation data.")
         path = self._register(payload["register"])
         fields = self._fields(payload["action"])
         if fields[2] not in {" ", "/", "w"}:
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Une nouvelle action est à faire, en cours ou en attente.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "A new action must be to do, in progress or waiting.")
         today = datetime.now(ZoneInfo("Europe/Paris")).date().isoformat()
         result = self._run_action(path, None, "create", f"--project={payload['register']}", *self._field_args(fields),
-                                  f"--source=saisie depuis l'interface locale, {today[8:10]}/{today[5:7]}")
+                                  f"--source={SOURCE_ENTERED}, {today[8:10]}/{today[5:7]}")
         return {"id": result["id"]}
 
     def update(self, action_id: str, payload: dict) -> dict:
         if set(payload) != {"version", "action"} or not isinstance(payload["action"], dict):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de modification invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid update data.")
         fields = self._fields(payload["action"])
         if not isinstance(payload["version"], str):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de modification invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid update data.")
         path = self._find(action_id)[0]
         self._run_action(path, action_id, "update", action_id, *self._field_args(fields), f"--expect-version={payload['version']}")
         return {"id": action_id}
 
     def _locked(self, action_id: str, payload: dict, keys: set[str]) -> Path:
         if set(payload) != keys or not isinstance(payload["details_version"], str):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de note invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid note data.")
         return self._find(action_id)[0]
 
     def add_note(self, action_id: str, payload: dict) -> dict:
@@ -1045,7 +1050,7 @@ class Store:
 
     def delete_note(self, action_id: str, number: int, payload: dict) -> dict:
         if not isinstance(payload.get("text"), str):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de note invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid note data.")
         path = self._locked(action_id, payload, {"details_version", "text"})
         self._run_action(path, action_id, "history", "remove", action_id, f"--index={number}", f"--expect-text={payload['text']}",
                          f"--expect-details-version={payload['details_version']}")
@@ -1053,7 +1058,7 @@ class Store:
 
     def delete_action(self, action_id: str, payload: dict) -> dict:
         if set(payload) != {"version", "details_version"} or not all(isinstance(payload[key], str) for key in payload):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de suppression invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid deletion data.")
         path = self._find(action_id)[0]
         self._run_action(path, action_id, "delete", action_id, f"--expect-version={payload['version']}",
                          f"--expect-details-version={payload['details_version']}")
@@ -1082,14 +1087,15 @@ class Store:
         return datetime.fromtimestamp(path.stat().st_mtime, ZoneInfo("Europe/Paris")).date().isoformat()
 
     def _note_files(self) -> list[tuple[Path, str, str]]:
-        """Note files as (path, project label, register path); symlinks, archives and README files are skipped. Inbox notes use INBOX_REGISTER."""
+        """Note files as (path, project label, register path); symlinks, archives, README files and the inbox scratchpad are skipped. Inbox notes use INBOX_REGISTER."""
         found = []
         folders = [(project["dir"] / "notes", project["label"], project["register"]) for project in self._project_dirs()]
         for folder, label, register in [*folders, (self.brain / INBOX_DIR, INBOX_LABEL, INBOX_REGISTER)]:
             if not self._note_safe(folder, directory=True):
                 continue
             for path in sorted(folder.glob("*.md")):
-                if path.name.lower() != "readme.md" and not path.name.startswith(".") and self._note_safe(path):
+                skipped = {"readme.md", INBOX_FILE} if register == INBOX_REGISTER else {"readme.md"}
+                if path.name.lower() not in skipped and not path.name.startswith(".") and self._note_safe(path):
                     found.append((path, label, register))
         return found
 
@@ -1117,7 +1123,7 @@ class Store:
             for path, label, register in self._note_files():
                 if path.relative_to(self.brain).as_posix() == note_id:
                     return path, label, register
-        raise TaskError(HTTPStatus.NOT_FOUND, "Note introuvable.")
+        raise TaskError(HTTPStatus.NOT_FOUND, "Note not found.")
 
     def _note_payload(self, path: Path, label: str, register: str, data: bytes) -> dict:
         text = data.decode("utf-8", "replace")
@@ -1129,20 +1135,21 @@ class Store:
         try:
             return self._note_payload(path, label, register, path.read_bytes())
         except OSError:
-            raise TaskError(HTTPStatus.NOT_FOUND, "Note introuvable.") from None
+            raise TaskError(HTTPStatus.NOT_FOUND, "Note not found.") from None
 
     def _note_header(self, project_dir: Path | None, label: str, today: str) -> str:
+        words = NOTE_HEADER
         date = f"{today[8:10]}/{today[5:7]}/{today[:4]}"
         if project_dir is None:
-            return f"> Note du {date} · à trier"
+            return f"> {words['note']} {date} · {words['triage']}"
         name = project_dir.name
         page = project_dir / f"{name}.md"
         if self._note_safe(page):
             target, text = f"../{quote(name)}.md", label
         else:
-            target, text = "../state/actions.md", f"{label} (registre)"
+            target, text = "../state/actions.md", f"{label} ({words['register']})"
         text = text.replace("\\", "\\\\").replace("[", "\\[").replace("]", "\\]")
-        return f"> Note du {date} · projet : [{text}]({target})"
+        return f"> {words['note']} {date} · {words['project']}[{text}]({target})"
 
     def _note_write(self, path: Path, before: bytes | None, after: bytes, label: str, created_dirs: list[Path] | None) -> None:
         self._atomic(path, after)
@@ -1152,7 +1159,7 @@ class Store:
 
     def create_note(self, payload: dict) -> dict:
         if set(payload) != {"title", "register", "content"}:
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de note invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid note data.")
         title = clean_note_title(payload["title"])
         content = clean_note_content(payload["content"], required=False)
         if payload["register"] == INBOX_REGISTER:
@@ -1162,7 +1169,7 @@ class Store:
             known = {info["path"]: info for info in self._scan_registers()}
             info = known.get(payload["register"]) if isinstance(payload["register"], str) else None
             if info is None:
-                raise TaskError(HTTPStatus.BAD_REQUEST, "Projet inconnu.")
+                raise TaskError(HTTPStatus.BAD_REQUEST, "Unknown project.")
             project_dir, label, register = info["file"].parent.parent, info["label"], info["path"]
             folder = project_dir / "notes"
         today = datetime.now(ZoneInfo("Europe/Paris")).date().isoformat()
@@ -1170,9 +1177,9 @@ class Store:
         text = f"# {title}\n\n{self._note_header(project_dir, label, today)}\n" + (f"\n{content}" if content else "")
         data = text.encode("utf-8")
         if len(data) > NOTE_CONTENT_LIMIT + 4096:
-            raise TaskError(HTTPStatus.BAD_REQUEST, f"Le contenu dépasse {NOTE_CONTENT_LIMIT // 1024} Ko.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, f"The content exceeds {NOTE_CONTENT_LIMIT // 1024} KB.")
         if (folder.exists() or folder.is_symlink()) and not self._note_safe(folder, directory=True):
-            raise TaskError(HTTPStatus.CONFLICT, "Le dossier de notes n'est pas utilisable.")
+            raise TaskError(HTTPStatus.CONFLICT, "The notes folder cannot be used.")
         created: list[Path] = []
         number = 1
         while True:
@@ -1185,7 +1192,7 @@ class Store:
             for directory in reversed([parent for parent in (path.parent, *path.parent.parents) if not parent.exists() and parent.is_relative_to(self.brain)]):
                 directory.mkdir()
                 created.append(directory)
-            self._note_write(path, None, data, note_label(title, "créée"), list(reversed(created)))
+            self._note_write(path, None, data, note_label(title, "created"), list(reversed(created)))
         except OSError:
             for directory in reversed(created):
                 try:
@@ -1197,18 +1204,18 @@ class Store:
 
     def update_note(self, payload: dict) -> dict:
         if set(payload) != {"id", "version", "content"} or not isinstance(payload["version"], str):
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Données de note invalides.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid note data.")
         content = clean_note_content(payload["content"], required=True)
         path, _, _ = self._note_entry(payload["id"])
         try:
             before = path.read_bytes()
         except OSError:
-            raise TaskError(HTTPStatus.NOT_FOUND, "Note introuvable.") from None
+            raise TaskError(HTTPStatus.NOT_FOUND, "Note not found.") from None
         if payload["version"] != hashlib.sha256(before).hexdigest()[:16]:
-            raise TaskError(HTTPStatus.CONFLICT, "La note a changé sur le disque. Recharge-la avant de réessayer.")
+            raise TaskError(HTTPStatus.CONFLICT, "The note changed on disk. Reload it before retrying.")
         after = content.encode("utf-8")
         if after != before:
-            self._note_write(path, before, after, note_label(note_summary(content, path.stem)[0], "modifiée"), None)
+            self._note_write(path, before, after, note_label(note_summary(content, path.stem)[0], "edited"), None)
         return {"id": path.relative_to(self.brain).as_posix(), "version": hashlib.sha256(after).hexdigest()[:16]}
 
 
@@ -1327,14 +1334,14 @@ class Store:
         catalogue = {entry.id: entry for entry in self.docs()}
         entry = catalogue.get(doc_id) if isinstance(doc_id, str) else None
         if entry is None:
-            raise TaskError(HTTPStatus.NOT_FOUND, "Document introuvable.")
+            raise TaskError(HTTPStatus.NOT_FOUND, "Document not found.")
         try:
             with open(entry.path, "rb") as handle:
                 data = handle.read(DOC_SIZE_LIMIT + 1)
         except OSError:
-            raise TaskError(HTTPStatus.NOT_FOUND, "Document introuvable.") from None
+            raise TaskError(HTTPStatus.NOT_FOUND, "Document not found.") from None
         if len(data) > DOC_SIZE_LIMIT:
-            raise TaskError(HTTPStatus.NOT_FOUND, "Document introuvable.")
+            raise TaskError(HTTPStatus.NOT_FOUND, "Document not found.")
         text = data.decode("utf-8", "replace").lstrip("﻿")
         owner = self._doc_project(entry.id, self._doc_projects())
         try:
@@ -1382,12 +1389,12 @@ class Handler(BaseHTTPRequestHandler):
         if values is None:
             return self.server.store
         if len(values) != 1:
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Paramètre brain invalide.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid brain parameter.")
         return self.server.store_for(values[0])
 
     def do_GET(self) -> None:
         if not self._host_ok():
-            self._json(HTTPStatus.FORBIDDEN, {"error": "Hôte refusé."})
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Host refused."})
             return
         path = urlsplit(self.path).path
         if path == "/api/brains":
@@ -1430,7 +1437,7 @@ class Handler(BaseHTTPRequestHandler):
             return
         assets = {"/": ("index.html", "text/html; charset=utf-8"), "/app.css": ("app.css", "text/css; charset=utf-8"), "/app.js": ("app.js", "text/javascript; charset=utf-8")}
         if path not in assets:
-            self._json(HTTPStatus.NOT_FOUND, {"error": "Page introuvable."})
+            self._json(HTTPStatus.NOT_FOUND, {"error": "Page not found."})
             return
         filename, mime = assets[path]
         data = (ASSETS / filename).read_bytes()
@@ -1446,13 +1453,13 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     values = parse_qs(urlsplit(self.path).query, keep_blank_values=True).get("id", [])
                     if len(values) != 1:
-                        raise TaskError(HTTPStatus.BAD_REQUEST, "Paramètre id invalide.")
+                        raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid id parameter.")
                     result = store.note_content(values[0])
             self._json(HTTPStatus.OK, result)
         except TaskError as error:
             self._json(error.status, {"error": error.message})
         except OSError:
-            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Lecture des notes impossible."})
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Could not read the notes."})
 
     def _docs_request(self, path: str, store: Store) -> None:
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
@@ -1460,7 +1467,7 @@ class Handler(BaseHTTPRequestHandler):
         def one(name: str, default: str | None = None) -> str:
             values = query.get(name, [] if default is None else [default])
             if len(values) != 1:
-                raise TaskError(HTTPStatus.BAD_REQUEST, f"Paramètre {name} invalide.")
+                raise TaskError(HTTPStatus.BAD_REQUEST, f"Invalid {name} parameter.")
             return values[0]
         try:
             if path == "/api/search":
@@ -1473,7 +1480,7 @@ class Handler(BaseHTTPRequestHandler):
         except TaskError as error:
             self._json(error.status, {"error": error.message})
         except OSError:
-            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Lecture des documents impossible."})
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Could not read the documents."})
 
     def _git_request(self, path: str, store: Store) -> None:
         query = parse_qs(urlsplit(self.path).query, keep_blank_values=True)
@@ -1481,7 +1488,7 @@ class Handler(BaseHTTPRequestHandler):
             def one(name: str) -> str:
                 values = query.get(name, [])
                 if len(values) != 1:
-                    raise TaskError(HTTPStatus.BAD_REQUEST, f"Paramètre {name} invalide.")
+                    raise TaskError(HTTPStatus.BAD_REQUEST, f"Invalid {name} parameter.")
                 return values[0]
             repos = self.server.git_repos_for(store)
             if path == "/api/git":
@@ -1489,7 +1496,7 @@ class Handler(BaseHTTPRequestHandler):
             elif path == "/api/git/diff":
                 staged = one("staged") if "staged" in query else "0"
                 if staged not in {"0", "1"}:
-                    raise TaskError(HTTPStatus.BAD_REQUEST, "Paramètre staged invalide.")
+                    raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid staged parameter.")
                 result = git_diff(repos, one("repo"), one("path"), staged == "1")
             else:
                 result = git_commit(repos, one("repo"), one("hash"))
@@ -1497,25 +1504,25 @@ class Handler(BaseHTTPRequestHandler):
         except TaskError as error:
             self._json(error.status, {"error": error.message})
         except OSError:
-            self._json(HTTPStatus.BAD_GATEWAY, {"error": "Lecture Git impossible."})
+            self._json(HTTPStatus.BAD_GATEWAY, {"error": "Could not read Git."})
 
     def _write_request(self, kind: str) -> None:
         if not self._host_ok() or self.headers.get("Origin") not in {f"http://127.0.0.1:{self.server.server_port}", f"http://localhost:{self.server.server_port}"}:
-            self._json(HTTPStatus.FORBIDDEN, {"error": "Origine refusée."})
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Origin refused."})
             return
         if self.headers.get("X-Tasks-Token") != self.server.token:
-            self._json(HTTPStatus.FORBIDDEN, {"error": "Jeton local invalide."})
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Invalid local token."})
             return
         if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
-            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "JSON requis."})
+            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "JSON required."})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= (NOTE_REQUEST_LIMIT if kind in {"note_create", "note_update"} else 8192):
-                raise TaskError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Requête trop grande.")
+                raise TaskError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request too large.")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict):
-                raise TaskError(HTTPStatus.BAD_REQUEST, "Objet JSON requis.")
+                raise TaskError(HTTPStatus.BAD_REQUEST, "JSON object required.")
             path = urlsplit(self.path).path
             status = HTTPStatus.OK
             store = self._store()
@@ -1525,12 +1532,12 @@ class Handler(BaseHTTPRequestHandler):
                 elif kind == "update":
                     match = re.fullmatch(r"/api/actions/([A-Z]{2,5}-\d{3})", path)
                     if not match:
-                        raise TaskError(HTTPStatus.NOT_FOUND, "Action introuvable.")
+                        raise TaskError(HTTPStatus.NOT_FOUND, "Action not found.")
                     result = store.update(match.group(1), payload)
                 elif kind == "add_note":
                     match = re.fullmatch(r"/api/actions/([A-Z]{2,5}-\d{3})/notes", path)
                     if not match:
-                        raise TaskError(HTTPStatus.NOT_FOUND, "Action introuvable.")
+                        raise TaskError(HTTPStatus.NOT_FOUND, "Action not found.")
                     status, result = HTTPStatus.CREATED, store.add_note(match.group(1), payload)
                 elif kind == "note_create":
                     status, result = HTTPStatus.CREATED, store.create_note(payload)
@@ -1543,7 +1550,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:
                     match = re.fullmatch(r"/api/actions/([A-Z]{2,5}-\d{3})/notes/(\d{1,4})", path)
                     if not match:
-                        raise TaskError(HTTPStatus.NOT_FOUND, "Note introuvable.")
+                        raise TaskError(HTTPStatus.NOT_FOUND, "Note not found.")
                     result = store.delete_note(match.group(1), int(match.group(2)), payload)
                 if kind != "undo":
                     result = {**result, "undo": store.undo_state()}
@@ -1551,9 +1558,9 @@ class Handler(BaseHTTPRequestHandler):
         except TaskError as error:
             self._json(error.status, {"error": error.message})
         except (ValueError, UnicodeDecodeError):
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "JSON invalide."})
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON."})
         except OSError:
-            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "Le fichier n'a pas pu être enregistré." if kind in {"note_create", "note_update"} else "Le registre n'a pas pu être enregistré."})
+            self._json(HTTPStatus.INTERNAL_SERVER_ERROR, {"error": "The file could not be saved." if kind in {"note_create", "note_update"} else "The register could not be saved."})
 
     def do_POST(self) -> None:
         path = urlsplit(self.path).path
@@ -1573,40 +1580,40 @@ class Handler(BaseHTTPRequestHandler):
             self._write_request("note_create")
             return
         if path != "/api/actions":
-            self._json(HTTPStatus.NOT_FOUND, {"error": "Page introuvable."})
+            self._json(HTTPStatus.NOT_FOUND, {"error": "Page not found."})
             return
         self._write_request("create")
 
     def _shutdown_request(self) -> None:
         if not self._host_ok() or self.headers.get("Origin") not in {f"http://127.0.0.1:{self.server.server_port}", f"http://localhost:{self.server.server_port}"} or self.headers.get("X-Tasks-Token") != self.server.token:
-            self._json(HTTPStatus.FORBIDDEN, {"error": "Accès refusé."})
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Access refused."})
             return
         if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json" or self.headers.get("Content-Length") != "2" or self.rfile.read(2) != b"{}":
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "Requête d'arrêt invalide."})
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid shutdown request."})
             return
         self._json(HTTPStatus.OK, {"stopping": True})
         threading.Thread(target=self.server.shutdown, daemon=True).start()
 
     def _tool_request(self) -> None:
         if not self._host_ok() or self.headers.get("Origin") not in {f"http://127.0.0.1:{self.server.server_port}", f"http://localhost:{self.server.server_port}"}:
-            self._json(HTTPStatus.FORBIDDEN, {"error": "Origine refusée."})
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Origin refused."})
             return
         if self.headers.get("X-Tasks-Token") != self.server.token:
-            self._json(HTTPStatus.FORBIDDEN, {"error": "Jeton local invalide."})
+            self._json(HTTPStatus.FORBIDDEN, {"error": "Invalid local token."})
             return
         if self.headers.get("Content-Type", "").split(";", 1)[0] != "application/json":
-            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "JSON requis."})
+            self._json(HTTPStatus.UNSUPPORTED_MEDIA_TYPE, {"error": "JSON required."})
             return
         try:
             length = int(self.headers.get("Content-Length", "0"))
             if not 0 < length <= 256:
-                raise TaskError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Requête trop grande.")
+                raise TaskError(HTTPStatus.REQUEST_ENTITY_TOO_LARGE, "Request too large.")
             payload = json.loads(self.rfile.read(length))
             if not isinstance(payload, dict) or set(payload) != {"id"} or not isinstance(payload["id"], str):
-                raise TaskError(HTTPStatus.BAD_REQUEST, "Outil invalide.")
+                raise TaskError(HTTPStatus.BAD_REQUEST, "Invalid tool.")
             brain = self._store().brain
             if not TOOL_LOCK.acquire(blocking=False):
-                raise TaskError(HTTPStatus.CONFLICT, "Un outil est déjà en cours d'exécution.")
+                raise TaskError(HTTPStatus.CONFLICT, "A tool is already running.")
             try:
                 result = run_tool(payload["id"], brain)
             finally:
@@ -1615,7 +1622,7 @@ class Handler(BaseHTTPRequestHandler):
         except TaskError as error:
             self._json(error.status, {"error": error.message})
         except (ValueError, UnicodeDecodeError):
-            self._json(HTTPStatus.BAD_REQUEST, {"error": "JSON invalide."})
+            self._json(HTTPStatus.BAD_REQUEST, {"error": "Invalid JSON."})
 
     def do_PATCH(self) -> None:
         self._write_request("note_update" if urlsplit(self.path).path == "/api/notes" else "update")
@@ -1670,14 +1677,14 @@ class TaskServer(ThreadingHTTPServer):
             return self.store
         path = brains.get(name)
         if path is None:
-            raise TaskError(HTTPStatus.BAD_REQUEST, "Brain inconnu.")
+            raise TaskError(HTTPStatus.BAD_REQUEST, "Unknown brain.")
         with self._stores_lock:
             store = self._stores.get(name)
             if store is None or store.brain != path.resolve():
                 try:
                     store = self._stores[name] = Store(path)
                 except ValueError:
-                    raise TaskError(HTTPStatus.NOT_FOUND, "Ce brain n'a pas de dossier projects.") from None
+                    raise TaskError(HTTPStatus.NOT_FOUND, "This brain has no projects folder.") from None
             return store
 
     def git_repos_for(self, store: Store) -> list[tuple[str, str, Path]]:
@@ -1690,13 +1697,13 @@ class TaskServer(ThreadingHTTPServer):
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--brain", type=Path, default=WORK / DEFAULT_BRAIN,
-                        help="brain par défaut (défaut : Work/brain) ; les autres brains de Work se choisissent dans la page")
-    parser.add_argument("--port", type=int, default=8765, help="port local (défaut : 8765)")
+                        help="default brain (default: Work/brain); the other brains of Work are chosen in the page")
+    parser.add_argument("--port", type=int, default=8765, help="local port (default: 8765)")
     args = parser.parse_args()
     if not 1 <= args.port <= 65535:
-        parser.error("port invalide")
+        parser.error("invalid port")
     with TaskServer(("127.0.0.1", args.port), Store(args.brain)) as server:
-        print(f"Actions : http://127.0.0.1:{server.server_port}/ (Ctrl+C pour arrêter)", flush=True)
+        print(f"Actions: http://127.0.0.1:{server.server_port}/ (Ctrl+C to stop)", flush=True)
         try:
             server.serve_forever()
         except KeyboardInterrupt:

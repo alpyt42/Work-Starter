@@ -102,7 +102,7 @@ def effective(repo: Path, key: str) -> tuple[str, str]:
     origin, value = result.stdout.rstrip("\n").split("\t", 1)
     origin = origin.removeprefix("file:")
     local = bool(origin) and (repo / origin).resolve() == (repo / ".git/config").resolve()
-    return value, "clone local" if local else Path(origin).name
+    return value, "local clone" if local else Path(origin).name
 
 
 def identity_summary(repo: Path) -> tuple[str, bool]:
@@ -110,9 +110,9 @@ def identity_summary(repo: Path) -> tuple[str, bool]:
     email, email_origin = effective(repo, "user.email")
     command, command_origin = effective(repo, "core.sshCommand")
     key = re.search(r"-i\s+(\S+)", command)
-    key_text = f"{key.group(1)} ({command_origin})" if key else "choisie par ~/.ssh/config"
-    author = f"{email} ({email_origin})" if email else "aucun"
-    return f"auteur={author} · clé={key_text}", bool(email)
+    key_text = f"{key.group(1)} ({command_origin})" if key else "chosen by ~/.ssh/config"
+    author = f"{email} ({email_origin})" if email else "none"
+    return f"author={author} · key={key_text}", bool(email)
 
 
 def check(items: list[dict[str, str]]) -> int:
@@ -120,24 +120,24 @@ def check(items: list[dict[str, str]]) -> int:
     for item in items:
         target = destination(item["path"])
         if not target.exists():
-            print(f"ABSENT    {item['path']}")
+            print(f"MISSING   {item['path']}")
             continue
         try:
             actual = existing_remote(target)
         except (ValueError, subprocess.CalledProcessError) as exc:
-            print(f"ERREUR    {item['path']}: {exc}")
+            print(f"ERROR     {item['path']}: {exc}")
             mismatches += 1
             continue
         if actual != item["url"]:
-            visible = actual if SSH_URL.fullmatch(actual) and ".." not in actual else "<URL non SSH masquée>"
-            print(f"DIFFÉRENT {item['path']}: origin={visible}; catalogue={item['url']}")
+            visible = actual if SSH_URL.fullmatch(actual) and ".." not in actual else "<non-SSH URL hidden>"
+            print(f"DIFFERENT {item['path']}: origin={visible}; catalog={item['url']}")
             mismatches += 1
             continue
         summary, has_author = identity_summary(target)
         if has_author:
             print(f"OK        {item['path']}  {summary}")
         else:
-            print(f"IDENTITÉ  {item['path']}  {summary} : aucun user.email (règle ~/.gitconfig absente ou incomplète)")
+            print(f"IDENTITY  {item['path']}  {summary} : no user.email (~/.gitconfig rule missing or incomplete)")
             mismatches += 1
     return 1 if mismatches else 0
 
@@ -186,7 +186,7 @@ def clone(items: list[dict[str, str]], identity: str | None, author_name: str | 
         if target.exists():
             if existing_remote(target) != item["url"]:
                 raise ValueError(f"existing clone has a different origin: {item['path']}")
-            print(f"DÉJÀ PRÉSENT {item['path']}  {identity_summary(target)[0]}")
+            print(f"ALREADY PRESENT {item['path']}  {identity_summary(target)[0]}")
             continue
         if not override and not home_rules_cover(target, item["url"]):
             target.rmdir()
@@ -204,7 +204,7 @@ def clone(items: list[dict[str, str]], identity: str | None, author_name: str | 
                 ("core.sshCommand", command),
             ):
                 subprocess.run(["git", "-C", str(target), "config", "--local", key, value], check=True)
-        print(f"CLONÉ       {item['path']}  {identity_summary(target)[0]}")
+        print(f"CLONED          {item['path']}  {identity_summary(target)[0]}")
     return 0
 
 
@@ -229,7 +229,7 @@ def main() -> int:
             return check(items)
         return clone(items, args.identity, args.author_name, args.author_email)
     except (OSError, ValueError, subprocess.CalledProcessError) as exc:
-        print(f"Erreur : {exc}", file=sys.stderr)
+        print(f"Error: {exc}", file=sys.stderr)
         return 1
 
 

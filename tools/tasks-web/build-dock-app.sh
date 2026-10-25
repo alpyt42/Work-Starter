@@ -9,11 +9,11 @@ app_path="$output_dir/Actions Brain.app"
 launcher="$script_dir/launcher.sh"
 
 if [[ ! -f "$launcher" || ! -f "$script_dir/tasks-web.py" ]]; then
-  print -u2 'Le lanceur ou le serveur de tâches est introuvable.'
+  print -u2 'The launcher or the tasks server was not found.'
   exit 1
 fi
 if [[ "$launcher" == *'"'* || "$launcher" == *'\\'* ]]; then
-  print -u2 "Le chemin du lanceur contient un caractère non pris en charge."
+  print -u2 "The launcher path contains an unsupported character."
   exit 1
 fi
 
@@ -24,7 +24,7 @@ on run
     try
         do shell script ("/bin/zsh " & quoted form of "$launcher")
     on error errorMessage
-        display dialog ("Impossible d'ouvrir Actions. " & errorMessage) buttons {"OK"} default button "OK" with icon stop
+        display dialog ("Could not open Actions. " & errorMessage) buttons {"OK"} default button "OK" with icon stop
     end try
 end run
 APPLESCRIPT
@@ -32,11 +32,11 @@ APPLESCRIPT
 /usr/bin/osacompile -o "$app_path" "$script_path"
 /usr/bin/plutil -replace CFBundleIdentifier -string 'local.work.tasks-brain' "$app_path/Contents/Info.plist"
 cat > "$output_dir/README.md" <<'README'
-# Application Actions Brain
+# Actions Brain app
 
-Application locale générée avec `tools/tasks-web/build-dock-app.sh` depuis le dépôt Work. Elle lance `tools/tasks-web/launcher.sh`, qui démarre le serveur de tâches si besoin et ouvre la page locale dans le navigateur par défaut. Le code et les données restent dans Work ; cette app est un livrable local non versionné.
+Local app generated with `tools/tasks-web/build-dock-app.sh` from the Work repository. It runs `tools/tasks-web/launcher.sh`, which starts the tasks server if needed and opens the local page in the default browser. The code and the data stay in Work; this app is a local deliverable that is not versioned.
 
-Pour la reconstruire, déplacer ou supprimer cette app générée puis relancer la commande de construction depuis Work. Le bouton **Quitter** dans la page arrête le serveur local. Un redémarrage du Mac l'arrête aussi.
+To rebuild it, move or delete this generated app, then run the build command again from Work. The **Quit** button in the page stops the local server. Restarting the Mac stops it too.
 README
 
 print -r -- "$app_path"

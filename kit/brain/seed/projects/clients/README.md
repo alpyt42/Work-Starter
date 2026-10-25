@@ -1,14 +1,14 @@
 # Clients
 
-Un dossier par client : `projects/clients/<client>/`.
+One folder per client: `projects/clients/<client>/`.
 
-- `<client>.md` : index durable du client.
-- `missions/<mission>/<mission>.md` : fiche courte de mission.
-- `missions/<mission>/state/` : actions et décisions.
-- `missions/<mission>/workstreams/` : documentation de référence vivante.
-- `missions/<mission>/sources/YYYY-MM/` : sources datées et index mensuel.
-- `missions/<mission>/notes/` : notes de travail datées.
-- `missions/<mission>/journal/` : anciennes entrées mensuelles de timeline.
-- `archive/` : missions closes, déplacées sur demande explicite.
+- `<client>.md`: durable index of the client.
+- `missions/<mission>/<mission>.md`: short mission page.
+- `missions/<mission>/state/`: actions and decisions.
+- `missions/<mission>/workstreams/`: living reference documentation.
+- `missions/<mission>/sources/YYYY-MM/`: dated sources and monthly index.
+- `missions/<mission>/notes/`: dated working notes.
+- `missions/<mission>/journal/`: older monthly timeline entries.
+- `archive/`: closed missions, moved on explicit request.
 
-Partir des modèles [`_CLIENT-TEMPLATE.md`](../../../kit/brain/templates/_CLIENT-TEMPLATE.md) et [`_MISSION-TEMPLATE.md`](../../../kit/brain/templates/_MISSION-TEMPLATE.md).
+Start from the templates [`_CLIENT-TEMPLATE.md`](../../../kit/brain/templates/_CLIENT-TEMPLATE.md) and [`_MISSION-TEMPLATE.md`](../../../kit/brain/templates/_MISSION-TEMPLATE.md).

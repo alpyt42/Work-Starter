@@ -58,11 +58,11 @@ def check_expected(brains: list[Path]) -> None:
     missing = [name for name in expected if not (WORK / name).is_dir() or not is_brain(WORK / name)]
     if missing:
         raise SystemExit(
-            "brain(s) attendu(s) absent(s) : " + ", ".join(missing)
-            + " — cloner ou restaurer avant de traiter des transcripts"
+            "expected brain(s) missing: " + ", ".join(missing)
+            + " — clone or restore them before processing transcripts"
         )
     if not brains:
-        raise SystemExit(f"aucun brain trouvé dans {WORK}")
+        raise SystemExit(f"no brain found in {WORK}")
 
 
 def load_transcripts(brains: list[Path]) -> dict[str, tuple[str, dict]]:
@@ -79,7 +79,7 @@ def load_transcripts(brains: list[Path]) -> dict[str, tuple[str, dict]]:
             else:
                 merged[key] = (brain.name, record)
     if conflicts:
-        raise SystemExit("transcript présent dans plusieurs brains : " + "; ".join(conflicts))
+        raise SystemExit("transcript listed by several brains: " + "; ".join(conflicts))
     return merged
 
 
@@ -88,7 +88,7 @@ def transcripts_dir() -> Path:
         return Path(os.environ["TRANSCRIPTS_DIR"])
     relative = shared_config().get("transcripts_dir")
     if not relative:
-        raise SystemExit(f"transcripts_dir absent de {DEFAULT}/.data/local-paths.json")
+        raise SystemExit(f"transcripts_dir missing from {DEFAULT}/.data/local-paths.json")
     return Path.home() / relative
 
 
@@ -100,7 +100,7 @@ def boundary(brain: Path) -> dict:
     try:
         declared = json.loads(path.read_text(encoding="utf-8"))
     except json.JSONDecodeError as error:
-        raise SystemExit(f"{brain.name}/.data/brain.json illisible : {error}") from None
+        raise SystemExit(f"{brain.name}/.data/brain.json is unreadable: {error}") from None
     return declared if isinstance(declared, dict) else {}
 
 
@@ -114,7 +114,7 @@ def cmd_brains(brains: list[Path]) -> int:
         state = brain / ".data/transcripts.json"
         count = len(json.loads(state.read_text(encoding="utf-8"))) if state.is_file() else 0
         declared = boundary(brain)
-        print(f"{brain.name}\t{count} transcript(s) suivis\t{one_line(declared.get('scope'))}\t{one_line(declared.get('description'))}")
+        print(f"{brain.name}\t{count} transcript(s) tracked\t{one_line(declared.get('scope'))}\t{one_line(declared.get('description'))}")
     return 0
 
 
@@ -122,7 +122,7 @@ def cmd_transcripts(brains: list[Path], new: bool, where: str | None) -> int:
     merged = load_transcripts(brains)
     if where:
         if where not in merged:
-            print(f"{where}\tnon suivi")
+            print(f"{where}\tnot tracked")
             return 1
         owner, record = merged[where]
         print(f"{where}\t{owner}\t{record.get('status', '?')}")
@@ -132,14 +132,14 @@ def cmd_transcripts(brains: list[Path], new: bool, where: str | None) -> int:
         try:
             names = sorted(p.name for p in folder.iterdir() if p.suffix == ".txt")
         except (FileNotFoundError, NotADirectoryError):
-            raise SystemExit(f"dossier des transcripts introuvable : {folder}") from None
+            raise SystemExit(f"transcripts folder not found: {folder}") from None
         except PermissionError:
             raise SystemExit(
-                f"Accès refusé au dossier des transcripts : {folder}. "
-                "Vérifie les autorisations macOS et la disponibilité du dossier OneDrive, puis relance."
+                f"Access denied to the transcripts folder: {folder}. "
+                "Check the macOS permissions and that the synced folder (OneDrive, for example) is available, then run again."
             ) from None
         except OSError as error:
-            raise SystemExit(f"impossible de lire le dossier des transcripts : {folder} ({error.strerror})") from None
+            raise SystemExit(f"cannot read the transcripts folder: {folder} ({error.strerror})") from None
         for name in names:
             if name not in merged:
                 print(name)

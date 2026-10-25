@@ -1,5 +1,5 @@
 # people/archive/
 
-Les fiches de personnes qui ne sont plus actives (fin de mission, départ), déplacées sur demande explicite. Après un déplacement, réparer les liens.
+Pages of people who are no longer active (end of mission, departure), moved on explicit request. After a move, fix the links.
 
-[Retour à people/](../README.md)
+[Back to people/](../README.md)

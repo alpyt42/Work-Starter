@@ -55,39 +55,39 @@ class MachineDoctorTest(unittest.TestCase):
     def test_input_folders_resolve_from_home_without_printing_paths(self) -> None:
         result = self.run_doctor()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("« recordings_dir » introuvable", result.stdout)
-        self.assertNotIn("« transcripts_dir » introuvable", result.stdout)
+        self.assertIn('input folder "recordings_dir" not found', result.stdout)
+        self.assertNotIn('input folder "transcripts_dir" not found', result.stdout)
         self.assertNotIn("inbox/missing", result.stdout)
 
     def test_missing_expected_brain_is_an_error(self) -> None:
         self.write_config({"brains": ["brain", "brain-perso"]})
         result = self.run_doctor()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("brain attendu absent : brain-perso/", result.stdout)
+        self.assertIn("expected brain missing: brain-perso/", result.stdout)
 
     def test_invalid_state_json_is_an_error(self) -> None:
         (self.work / "brain/.data/transcripts.json").write_text("{", encoding="utf-8")
         result = self.run_doctor()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("transcripts.json : JSON illisible", result.stdout)
+        self.assertIn("transcripts.json: unreadable JSON", result.stdout)
 
     def test_repository_without_upstream_is_a_warning(self) -> None:
-        self.assertIn("brain : aucune branche distante suivie", self.run_doctor().stdout)
+        self.assertIn("brain: no upstream branch tracked", self.run_doctor().stdout)
 
     def test_invalid_configuration_is_an_error(self) -> None:
         self.write_local({"version": 1, "obsidian": {}})
         result = self.run_doctor()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("ERROR: configuration des skills invalide", result.stdout)
+        self.assertIn("ERROR: invalid skills configuration", result.stdout)
 
     def test_changed_configuration_is_a_warning_after_a_stamp(self) -> None:
-        self.assertIn("aucun .work-state.json", self.run_doctor().stdout)
+        self.assertIn("no .work-state.json", self.run_doctor().stdout)
         self.work_config("stamp")
-        self.assertNotIn("config modifiée", self.run_doctor().stdout)
+        self.assertNotIn("configuration changed", self.run_doctor().stdout)
         self.write_local({"version": 1, "skills": {"disabled": ["anything"]}})
         result = self.run_doctor()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("WARN: config modifiée depuis le dernier update.sh", result.stdout)
+        self.assertIn("WARN: configuration changed since the last update.sh", result.stdout)
 
     def test_lock_entry_known_to_no_layer_is_a_warning(self) -> None:
         (self.work / "skills-lock.json").write_text(
@@ -95,15 +95,15 @@ class MachineDoctorTest(unittest.TestCase):
         )
         result = self.run_doctor()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("WARN: skill installé mais non adopté : added", result.stdout)
+        self.assertIn("WARN: skill installed but not adopted: added", result.stdout)
         self.assertIn("work_config.py adopt", result.stdout)
 
     def test_enabled_third_party_skill_must_be_installed(self) -> None:
         self.write_local({"version": 1, "skills": {"thirdParty": {"tp": third_party_entry("tp")}}})
-        self.assertIn("WARN: skill tiers activé mais non installé : tp", self.run_doctor().stdout)
+        self.assertIn("WARN: enabled third-party skill not installed: tp", self.run_doctor().stdout)
         (self.work / ".agents/skills/tp").mkdir(parents=True)
         (self.work / ".agents/skills/tp/SKILL.md").write_text("# tp\n", encoding="utf-8")
-        self.assertNotIn("non installé", self.run_doctor().stdout)
+        self.assertNotIn("not installed", self.run_doctor().stdout)
 
     def test_broken_and_orphan_links_are_warnings_but_foreign_links_are_ignored(self) -> None:
         skills = self.work / ".claude/skills"
@@ -118,8 +118,8 @@ class MachineDoctorTest(unittest.TestCase):
         (skills / "gone").symlink_to("../../brain/skills/gone")  # target removed
         (skills / "foreign").symlink_to(self.home)  # not a managed link
         out = self.run_doctor().stdout
-        self.assertIn("lien cassé : .claude/skills/gone", out)
-        self.assertIn("lien orphelin : .claude/skills/off", out)
+        self.assertIn("broken link: .claude/skills/gone", out)
+        self.assertIn("orphan link: .claude/skills/off", out)
         self.assertNotIn("skills/live", out)
         self.assertNotIn("skills/foreign", out)
 
@@ -144,16 +144,16 @@ class MachineDoctorTest(unittest.TestCase):
         (skills / "a-link").symlink_to(self.home)
         result = self.run_doctor()
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("WARN: dossier orphelin : .agents/skills/leftover", result.stdout)
-        self.assertEqual(result.stdout.count("dossier orphelin"), 1, result.stdout)
-        self.assertIn("skill installé mais non adopté : added", result.stdout)
+        self.assertIn("WARN: orphan folder: .agents/skills/leftover", result.stdout)
+        self.assertEqual(result.stdout.count("orphan folder"), 1, result.stdout)
+        self.assertIn("skill installed but not adopted: added", result.stdout)
 
     def test_brain_json_missing_or_incomplete_is_a_warning(self) -> None:
-        self.assertIn("brain/.data/brain.json absent", self.run_doctor().stdout)
+        self.assertIn("brain/.data/brain.json missing", self.run_doctor().stdout)
         self.write_brain_json(scope="client", description="")
         out = self.run_doctor().stdout
-        self.assertIn("brain/.data/brain.json : champ(s) non renseigné(s) : description, remote, email", out)
-        self.assertNotIn("absent", out)
+        self.assertIn("brain/.data/brain.json: field(s) not filled in: description, remote, email", out)
+        self.assertNotIn("brain.json missing", out)
 
     def test_remote_and_email_must_match_the_declared_patterns(self) -> None:
         brain = self.work / "brain"
@@ -163,26 +163,26 @@ class MachineDoctorTest(unittest.TestCase):
         self.write_brain_json(remote="git@example.org:acme/*", email="*@acme.example")
         result = self.run_doctor()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertNotIn("ne correspond pas", result.stdout)
+        self.assertNotIn("does not match", result.stdout)
 
         self.write_brain_json(remote="git@example.org:other/*", email="*@acme.example")
         result = self.run_doctor()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("ERROR: brain : remote origin ne correspond pas", result.stdout)
-        self.assertNotIn("user.email effectif ne correspond pas", result.stdout)
+        self.assertIn("ERROR: brain: remote origin does not match", result.stdout)
+        self.assertNotIn("effective user.email does not match", result.stdout)
         self.assertNotIn("git@example.org", result.stdout)
 
         self.write_brain_json(remote="git@example.org:acme/*", email="*@other.example")
         result = self.run_doctor()
         self.assertEqual(result.returncode, 1)
-        self.assertIn("ERROR: brain : user.email effectif ne correspond pas", result.stdout)
+        self.assertIn("ERROR: brain: effective user.email does not match", result.stdout)
         self.assertNotIn("me@acme.example", result.stdout)
 
     def test_declared_remote_without_origin_is_only_a_warning(self) -> None:
         self.write_brain_json(remote="git@example.org:acme/*")
         result = self.run_doctor()
         self.assertEqual(result.returncode, 0, result.stdout)
-        self.assertIn("WARN: brain : remote origin non défini", result.stdout)
+        self.assertIn("WARN: brain: remote origin not set", result.stdout)
 
 
 if __name__ == "__main__":

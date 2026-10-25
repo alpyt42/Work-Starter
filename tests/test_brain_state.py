@@ -23,8 +23,8 @@ class BrainStateTest(unittest.TestCase):
         self.inbox.mkdir()
         for name in ("a.txt", "b.txt", "c.txt", "summary.md"):
             (self.inbox / name).write_text("x", encoding="utf-8")
-        self.make_brain("brain", {"a.txt": {"status": "traite"}})
-        self.make_brain("brain-perso", {"b.txt": {"status": "a-decider"}})
+        self.make_brain("brain", {"a.txt": {"status": "processed"}})
+        self.make_brain("brain-perso", {"b.txt": {"status": "undecided"}})
         (self.work / "brain-notes").mkdir()  # no AGENTS.md: not a brain
         self.env = {**os.environ, "WORK_DIR": str(self.work), "TRANSCRIPTS_DIR": str(self.inbox)}
 
@@ -51,20 +51,20 @@ class BrainStateTest(unittest.TestCase):
         )
 
     def test_brains_print_scope_and_description(self) -> None:
-        self.declare("brain", "employeur", "Contexte de l'employeur et de ses clients ; jamais de perso.")
-        self.declare("brain-perso", "perso", "Réunions perso\n  et carrière,   jamais de client.")
+        self.declare("brain", "employer", "Employer context and its clients; never anything personal.")
+        self.declare("brain-perso", "personal", "Personal meetings\n  and career,   never any client.")
         result = self.run_tool("brains")
         self.assertEqual(result.returncode, 0, result.stderr)
         rows = [line.split("\t") for line in result.stdout.splitlines()]
         self.assertEqual(rows, [
-            ["brain", "1 transcript(s) suivis", "employeur", "Contexte de l'employeur et de ses clients ; jamais de perso."],
-            ["brain-perso", "1 transcript(s) suivis", "perso", "Réunions perso et carrière, jamais de client."],
+            ["brain", "1 transcript(s) tracked", "employer", "Employer context and its clients; never anything personal."],
+            ["brain-perso", "1 transcript(s) tracked", "personal", "Personal meetings and career, never any client."],
         ])
 
     def test_brains_without_declaration_have_empty_scope_and_description(self) -> None:
-        self.declare("brain", "employeur", "Employeur.")
+        self.declare("brain", "employer", "Employer.")
         rows = [line.split("\t") for line in self.run_tool("brains").stdout.splitlines()]
-        self.assertEqual(rows[1], ["brain-perso", "1 transcript(s) suivis", "", ""])
+        self.assertEqual(rows[1], ["brain-perso", "1 transcript(s) tracked", "", ""])
 
     def test_unreadable_declaration_is_reported(self) -> None:
         (self.work / "brain/.data/brain.json").write_text("{", encoding="utf-8")
@@ -79,15 +79,15 @@ class BrainStateTest(unittest.TestCase):
 
     def test_where_reports_owner(self) -> None:
         result = self.run_tool("transcripts", "--where", "b.txt")
-        self.assertEqual(result.stdout.strip(), "b.txt\tbrain-perso\ta-decider")
+        self.assertEqual(result.stdout.strip(), "b.txt\tbrain-perso\tundecided")
         self.assertEqual(self.run_tool("transcripts", "--where", "c.txt").returncode, 1)
 
     def test_same_transcript_in_two_brains_is_refused(self) -> None:
         state = self.work / "brain-perso/.data/transcripts.json"
-        state.write_text(json.dumps({"a.txt": {"status": "a-decider"}}), encoding="utf-8")
+        state.write_text(json.dumps({"a.txt": {"status": "undecided"}}), encoding="utf-8")
         result = self.run_tool("transcripts", "--new")
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("plusieurs brains", result.stderr)
+        self.assertIn("several brains", result.stderr)
 
     def test_missing_expected_brain_stops(self) -> None:
         config = self.work / "brain/.data/local-paths.json"
@@ -106,7 +106,7 @@ class BrainStateTest(unittest.TestCase):
         ):
             with self.assertRaises(SystemExit) as error:
                 module.cmd_transcripts(brains, new=True, where=None)
-        self.assertIn("Accès refusé", str(error.exception))
+        self.assertIn("Access denied", str(error.exception))
         self.assertIn(str(self.inbox), str(error.exception))
 
 

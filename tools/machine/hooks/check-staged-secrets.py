@@ -20,15 +20,15 @@ from pathlib import PurePosixPath
 FORBIDDEN_NAMES = re.compile(r"(^|/)(\.env(\.[^/]*)?|id_(rsa|dsa|ecdsa|ed25519)[^/]*|[^/]*\.(pem|key|p12|pfx|kdbx|ovpn)|\.netrc|\.npmrc|\.pypirc)$")
 ALLOWED_NAMES = re.compile(r"(^|/)\.env\.(example|sample|template)$|\.pub$")
 PATTERNS = [
-    ("clé privée", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
-    ("clé AWS", re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b")),
-    ("token GitHub", re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b")),
-    ("token GitLab", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
-    ("token Slack", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
-    ("clé API (sk-)", re.compile(r"\bsk-[A-Za-z0-9_-]{24,}")),
-    ("jeton Bearer", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{30,}")),
-    ("URL avec mot de passe", re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s:@]{4,}@[^/\s]+")),
-    ("secret affecté", re.compile(r"""(?i)\b(api[_-]?key|secret|token|passw(or)?d|client[_-]?secret)\b["']?\s*[:=]\s*["']?(?!(?:example|your|xxx|changeme|<|\$|\{|None\b|null\b|true\b|false\b))[A-Za-z0-9/+_=.-]{20,}["']?\s*$""")),
+    ("private key", re.compile(r"-----BEGIN [A-Z ]*PRIVATE KEY-----")),
+    ("AWS key", re.compile(r"\b(AKIA|ASIA)[0-9A-Z]{16}\b")),
+    ("GitHub token", re.compile(r"\b(gh[pousr]_[A-Za-z0-9]{30,}|github_pat_[A-Za-z0-9_]{30,})\b")),
+    ("GitLab token", re.compile(r"\bglpat-[A-Za-z0-9_-]{20,}\b")),
+    ("Slack token", re.compile(r"\bxox[baprs]-[A-Za-z0-9-]{10,}")),
+    ("API key (sk-)", re.compile(r"\bsk-[A-Za-z0-9_-]{24,}")),
+    ("Bearer token", re.compile(r"(?i)\bbearer\s+[A-Za-z0-9._~+/-]{30,}")),
+    ("URL with password", re.compile(r"[a-z][a-z0-9+.-]*://[^/\s:@]+:[^/\s:@]{4,}@[^/\s]+")),
+    ("assigned secret", re.compile(r"""(?i)\b(api[_-]?key|secret|token|passw(or)?d|client[_-]?secret)\b["']?\s*[:=]\s*["']?(?!(?:example|your|xxx|changeme|<|\$|\{|None\b|null\b|true\b|false\b))[A-Za-z0-9/+_=.-]{20,}["']?\s*$""")),
 ]
 IGNORE_MARK = "secret-scan: ignore"
 
@@ -43,7 +43,7 @@ def main() -> int:
     for name in filter(None, names):
         posix = PurePosixPath(name).as_posix()
         if FORBIDDEN_NAMES.search(posix) and not ALLOWED_NAMES.search(posix):
-            findings.append(f"{name} : fichier d'identifiants (nom interdit)")
+            findings.append(f"{name}: credentials file (forbidden name)")
     diff = git("diff", "--cached", "-U0", "--no-color", "--diff-filter=ACMR")
     current, line_no = "", 0
     for line in diff.splitlines():
@@ -59,13 +59,13 @@ def main() -> int:
                 continue
             for label, pattern in PATTERNS:
                 if pattern.search(text):
-                    findings.append(f"{current}:{line_no} : {label}")
+                    findings.append(f"{current}:{line_no}: {label}")
                     break
     if findings:
-        print("Secrets possibles dans l'index (valeurs non affichées) :", file=sys.stderr)
+        print("Possible secrets in the index (values not shown):", file=sys.stderr)
         for finding in findings:
             print(f"  - {finding}", file=sys.stderr)
-        print("Retirer la valeur (ou ajouter `secret-scan: ignore` sur la ligne si c'est un faux positif).", file=sys.stderr)
+        print("Remove the value (or add `secret-scan: ignore` on the line if it is a false positive).", file=sys.stderr)
         return 1
     return 0
 

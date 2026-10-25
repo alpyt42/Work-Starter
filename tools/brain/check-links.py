@@ -1,25 +1,24 @@
 #!/usr/bin/env python3
-"""Vérifie que tous les liens markdown de la mémoire pointent vers un fichier qui existe.
+"""Check that every Markdown link of a brain points to a file that exists.
 
-  - liens markdown `[x](y.md)` — résolus par chemin relatif (la forme normale)
-  - wikilinks `[[cible]]`     — tolérés, résolus par nom de fichier (au cas où)
+  - Markdown links `[x](y.md)`: resolved by relative path (the normal form)
+  - wikilinks `[[target]]`: tolerated, resolved by file name (just in case)
 
-Code retour non nul s'il reste des liens morts. C'est ce qui remplace
-« faire attention pendant un moment » par quelque chose de vérifiable.
+The exit status is non-zero when dead links remain. This replaces "being careful
+for a while" with something verifiable.
 
-Usage : `uv run tools/brain/check-links.py` depuis Work/ (ou n'importe où :
-le script repère brain/ à la racine de Work ; variable BRAIN_DIR pour forcer,
-comme les autres outils ; BRAIN reste accepté). Échoue si la mémoire est
-introuvable, pour ne jamais annoncer « 0 lien mort » sur un dossier vide.
-`--allow-missing-local` signale séparément les liens manquants vers les
-artifacts et repos locaux, absents d'un nouveau checkout. Les fichiers de
-`skills/<nom>/assets/` sont ignorés : ce sont des modèles copiés ailleurs, leurs
-liens sont des placeholders (comme les `_*-TEMPLATE.md`).
+Usage: `uv run tools/brain/check-links.py` from Work/ (or from anywhere: the
+script finds brain/ at the Work root; set BRAIN_DIR to force another folder,
+like the other tools; BRAIN is still accepted). Fails when the brain is not
+found, so that it never reports "0 dead links" for an empty folder.
+`--allow-missing-local` reports separately the missing links to local
+artifacts and repos, which a new checkout does not have. The files of
+`skills/<name>/assets/` are ignored: they are templates copied elsewhere, and
+their links are placeholders (like the `_*-TEMPLATE.md` files).
 
-Chaque brain est une frontière de confiance : un lien dont la cible se trouve
-dans un AUTRE brain de la même racine Work (un dossier frère nommé `brain` ou
-`brain-*`) est signalé à part (« lien inter-brains ») et fait échouer le
-contrôle, même si la cible existe.
+Each brain is a trust boundary: a link whose target is in ANOTHER brain of the
+same Work root (a sibling folder named `brain` or `brain-*`) is reported
+separately ("cross-brain link") and fails the check, even if the target exists.
 """
 import argparse
 import collections
@@ -41,7 +40,7 @@ MDLINK = re.compile(r"\[(?:[^\[\]]|\[\[[^\]]*\]\])*\]\(([^)\s]+)\)")
 FENCE = re.compile(r"```.*?```", re.S)
 CODESPAN = re.compile(r"`[^`\n]*`")
 
-# Cibles hors mémoire, légitimement non résolvables (ex. fichiers de mémoire d'agent).
+# Targets outside the brain that legitimately cannot be resolved (e.g. agent memory files).
 WHITELIST: set[str] = set()
 
 
@@ -74,17 +73,17 @@ def mask_code(text: str) -> str:
 
 
 def is_skill_asset(rel: str) -> bool:
-    """True pour `skills/<nom>/assets/**` : des modèles copiés ailleurs, dont les liens sont des placeholders."""
+    """True for `skills/<name>/assets/**`: templates copied elsewhere, whose links are placeholders."""
     parts = rel.replace(os.sep, "/").split("/")
     return len(parts) > 3 and parts[0] == "skills" and parts[2] == "assets"
 
 
 def list_md_files() -> list[str]:
-    """Fichiers suivis par git si on est dans un repo, sinon tous les .md du dossier (hors modèles de skills)."""
+    """Files tracked by git inside a repo, otherwise every .md of the folder (skill templates excluded)."""
     try:
         out = subprocess.run(["git", "ls-files", "--cached", "--others", "--exclude-standard", "*.md"],
                              cwd=BRAIN, capture_output=True, text=True, check=True).stdout.split()
-        # un fichier déplacé / supprimé mais pas encore commité reste dans l'index : on l'ignore
+        # a file moved or deleted but not yet committed stays in the index: skip it
         out = [f for f in out if os.path.exists(os.path.join(BRAIN, f)) and not is_skill_asset(f)]
         if out:
             return out
@@ -109,11 +108,11 @@ def main() -> int:
     args = parser.parse_args()
 
     if not os.path.isdir(BRAIN):
-        print(f"✗ mémoire introuvable : {BRAIN} (définir BRAIN_DIR)", file=sys.stderr)
+        print(f"✗ brain not found: {BRAIN} (set BRAIN_DIR)", file=sys.stderr)
         return 2
     files = list_md_files()
     if not files:
-        print(f"✗ aucun fichier markdown dans {BRAIN}", file=sys.stderr)
+        print(f"✗ no Markdown file in {BRAIN}", file=sys.stderr)
         return 2
     by_basename = collections.defaultdict(list)
     for rel in files:
@@ -125,7 +124,7 @@ def main() -> int:
 
     for rel in files:
         if os.path.basename(rel).startswith("_") and "TEMPLATE" in rel:
-            continue  # un template contient des placeholders par définition
+            continue  # a template contains placeholders by definition
         with open(os.path.join(BRAIN, rel), encoding="utf-8") as fh:
             text = mask_code(fh.read())
 
@@ -167,22 +166,22 @@ def main() -> int:
                 else:
                     dead_md.append((rel, target))
 
-    print(f"fichiers      : {len(files)}")
-    print(f"liens md      : {n_md}  (+ {placeholders} placeholders ignorés)")
+    print(f"files         : {len(files)}")
+    print(f"md links      : {n_md}  (+ {placeholders} placeholders ignored)")
     print(f"wikilinks     : {n_wiki}")
-    print(f"morts (md)    : {len(dead_md)}")
-    print(f"morts (wiki)  : {len(dead_wiki)}")
-    print(f"inter-brains  : {len(cross_brain)}")
+    print(f"dead (md)     : {len(dead_md)}")
+    print(f"dead (wiki)   : {len(dead_wiki)}")
+    print(f"cross-brain   : {len(cross_brain)}")
     if args.allow_missing_local:
-        print(f"liens locaux non vérifiés: {len(unverified_local)}")
+        print(f"unverified local links: {len(unverified_local)}")
 
     groups = [
-        ("⛔", "LIEN MD MORT", dead_md, "({})", ""),
-        ("⛔", "WIKILINK MORT", dead_wiki, "[[{}]]", ""),
-        ("⛔", "LIEN INTER-BRAINS", cross_brain, "({})", " (un brain ne renvoie jamais vers un autre brain)"),
+        ("⛔", "DEAD MD LINK", dead_md, "({})", ""),
+        ("⛔", "DEAD WIKILINK", dead_wiki, "[[{}]]", ""),
+        ("⛔", "CROSS-BRAIN LINK", cross_brain, "({})", " (a brain never links to another brain)"),
     ]
     if args.allow_missing_local:
-        groups.append(("⚠", "LIEN MD MORT", unverified_local, "({})", " (local, non bloquant)"))
+        groups.append(("⚠", "DEAD MD LINK", unverified_local, "({})", " (local, non-blocking)"))
 
     for icon, label, links, fmt, suffix in groups:
         if links:

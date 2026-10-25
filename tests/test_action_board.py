@@ -12,15 +12,15 @@ TOOL = Path(__file__).resolve().parents[1] / "tools/brain/action.py"
 
 MISSION = """# Actions
 
-## Ouvertes
+## Open
 - [/] **TST-001** — Jane — Avancer le livrable
-    - échéance: 2026-10-01
+    - due: 2026-10-01
 - [ ] **TST-002** — Jane / John — Préparer la suite
 - [ ] **TST-003** — John — Pas à moi
 - [w] **TST-004** — John — Envoyer les accès
 - [x] **TST-005** — Jane — Cochée hier ✅ 2026-10-10
 
-## Terminées
+## Done
 - [x] **TST-006** — Jane — Cochée avant ✅ 2026-10-02
 - [x] **TST-007** — Jane — Faite sans date
 - [-] **TST-008** — Jane — Annulée ❌ 2026-10-09
@@ -29,7 +29,7 @@ MISSION = """# Actions
 
 SETUP = """# Actions
 
-## Ouvertes
+## Open
 - [ ] **SET-001** — Jane — Outiller
 """
 
@@ -65,31 +65,31 @@ class TasksBoardTest(unittest.TestCase):
     def test_one_section_per_project_with_states_in_order(self) -> None:
         out = self.run_board()
         mission = self.section(out, "acme / m")
-        self.assertLess(mission.index("**À faire**"), mission.index("**En cours**"))
-        self.assertLess(mission.index("**En cours**"), mission.index("**En attente**"))
-        self.assertIn("TST-001", self.group(out, "acme / m", "En cours"))
-        self.assertIn("TST-004", self.group(out, "acme / m", "En attente"))
-        todo = self.group(out, "acme / m", "À faire")
+        self.assertLess(mission.index("**To do**"), mission.index("**In progress**"))
+        self.assertLess(mission.index("**In progress**"), mission.index("**Waiting**"))
+        self.assertIn("TST-001", self.group(out, "acme / m", "In progress"))
+        self.assertIn("TST-004", self.group(out, "acme / m", "Waiting"))
+        todo = self.group(out, "acme / m", "To do")
         self.assertIn("TST-002", todo)
         self.assertNotIn("TST-003", todo)
-        self.assertIn("SET-001", self.group(out, "setup", "À faire"))
-        self.assertNotIn("**En cours**", self.section(out, "setup"))
+        self.assertIn("SET-001", self.group(out, "setup", "To do"))
+        self.assertNotIn("**In progress**", self.section(out, "setup"))
 
     def test_project_without_anything_to_show_is_listed_apart(self) -> None:
         folder = self.brain / "projects/clients/beta/missions/n/state"
         folder.mkdir(parents=True)
-        (folder / "actions.md").write_text("## Ouvertes\n- [ ] **TST-020** — John — Pas à moi\n", encoding="utf-8")
+        (folder / "actions.md").write_text("## Open\n- [ ] **TST-020** — John — Pas à moi\n", encoding="utf-8")
         out = self.run_board()
         self.assertNotIn("## beta / n", out)
-        self.assertIn("Rien en cours, en attente ou à faire : beta / n.", out)
+        self.assertIn("Nothing in progress, waiting or to do: beta / n.", out)
 
     def test_recent_closures_cover_every_owner_newest_first(self) -> None:
-        done = self.section(self.run_board(), "Terminées récemment")
+        done = self.section(self.run_board(), "Recently done")
         self.assertLess(done.index("TST-010"), done.index("TST-005"))
         self.assertLess(done.index("TST-005"), done.index("TST-008"))
         self.assertLess(done.index("TST-008"), done.index("TST-006"))
-        self.assertIn("faite le 2026-10-11", done)
-        self.assertIn("annulée le 2026-10-09", done)
+        self.assertIn("done on 2026-10-11", done)
+        self.assertIn("cancelled on 2026-10-09", done)
         self.assertNotIn("TST-007", done)
         self.assertNotIn("✅", done)
 
@@ -109,7 +109,7 @@ class TasksBoardTest(unittest.TestCase):
             self.wait_for(lambda: board.is_file() and "TST-001" in board.read_text(encoding="utf-8"))
             register = self.brain / "projects/clients/acme/missions/m/state/actions.md"
             register.write_text(register.read_text(encoding="utf-8").replace("- [ ] **TST-003** — John", "- [/] **TST-003** — John"), encoding="utf-8")
-            self.wait_for(lambda: "TST-003" in self.group(board.read_text(encoding="utf-8"), "acme / m", "En cours"))
+            self.wait_for(lambda: "TST-003" in self.group(board.read_text(encoding="utf-8"), "acme / m", "In progress"))
         finally:
             process.terminate()
             process.wait(timeout=5)
@@ -121,18 +121,18 @@ class TasksBoardTest(unittest.TestCase):
             if condition():
                 return
             time.sleep(0.2)
-        self.fail("condition non atteinte dans le délai")
+        self.fail("condition not met in time")
 
     def test_watch_needs_write(self) -> None:
         result = subprocess.run([sys.executable, str(TOOL), "board", "--watch"], env=self.env, cwd=self.work, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("--watch demande --write", result.stderr)
+        self.assertIn("--watch needs --write", result.stderr)
 
     def test_owner_is_required(self) -> None:
         (self.brain / ".data/doctor.json").unlink()
         result = subprocess.run([sys.executable, str(TOOL), "board"], env=self.env, cwd=self.work, capture_output=True, text=True)
         self.assertNotEqual(result.returncode, 0)
-        self.assertIn("propriétaire inconnu", result.stderr)
+        self.assertIn("unknown owner", result.stderr)
 
 
 if __name__ == "__main__":

@@ -1,5 +1,5 @@
 {
-  "_note": "Brains attendus et dossiers d'entrée des skills. Les chemins d'entrée sont relatifs à $HOME et restent hors de l'espace : ne jamais les citer dans un Markdown.",
+  "_note": "Expected brains and input folders of the skills. Input paths are relative to $HOME and stay outside the workspace: never cite them in a Markdown file.",
   "brains": [
     "brain"
   ],

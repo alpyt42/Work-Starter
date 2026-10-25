@@ -114,8 +114,8 @@ class ClientReposTest(unittest.TestCase):
         result = self.run_tool("check")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn("OK        repos/acme/app", result.stdout)
-        self.assertIn("DIFFÉRENT repos/acme/api", result.stdout)
-        self.assertIn("ABSENT    repos/acme/missing", result.stdout)
+        self.assertIn("DIFFERENT repos/acme/api", result.stdout)
+        self.assertIn("MISSING   repos/acme/missing", result.stdout)
 
         self.write_catalog([{"path": "repos/acme/app", "url": URL_A}])
         self.assertEqual(self.run_tool("check").returncode, 0)
@@ -133,25 +133,25 @@ class ClientReposTest(unittest.TestCase):
         result = self.run_tool("check")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
         self.assertIn(
-            "OK        repos/acme/app  auteur=acme@example.test (gitconfig-acme) · clé=/keys/id_acme (gitconfig-acme)",
+            "OK        repos/acme/app  author=acme@example.test (gitconfig-acme) · key=/keys/id_acme (gitconfig-acme)",
             result.stdout,
         )
         self.assertIn(
-            "OK        repos/other/by-url  auteur=url@example.test (gitconfig-by-url) · clé=choisie par ~/.ssh/config",
+            "OK        repos/other/by-url  author=url@example.test (gitconfig-by-url) · key=chosen by ~/.ssh/config",
             result.stdout,
         )
-        self.assertIn("IDENTITÉ  repos/other/uncovered  auteur=aucun", result.stdout)
+        self.assertIn("IDENTITY  repos/other/uncovered  author=none", result.stdout)
 
         self.git("-C", str(self.work / "repos/acme/app"), "config", "user.email", "local@example.test")
         local = self.run_tool("check", "repos/acme/app")
-        self.assertIn("auteur=local@example.test (clone local)", local.stdout)
+        self.assertIn("author=local@example.test (local clone)", local.stdout)
 
     def test_check_masks_non_ssh_origins(self) -> None:
         self.write_catalog([{"path": "repos/acme/app", "url": URL_A}])
         self.make_clone("repos/acme/app", "https://user:secret@git.example.test/acme/app.git")
         result = self.run_tool("check")
         self.assertEqual(result.returncode, 1)
-        self.assertIn("<URL non SSH masquée>", result.stdout)
+        self.assertIn("<non-SSH URL hidden>", result.stdout)
         self.assertNotIn("secret", result.stdout)
 
     def test_catalog_rejects_unsafe_entries(self) -> None:
@@ -180,7 +180,7 @@ class ClientReposTest(unittest.TestCase):
         self.serve_locally(URL_A)
         result = self.run_tool("clone", "acme")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("CLONÉ       repos/acme/app  auteur=acme@example.test (gitconfig-acme)", result.stdout)
+        self.assertIn("CLONED          repos/acme/app  author=acme@example.test (gitconfig-acme)", result.stdout)
         clone = self.work / "repos/acme/app"
         local = subprocess.run(
             ["git", "-C", str(clone), "config", "--local", "--get-regexp", r"^(user\.|core\.sshcommand)"],
@@ -193,7 +193,7 @@ class ClientReposTest(unittest.TestCase):
         self.serve_locally(URL_BY_REMOTE)
         result = self.run_tool("clone", "other")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("auteur=url@example.test (gitconfig-by-url)", result.stdout)
+        self.assertIn("author=url@example.test (gitconfig-by-url)", result.stdout)
 
     def test_clone_refuses_destination_without_home_rule(self) -> None:
         self.write_catalog([{"path": "repos/other/uncovered", "url": URL_B}])

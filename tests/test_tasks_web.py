@@ -28,7 +28,7 @@ tasks_web = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(tasks_web)
 
 
-RICH_REGISTER = "# Actions\n\n## Ouvertes\n- [ ] **EXM-001** — Jane — Préparer la livraison 📅 2026-10-15\n    - Source: note initiale\n    - 12/10 : une note\n        - sous-détail\n\n## Terminées\n- [x] **EXM-009** — Jane — Ancienne clôture sans date\n"
+RICH_REGISTER = "# Actions\n\n## Open\n- [ ] **EXM-001** — Jane — Préparer la livraison 📅 2026-10-15\n    - Source: note initiale\n    - 12/10: une note\n        - sous-détail\n\n## Done\n- [x] **EXM-009** — Jane — Ancienne clôture sans date\n"
 
 
 class TasksWebTest(unittest.TestCase):
@@ -37,7 +37,7 @@ class TasksWebTest(unittest.TestCase):
         self.brain = Path(self.temp.name) / "brain"
         self.register = self.brain / "projects/clients/example/missions/test/state/actions.md"
         self.register.parent.mkdir(parents=True)
-        self.register.write_text("# Actions\n\n## Ouvertes\n- [ ] **EXM-001** — Jane — Préparer la livraison 📅 2026-10-15\n    - source: note initiale\n\n## Terminées\n- [x] **EXM-009** — Jane — Ancienne clôture sans date\n", encoding="utf-8")
+        self.register.write_text("# Actions\n\n## Open\n- [ ] **EXM-001** — Jane — Préparer la livraison 📅 2026-10-15\n    - source: note initiale\n\n## Done\n- [x] **EXM-009** — Jane — Ancienne clôture sans date\n", encoding="utf-8")
         (self.brain / ".data").mkdir()
         (self.brain / ".data/doctor.json").write_text('{"owner":"Jane"}', encoding="utf-8")
         self.server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(self.brain))
@@ -91,14 +91,14 @@ class TasksWebTest(unittest.TestCase):
         self.assertFalse(any("--apply" in command for command in commands))
         by_id = {tool["id"]: tool for tool in catalog["tools"]}
         self.assertTrue(by_id["archive_write"]["command"].endswith("action.py archive --write"))
-        self.assertIn("Archiver maintenant", by_id["archive_write"]["confirm"])
+        self.assertIn("Archive the actions", by_id["archive_write"]["confirm"])
         self.assertEqual(by_id["archive_preview"]["command"], "uv run tools/brain/action.py archive")
         self.assertIsNone(by_id["archive_preview"]["confirm"])
         self.assertEqual({tool_id for tool_id, tool in by_id.items() if tool["confirm"]}, {"archive_write", "sweep_write"})
         self.assertFalse(any("client-repos.py clone" in command for command in commands))
-        self.assertEqual({tool["group"] for tool in catalog["tools"]}, {"Mémoire", "Actions", "Dépôts"})
+        self.assertEqual({tool["group"] for tool in catalog["tools"]}, {"Memory", "Actions", "Repositories"})
         for tool_id, (_group, _label, _description, script, _args) in tasks_web.TOOLS.items():
-            self.assertTrue((tasks_web.TOOLS_ROOT / "tools" / script).is_file(), f"{tool_id}: tools/{script} est introuvable")
+            self.assertTrue((tasks_web.TOOLS_ROOT / "tools" / script).is_file(), f"{tool_id}: tools/{script} not found")
         status, _ = self.request("POST", "/api/tools/run", {"id": "links"}, token=False)
         self.assertEqual(status, 403)
         status, _ = self.request("POST", "/api/tools/run", {"id": "links"}, origin=False)
@@ -124,7 +124,7 @@ class TasksWebTest(unittest.TestCase):
         self.assertEqual(status, 200)
         text = self.register.read_text(encoding="utf-8")
         self.assertIn(f"**EXM-010** — Jane — Relancer le client 🔼 ➕ {datetime.now(ZoneInfo('Europe/Paris')).date().isoformat()} 📅 2026-10-20 ✅ ", text)
-        self.assertIn("source: saisie depuis l'interface locale", text)
+        self.assertIn("source: entered in the local interface", text)
         self.assertIn("source: note initiale", text)
         self.assertEqual(text.count("**EXM-010**"), 1)
 
@@ -142,6 +142,23 @@ class TasksWebTest(unittest.TestCase):
         status, _ = self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": action})
         self.assertEqual(status, 400)
         self.assertEqual(self.register.read_text(encoding="utf-8"), before)
+
+    def test_validation_messages_are_english_and_the_owner_refuses_the_register_separator(self):
+        register = "projects/clients/example/missions/test/state/actions.md"
+        before = self.register.read_text(encoding="utf-8")
+        action = {"title": "T", "owner": "A — B", "state": " ", "priority": "", "due": "", "scheduled": ""}
+        status, data = self.request("POST", "/api/actions", {"register": register, "action": action})
+        self.assertEqual((status, data["error"]), (400, "Owner contains a separator reserved for registers."))
+        for field, label in (("due", "Due date"), ("scheduled", "Scheduled date")):
+            status, data = self.request("POST", "/api/actions", {"register": register, "action": {**action, "owner": "A", field: "tomorrow"}})
+            self.assertEqual((status, data["error"]), (400, f"{label} must use the format YYYY-MM-DD."))
+        status, data = self.request("POST", "/api/actions", {"register": register, "action": {**action, "owner": " ", "title": "T"}})
+        self.assertEqual((status, data["error"]), (400, "Owner must be 1 to 120 characters on one line."))
+        status, data = self.request("POST", "/api/actions", {"register": register, "action": {**action, "owner": "A", "state": "x"}})
+        self.assertEqual((status, data["error"]), (400, "A new action must be to do, in progress or waiting."))
+        self.assertEqual(self.register.read_text(encoding="utf-8"), before)
+        status, data = self.request("POST", "/api/actions", {"register": register, "action": {**action, "owner": "A", "title": "T — U"}})
+        self.assertEqual(status, 201)
 
     def test_editing_old_closed_action_does_not_invent_completion_date(self):
         old = next(item for item in self.request("GET", "/api/actions")[1]["actions"] if item["id"] == "EXM-009")
@@ -161,7 +178,7 @@ class TasksWebTest(unittest.TestCase):
         detail = self.details()
         self.assertEqual([note["index"] for note in detail["notes"]], [0, 1])
         self.assertEqual(detail["notes"][0], {"index": 0, "text": "- Source: note initiale", "deletable": False})
-        self.assertEqual(detail["notes"][1], {"index": 1, "text": "- 12/10 : une note\n    - sous-détail", "deletable": True})
+        self.assertEqual(detail["notes"][1], {"index": 1, "text": "- 12/10: une note\n    - sous-détail", "deletable": True})
         self.assertEqual(len(detail["details_version"]), 16)
         self.assertEqual(detail["details"][-1], "    - sous-détail")
         self.register.write_text(RICH_REGISTER.replace("sous-détail", "sous-détail modifié"), encoding="utf-8")
@@ -171,14 +188,14 @@ class TasksWebTest(unittest.TestCase):
         version = self.details()["details_version"]
         status, detail = self.request("POST", self.notes_url(), {"details_version": version, "note": "Décision : [compte rendu](../source.md) 📅 confirmé"})
         self.assertEqual(status, 201)
-        self.assertEqual(len(detail["notes"]), 3)  # source, mise à jour, note
+        self.assertEqual(len(detail["notes"]), 3)  # source, updated stamp, note
         self.assertNotEqual(detail["details_version"], version)
         status, detail = self.request("POST", self.notes_url(), {"details_version": detail["details_version"], "note": "Seconde note"})
         self.assertEqual(status, 201)
-        self.assertTrue(detail["notes"][2]["text"].endswith("📅 confirmé") and detail["notes"][3]["text"].endswith(" : Seconde note"))
+        self.assertTrue(detail["notes"][2]["text"].endswith("📅 confirmé") and detail["notes"][3]["text"].endswith(": Seconde note"))
         self.assertFalse(detail["notes"][1]["deletable"])
         text = self.register.read_text(encoding="utf-8")
-        self.assertRegex(text, r"    - source: note initiale\n    - mise à jour : \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n    - \d{2}/\d{2} : Décision : \[compte rendu\]\(\.\./source\.md\) 📅 confirmé\n    - \d{2}/\d{2} : Seconde note\n\n## Terminées")
+        self.assertRegex(text, r"    - source: note initiale\n    - updated: \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n    - \d{2}/\d{2}: Décision : \[compte rendu\]\(\.\./source\.md\) 📅 confirmé\n    - \d{2}/\d{2}: Seconde note\n\n## Done")
         self.assertTrue(text.endswith("Ancienne clôture sans date\n"))
 
     def test_rejects_stale_or_invalid_note_writes(self):
@@ -208,20 +225,20 @@ class TasksWebTest(unittest.TestCase):
         note = detail["notes"][1]
         status, fresh = self.request("DELETE", self.notes_url("/1"), {"details_version": detail["details_version"], "text": note["text"]})
         self.assertEqual(status, 200)
-        self.assertEqual([item["text"].split(" :")[0] for item in fresh["notes"]], ["- Source: note initiale", "- mise à jour"])
+        self.assertEqual([item["text"].split(": ")[0] for item in fresh["notes"]], ["- Source", "- updated"])
         text = self.register.read_text(encoding="utf-8")
         self.assertNotIn("une note", text)
         self.assertNotIn("sous-détail", text)
-        self.assertRegex(text, r"    - Source: note initiale\n    - mise à jour : \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n\n## Terminées")
+        self.assertRegex(text, r"    - Source: note initiale\n    - updated: \d{4}-\d{2}-\d{2} \d{2}:\d{2}\n\n## Done")
 
     def test_delete_keeps_register_tidy_between_notes(self):
-        self.register.write_text(RICH_REGISTER.replace("    - 12/10", "    - 11/10 : première\n\n    - 12/10"), encoding="utf-8")
+        self.register.write_text(RICH_REGISTER.replace("    - 12/10", "    - 11/10: première\n\n    - 12/10"), encoding="utf-8")
         detail = self.details()
         note = detail["notes"][1]
-        self.assertEqual(note["text"], "- 11/10 : première")
+        self.assertEqual(note["text"], "- 11/10: première")
         status, _ = self.request("DELETE", self.notes_url("/1"), {"details_version": detail["details_version"], "text": note["text"]})
         self.assertEqual(status, 200)
-        self.assertRegex(self.register.read_text(encoding="utf-8"), r"    - Source: note initiale\n    - mise à jour : [0-9: -]{16}\n\n    - 12/10 : une note\n        - sous-détail\n\n## Terminées")
+        self.assertRegex(self.register.read_text(encoding="utf-8"), r"    - Source: note initiale\n    - updated: [0-9: -]{16}\n\n    - 12/10: une note\n        - sous-détail\n\n## Done")
 
     def test_rejects_unsafe_note_deletions(self):
         self.register.write_text(RICH_REGISTER, encoding="utf-8")
@@ -253,8 +270,8 @@ class TasksWebTest(unittest.TestCase):
 
     def test_api_exposes_group_and_register_groups(self):
         self.register.write_text(self.register.read_text(encoding="utf-8").replace(
-            "Préparer la livraison 📅", "Préparer la livraison #lot/atelier-ingestion 📅").replace(
-            "Ancienne clôture sans date", "Ancienne clôture sans date #lot/cadrage"), encoding="utf-8")
+            "Préparer la livraison 📅", "Préparer la livraison #group/atelier-ingestion 📅").replace(
+            "Ancienne clôture sans date", "Ancienne clôture sans date #group/cadrage"), encoding="utf-8")
         data = self.request("GET", "/api/actions")[1]
         by_id = {a["id"]: a for a in data["actions"]}
         self.assertEqual((by_id["EXM-001"]["group"], by_id["EXM-001"]["title"], by_id["EXM-001"]["raw_title"]),
@@ -273,34 +290,34 @@ class TasksWebTest(unittest.TestCase):
         status, result = self.request("POST", "/api/actions", {"register": self.GROUP_REGISTER, "action": action})
         self.assertEqual(status, 201)
         today = datetime.now(ZoneInfo("Europe/Paris")).date().isoformat()
-        self.assertIn(f"**EXM-010** — Jane — Planifier l'atelier #lot/atelier-ingestion ⏫ ➕ {today} 📅 2026-10-20\n", self.register.read_text(encoding="utf-8"))
+        self.assertIn(f"**EXM-010** — Jane — Planifier l'atelier #group/atelier-ingestion ⏫ ➕ {today} 📅 2026-10-20\n", self.register.read_text(encoding="utf-8"))
         current = next(a for a in self.request("GET", "/api/actions")[1]["actions"] if a["id"] == "EXM-010")
         self.assertEqual((current["group"], current["raw_title"]), ("atelier-ingestion", "Planifier l'atelier"))
         # The editor sends raw_title (no tag) and the group on its own: the tag is neither doubled nor lost.
         edited = {**action, "title": current["raw_title"], "group": "cadrage"}
         status, patched = self.request("PATCH", "/api/actions/EXM-010", {"version": current["version"], "action": edited})
-        self.assertEqual((status, patched["undo"]["label"]), (200, "modification de EXM-010"))
+        self.assertEqual((status, patched["undo"]["label"]), (200, "edit of EXM-010"))
         text = self.register.read_text(encoding="utf-8")
-        self.assertIn("Planifier l'atelier #lot/cadrage ⏫", text)
-        self.assertEqual(text.count("#lot/"), 1)
+        self.assertIn("Planifier l'atelier #group/cadrage ⏫", text)
+        self.assertEqual(text.count("#group/"), 1)
         current = next(a for a in self.request("GET", "/api/actions")[1]["actions"] if a["id"] == "EXM-010")
         status, _ = self.request("PATCH", "/api/actions/EXM-010", {"version": current["version"], "action": {**edited, "group": ""}})
         self.assertEqual(status, 200)
-        self.assertNotIn("#lot/", self.register.read_text(encoding="utf-8"))
-        self.assertEqual(self.request("POST", "/api/undo", {"label": "modification de EXM-010"})[0], 200)
-        self.assertIn("#lot/cadrage", self.register.read_text(encoding="utf-8"))
-        self.request("POST", "/api/undo", {"label": "modification de EXM-010"})
-        self.request("POST", "/api/undo", {"label": "création de EXM-010"})
+        self.assertNotIn("#group/", self.register.read_text(encoding="utf-8"))
+        self.assertEqual(self.request("POST", "/api/undo", {"label": "edit of EXM-010"})[0], 200)
+        self.assertIn("#group/cadrage", self.register.read_text(encoding="utf-8"))
+        self.request("POST", "/api/undo", {"label": "edit of EXM-010"})
+        self.request("POST", "/api/undo", {"label": "creation of EXM-010"})
         self.assertEqual(self.raw(), original)
 
     def test_patch_without_group_keeps_it_and_status_change_survives(self):
         self.register.write_text(self.register.read_text(encoding="utf-8").replace(
-            "Préparer la livraison 📅", "Préparer la livraison #lot/atelier-ingestion 📅"), encoding="utf-8")
+            "Préparer la livraison 📅", "Préparer la livraison #group/atelier-ingestion 📅"), encoding="utf-8")
         current = self.request("GET", "/api/actions")[1]["actions"][0]
         action = {"title": current["raw_title"], "owner": "Jane", "state": "/", "priority": "", "due": "2026-10-15", "scheduled": ""}
         status, result = self.request("PATCH", "/api/actions/EXM-001", {"version": current["version"], "action": action})
-        self.assertEqual((status, result["undo"]["label"]), (200, "statut de EXM-001 → En cours"))
-        self.assertIn("Préparer la livraison #lot/atelier-ingestion 📅 2026-10-15", self.register.read_text(encoding="utf-8"))
+        self.assertEqual((status, result["undo"]["label"]), (200, "status of EXM-001 → In progress"))
+        self.assertIn("Préparer la livraison #group/atelier-ingestion 📅 2026-10-15", self.register.read_text(encoding="utf-8"))
 
     def test_invalid_group_and_title_ending_with_a_tag_are_rejected(self):
         original = self.raw()
@@ -309,15 +326,15 @@ class TasksWebTest(unittest.TestCase):
         for bad in ("Atelier Ingestion", "atelier_ingestion", "a--b", "-a", "é", "a" * 41, 3, None, ["a"]):
             status, data = self.request("POST", "/api/actions", {"register": self.GROUP_REGISTER, "action": {**base, "group": bad}})
             self.assertEqual(status, 400, bad)
-            self.assertIn("Groupe invalide", data["error"])
+            self.assertIn("Invalid group", data["error"])
             status, _ = self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": {**base, "group": bad}})
             self.assertEqual(status, 400, bad)
-        status, data = self.request("POST", "/api/actions", {"register": self.GROUP_REGISTER, "action": {**base, "title": "Planifier #lot/autre"}})
+        status, data = self.request("POST", "/api/actions", {"register": self.GROUP_REGISTER, "action": {**base, "title": "Planifier #group/autre"}})
         self.assertEqual(status, 400)
-        self.assertIn("Groupe", data["error"])
-        self.assertEqual(self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": {**base, "title": "Planifier #lot/autre"}})[0], 400)
+        self.assertIn("Group", data["error"])
+        self.assertEqual(self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": {**base, "title": "Planifier #group/autre"}})[0], 400)
         self.assertEqual(self.request("POST", "/api/actions", {"register": self.GROUP_REGISTER, "action": {**base, "group": "a" * 40}})[0], 201)
-        self.request("POST", "/api/undo", {"label": "création de EXM-010"})
+        self.request("POST", "/api/undo", {"label": "creation of EXM-010"})
         self.assertEqual(self.raw(), original)
         self.assertEqual(self.request("GET", "/api/undo")[1]["available"], False)
 
@@ -328,13 +345,13 @@ class TasksWebTest(unittest.TestCase):
 
     def test_write_responses_include_undo_state(self):
         status, created = self.create_action()
-        self.assertEqual((status, created["undo"]), (201, {"available": True, "label": "création de EXM-010", "depth": 1}))
+        self.assertEqual((status, created["undo"]), (201, {"available": True, "label": "creation of EXM-010", "depth": 1}))
         status, detail = self.request("POST", self.notes_url(), {"details_version": self.details()["details_version"], "note": "Note"})
-        self.assertEqual((status, detail["undo"]["label"], detail["undo"]["depth"]), (201, "note ajoutée sur EXM-001", 2))
+        self.assertEqual((status, detail["undo"]["label"], detail["undo"]["depth"]), (201, "note added to EXM-001", 2))
         version = self.request("GET", "/api/actions")[1]["actions"][0]["version"]
         action = {"title": "Préparer la livraison", "owner": "Jane", "state": "/", "priority": "", "due": "2026-10-15", "scheduled": ""}
         status, updated = self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": action})
-        self.assertEqual((status, updated["undo"]["label"]), (200, "statut de EXM-001 → En cours"))
+        self.assertEqual((status, updated["undo"]["label"]), (200, "status of EXM-001 → In progress"))
         self.assertEqual(self.request("GET", "/api/undo")[1], updated["undo"])
 
     def test_status_change_moves_action_to_its_section_and_undo_restores(self):
@@ -345,14 +362,14 @@ class TasksWebTest(unittest.TestCase):
         status, _ = self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": action})
         self.assertEqual(status, 200)
         text = self.register.read_text(encoding="utf-8")
-        self.assertGreater(text.index("**EXM-001**"), text.index("## Terminées"))
+        self.assertGreater(text.index("**EXM-001**"), text.index("## Done"))
         reopened = {**action, "state": " "}
         version = next(a["version"] for a in self.request("GET", "/api/actions")[1]["actions"] if a["id"] == "EXM-001")
         self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": reopened})
         text = self.register.read_text(encoding="utf-8")
-        self.assertLess(text.index("**EXM-001**"), text.index("## Terminées"))
-        self.request("POST", "/api/undo", {"label": "statut de EXM-001 → À faire"})
-        self.request("POST", "/api/undo", {"label": "statut de EXM-001 → Terminée"})
+        self.assertLess(text.index("**EXM-001**"), text.index("## Done"))
+        self.request("POST", "/api/undo", {"label": "status of EXM-001 → To do"})
+        self.request("POST", "/api/undo", {"label": "status of EXM-001 → Done"})
         self.assertEqual(self.raw(), original)
 
     def test_created_date_is_written_exposed_and_kept_on_update(self):
@@ -374,9 +391,9 @@ class TasksWebTest(unittest.TestCase):
         original = self.raw()
         self.create_action()
         self.assertNotEqual(self.raw(), original)
-        status, result = self.request("POST", "/api/undo", {"label": "création de EXM-010"})
+        status, result = self.request("POST", "/api/undo", {"label": "creation of EXM-010"})
         self.assertEqual(status, 200)
-        self.assertEqual((result["undone"], result["action_id"]), ("création de EXM-010", "EXM-010"))
+        self.assertEqual((result["undone"], result["action_id"]), ("creation of EXM-010", "EXM-010"))
         self.assertEqual(result["undo"], {"available": False, "label": None, "depth": 0})
         self.assertEqual(self.raw(), original)
         self.assertEqual(self.request("GET", "/api/undo")[1]["available"], False)
@@ -388,16 +405,16 @@ class TasksWebTest(unittest.TestCase):
         self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": action})
         after_status = self.raw()
         self.request("POST", self.notes_url(), {"details_version": self.details()["details_version"], "note": "Note"})
-        self.assertEqual(self.request("GET", "/api/undo")[1], {"available": True, "label": "note ajoutée sur EXM-001", "depth": 2})
-        status, result = self.request("POST", "/api/undo", {"label": "note ajoutée sur EXM-001"})
-        self.assertEqual((status, result["undo"]["label"]), (200, "statut de EXM-001 → En cours"))
+        self.assertEqual(self.request("GET", "/api/undo")[1], {"available": True, "label": "note added to EXM-001", "depth": 2})
+        status, result = self.request("POST", "/api/undo", {"label": "note added to EXM-001"})
+        self.assertEqual((status, result["undo"]["label"]), (200, "status of EXM-001 → In progress"))
         self.assertEqual(self.raw(), after_status)
-        status, result = self.request("POST", "/api/undo", {"label": "statut de EXM-001 → En cours"})
+        status, result = self.request("POST", "/api/undo", {"label": "status of EXM-001 → In progress"})
         self.assertEqual((status, result["undo"]["depth"]), (200, 0))
         self.assertEqual(self.raw(), original)
         action["title"] = "Autre titre"
         version = self.request("GET", "/api/actions")[1]["actions"][0]["version"]
-        self.assertEqual(self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": action})[1]["undo"]["label"], "modification de EXM-001")
+        self.assertEqual(self.request("PATCH", "/api/actions/EXM-001", {"version": version, "action": action})[1]["undo"]["label"], "edit of EXM-001")
 
     def test_undo_note_deletion(self):
         self.register.write_text(RICH_REGISTER, encoding="utf-8")
@@ -405,12 +422,12 @@ class TasksWebTest(unittest.TestCase):
         detail = self.details()
         self.request("DELETE", self.notes_url("/1"), {"details_version": detail["details_version"], "text": detail["notes"][1]["text"]})
         self.assertNotEqual(self.raw(), original)
-        status, result = self.request("POST", "/api/undo", {"label": "note supprimée sur EXM-001"})
+        status, result = self.request("POST", "/api/undo", {"label": "note deleted from EXM-001"})
         self.assertEqual(status, 200)
         self.assertEqual(self.raw(), original)
 
     def test_undo_preserves_crlf_and_missing_trailing_newline(self):
-        original = "# Actions\r\n\r\n## Ouvertes\r\n- [ ] **EXM-001** — Jane — Titre\r\n    - source: x".encode("utf-8")
+        original = "# Actions\r\n\r\n## Open\r\n- [ ] **EXM-001** — Jane — Titre\r\n    - source: x".encode("utf-8")
         self.register.write_bytes(original)
         status, created = self.create_action()
         self.assertEqual(status, 201)
@@ -434,17 +451,17 @@ class TasksWebTest(unittest.TestCase):
         self.create_action("Seconde")
         external = self.raw() + b"\n- modification externe\n"
         self.register.write_bytes(external)
-        status, result = self.request("POST", "/api/undo", {"label": "création de EXM-011"})
+        status, result = self.request("POST", "/api/undo", {"label": "creation of EXM-011"})
         self.assertEqual(status, 409)
-        self.assertIn("annulation impossible", result["error"])
+        self.assertIn("cannot be undone", result["error"])
         self.assertEqual(self.raw(), external)
         self.assertEqual(self.request("GET", "/api/undo")[1], {"available": False, "label": None, "depth": 0})
 
     def test_undo_is_protected_like_other_writes(self):
         self.create_action()
         after = self.raw()
-        self.assertEqual(self.request("POST", "/api/undo", {"label": "création de EXM-010"}, token=False)[0], 403)
-        self.assertEqual(self.request("POST", "/api/undo", {"label": "création de EXM-010"}, origin=False)[0], 403)
+        self.assertEqual(self.request("POST", "/api/undo", {"label": "creation of EXM-010"}, token=False)[0], 403)
+        self.assertEqual(self.request("POST", "/api/undo", {"label": "creation of EXM-010"}, origin=False)[0], 403)
         self.assertEqual(self.raw(), after)
         self.assertEqual(self.request("GET", "/api/undo")[1]["depth"], 1)
 
@@ -452,7 +469,7 @@ class TasksWebTest(unittest.TestCase):
         original = self.raw()
         for number in range(22):
             self.create_action(f"Action {number}")
-        self.assertEqual(self.request("GET", "/api/undo")[1], {"available": True, "label": "création de EXM-031", "depth": 20})
+        self.assertEqual(self.request("GET", "/api/undo")[1], {"available": True, "label": "creation of EXM-031", "depth": 20})
         for _ in range(20):
             label = self.request("GET", "/api/undo")[1]["label"]
             self.assertEqual(self.request("POST", "/api/undo", {"label": label})[0], 200)
@@ -461,8 +478,8 @@ class TasksWebTest(unittest.TestCase):
         self.assertNotIn("**EXM-012**", self.register.read_text(encoding="utf-8"))
         self.assertNotEqual(self.raw(), original)
 
-    DELETE_REGISTER = ("# Actions\n\n## Ouvertes\n- [ ] **EXM-001** — Jane — Première\n    - source: x\n    - 12/10 : une note\n        - sous-détail\n\n"
-                       "    - 13/10 : après un blanc interne\n- [ ] **EXM-002** — Jane — Voisine\n    - source: y\n\n## Terminées\n- [x] **EXM-009** — Jane — Ancienne\n")
+    DELETE_REGISTER = ("# Actions\n\n## Open\n- [ ] **EXM-001** — Jane — Première\n    - source: x\n    - 12/10: une note\n        - sous-détail\n\n"
+                       "    - 13/10: après un blanc interne\n- [ ] **EXM-002** — Jane — Voisine\n    - source: y\n\n## Done\n- [x] **EXM-009** — Jane — Ancienne\n")
 
     def delete_payload(self, action_id="EXM-001"):
         action = next(item for item in self.request("GET", "/api/actions")[1]["actions"] if item["id"] == action_id)
@@ -472,8 +489,8 @@ class TasksWebTest(unittest.TestCase):
         self.register.write_text(self.DELETE_REGISTER, encoding="utf-8")
         status, result = self.request("DELETE", "/api/actions/EXM-001", self.delete_payload())
         self.assertEqual((status, result["deleted"]), (200, "EXM-001"))
-        self.assertEqual(result["undo"]["label"], "suppression de EXM-001")
-        self.assertEqual(self.raw().decode("utf-8"), "# Actions\n\n## Ouvertes\n- [ ] **EXM-002** — Jane — Voisine\n    - source: y\n\n## Terminées\n- [x] **EXM-009** — Jane — Ancienne\n")
+        self.assertEqual(result["undo"]["label"], "deletion of EXM-001")
+        self.assertEqual(self.raw().decode("utf-8"), "# Actions\n\n## Open\n- [ ] **EXM-002** — Jane — Voisine\n    - source: y\n\n## Done\n- [x] **EXM-009** — Jane — Ancienne\n")
         self.assertEqual(self.request("GET", "/api/actions/EXM-001/details")[0], 404)
 
     def test_delete_last_open_action_keeps_single_blank_before_next_heading(self):
@@ -481,7 +498,7 @@ class TasksWebTest(unittest.TestCase):
         status, _ = self.request("DELETE", "/api/actions/EXM-002", self.delete_payload("EXM-002"))
         self.assertEqual(status, 200)
         text = self.raw().decode("utf-8")
-        self.assertIn("après un blanc interne\n\n## Terminées\n", text)
+        self.assertIn("après un blanc interne\n\n## Done\n", text)
         self.assertNotIn("\n\n\n", text)
         self.assertTrue(text.endswith("Ancienne\n"))
         self.register.write_text(RICH_REGISTER, encoding="utf-8")
@@ -505,8 +522,8 @@ class TasksWebTest(unittest.TestCase):
         self.register.write_text(self.DELETE_REGISTER, encoding="utf-8")
         original = self.raw()
         self.request("DELETE", "/api/actions/EXM-001", self.delete_payload())
-        self.assertEqual(self.request("GET", "/api/undo")[1]["label"], "suppression de EXM-001")
-        status, _ = self.request("POST", "/api/undo", {"label": "suppression de EXM-001"})
+        self.assertEqual(self.request("GET", "/api/undo")[1]["label"], "deletion of EXM-001")
+        status, _ = self.request("POST", "/api/undo", {"label": "deletion of EXM-001"})
         self.assertEqual(status, 200)
         self.assertEqual(self.raw(), original)
 
@@ -540,12 +557,12 @@ class NotesTest(unittest.TestCase):
         internal = self.brain / self.INTERNAL
         for folder, line in ((client, "- [ ] **ACM-001** — Jane — Livrer"), (internal, "- [ ] **SET-001** — Jane — Ranger")):
             (folder / "state").mkdir(parents=True)
-            (folder / "state/actions.md").write_text(f"# Actions\n\n## Ouvertes\n{line}\n", encoding="utf-8")
+            (folder / "state/actions.md").write_text(f"# Actions\n\n## Open\n{line}\n", encoding="utf-8")
         (client / "demo-migration.md").write_text("# Migration Demo\n", encoding="utf-8")
         (client / "notes/archive").mkdir(parents=True)
         (client / "notes/archive/2026-01-01-ancienne.md").write_text("# Archivée\n", encoding="utf-8")
         (client / "notes/2026-10-01-existante.md").write_text(
-            "# Note existante\n\n> Note du 01/10/2026 · projet : [x](../demo-migration.md)\n\nContenu de la\n  note   existante.\n", encoding="utf-8")
+            "# Note existante\n\n> Note from 01/10/2026 · project: [x](../demo-migration.md)\n\nContenu de la\n  note   existante.\n", encoding="utf-8")
         (client / "notes/README.md").write_text("# Index\n", encoding="utf-8")
         (client / "notes/lien.md").symlink_to(self.outside)
         (internal / "notes").mkdir()
@@ -624,28 +641,28 @@ class NotesTest(unittest.TestCase):
         path = self.brain / relative
         day = f"{self.today[8:10]}/{self.today[5:7]}/{self.today[:4]}"
         self.assertEqual(path.read_text(encoding="utf-8"),
-                         f"# Réunion d'équipe — Été\n\n> Note du {day} · projet : [acme / demo-migration](../demo-migration.md)\n\nLigne 1\nLigne 2\n")
+                         f"# Réunion d'équipe — Été\n\n> Note from {day} · project: [acme / demo-migration](../demo-migration.md)\n\nLigne 1\nLigne 2\n")
         self.assertTrue((path.parent / "../demo-migration.md").resolve().is_file())
         self.assertEqual((data["note"]["id"], data["note"]["title"], data["note"]["register"]), (relative, "Réunion d'équipe — Été", self.register))
         self.assertEqual(data["note"]["content"], path.read_text(encoding="utf-8"))
         self.assertTrue(data["undo"]["available"])
-        self.assertEqual(data["undo"]["label"], "note « Réunion d'équipe — Été » créée")
+        self.assertEqual(data["undo"]["label"], "note \"Réunion d'équipe — Été\" created")
         self.assertIn(relative, {note["id"] for note in self.request("GET", "/api/notes")[1]["notes"]})
 
     def test_create_project_note_without_page_links_to_register_and_makes_folder(self):
         folder = self.brain / "projects/internal/neuf"
         (folder / "state").mkdir(parents=True)
-        (folder / "state/actions.md").write_text("# Actions\n\n- [ ] **NEU-001** — Jane — Un\n", encoding="utf-8")
+        (folder / "state/actions.md").write_text("# Actions\n\n## Open\n- [ ] **NEU-001** — Jane — Un\n", encoding="utf-8")
         status, data = self.create("Idée", "projects/internal/neuf/state/actions.md", "")
         self.assertEqual(status, 201)
         path = self.brain / data["id"]
         self.assertEqual(path.parent, folder / "notes")
         text = path.read_text(encoding="utf-8")
-        self.assertIn("[neuf (registre)](../state/actions.md)", text)
-        self.assertTrue(text.endswith("(registre)](../state/actions.md)\n"))
+        self.assertIn("[neuf (register)](../state/actions.md)", text)
+        self.assertTrue(text.endswith("(register)](../state/actions.md)\n"))
         self.assertTrue((path.parent / "../state/actions.md").resolve().is_file())
         status, data = self.create("Idée interne", self.internal_register, "x")
-        self.assertIn("[setup (registre)](../state/actions.md)", (self.brain / data["id"]).read_text(encoding="utf-8"))
+        self.assertIn("[setup (register)](../state/actions.md)", (self.brain / data["id"]).read_text(encoding="utf-8"))
 
     def test_create_requires_a_known_register(self):
         self.assertEqual(self.request("POST", "/api/notes", {"title": "Sans projet", "register": None, "content": "x"})[0], 400)
@@ -704,10 +721,10 @@ class NotesTest(unittest.TestCase):
         self.assertEqual((self.brain / note_id).read_text(encoding="utf-8"), "# Nouveau titre\n\nNouveau corps\n")
         self.assertEqual(data["id"], note_id)
         self.assertEqual(data["version"], hashlib.sha256((self.brain / note_id).read_bytes()).hexdigest()[:16])
-        self.assertEqual(data["undo"]["label"], "note « Nouveau titre » modifiée")
+        self.assertEqual(data["undo"]["label"], 'note "Nouveau titre" edited')
         status, stale = self.request("PATCH", "/api/notes", {"id": note_id, "version": version, "content": "# Autre\n"})
         self.assertEqual(status, 409)
-        self.assertIn("changé", stale["error"])
+        self.assertIn("changed", stale["error"])
         self.assertEqual((self.brain / note_id).read_text(encoding="utf-8"), "# Nouveau titre\n\nNouveau corps\n")
         for payload in ({"id": note_id, "version": data["version"], "content": "   \n"}, {"id": note_id, "version": data["version"], "content": "x" * 102401},
                         {"id": note_id, "version": data["version"], "content": "a\x00"}, {"id": note_id, "version": data["version"]},
@@ -727,7 +744,7 @@ class NotesTest(unittest.TestCase):
         data = self.create("Projet sans notes", "projects/internal/neuf/state/actions.md")[1]
         self.assertTrue((project / "notes").is_dir())
         status, result = self.undo()
-        self.assertEqual((status, result["undone"]), (200, "note « Projet sans notes » créée"))
+        self.assertEqual((status, result["undone"]), (200, 'note "Projet sans notes" created'))
         self.assertFalse((project / "notes").exists())
         self.assertTrue((project / "state").is_dir())
         self.assertFalse(result["undo"]["available"])
@@ -755,11 +772,11 @@ class NotesTest(unittest.TestCase):
         relative = f"inbox/{self.today}-idee-a-creuser.md"
         self.assertEqual(data["id"], relative)
         day = f"{self.today[8:10]}/{self.today[5:7]}/{self.today[:4]}"
-        self.assertEqual((self.brain / relative).read_text(encoding="utf-8"), f"# Idée à creuser\n\n> Note du {day} · à trier\n\nLigne 1\nLigne 2\n")
-        self.assertEqual((data["note"]["project"], data["note"]["register"], data["undo"]["label"]), ("Inbox", "inbox", "note « Idée à creuser » créée"))
+        self.assertEqual((self.brain / relative).read_text(encoding="utf-8"), f"# Idée à creuser\n\n> Note from {day} · to triage\n\nLigne 1\nLigne 2\n")
+        self.assertEqual((data["note"]["project"], data["note"]["register"], data["undo"]["label"]), ("Inbox", "inbox", 'note "Idée à creuser" created'))
         self.assertEqual(self.create("Idée à creuser", "inbox")[1]["id"], f"inbox/{self.today}-idee-a-creuser-2.md")
         self.assertEqual(self.create("Idée à creuser", "inbox")[1]["id"], f"inbox/{self.today}-idee-a-creuser-3.md")
-        self.assertEqual((self.brain / f"inbox/{self.today}-idee-a-creuser-2.md").read_text(encoding="utf-8").splitlines()[2:], [f"> Note du {day} · à trier", "", "Texte"])
+        self.assertEqual((self.brain / f"inbox/{self.today}-idee-a-creuser-2.md").read_text(encoding="utf-8").splitlines()[2:], [f"> Note from {day} · to triage", "", "Texte"])
         listed = {note["id"]: note for note in self.request("GET", "/api/notes")[1]["notes"]}
         self.assertEqual((listed[relative]["project"], listed[relative]["register"], listed[relative]["date"]), ("Inbox", "inbox", self.today))
         self.assertEqual(self.create("", "inbox")[0], 400)
@@ -772,6 +789,7 @@ class NotesTest(unittest.TestCase):
         inbox = self.brain / "inbox"
         inbox.mkdir()
         (inbox / "README.md").write_text("# Inbox\n\nMode d'emploi.\n", encoding="utf-8")
+        (inbox / "inbox.md").write_text("# Inbox\n\n---\n- une ligne à trier\n", encoding="utf-8")  # the scratchpad, not a note
         (inbox / "2026-10-02-brute.md").write_text("# Brute\n\nÀ trier.\n", encoding="utf-8")
         (inbox / "lien.md").symlink_to(self.outside)
         listed = {note["id"]: note for note in self.request("GET", "/api/notes")[1]["notes"]}
@@ -779,6 +797,7 @@ class NotesTest(unittest.TestCase):
         self.assertEqual({key for key in listed if key.startswith("inbox/")}, {"inbox/2026-10-02-brute.md"})
         self.assertEqual((listed["inbox/2026-10-02-brute.md"]["project"], listed["inbox/2026-10-02-brute.md"]["register"]), ("Inbox", "inbox"))
         self.assertEqual(self.request("GET", "/api/notes/content?id=inbox/README.md")[0], 404)
+        self.assertEqual(self.request("GET", "/api/notes/content?id=inbox/inbox.md")[0], 404)
         self.assertEqual(self.request("PATCH", "/api/notes", {"id": "inbox/README.md", "version": "x", "content": "y"})[0], 404)
         self.assertEqual(self.request("PATCH", "/api/notes", {"id": "inbox/lien.md", "version": "x", "content": "y"})[0], 404)
         version = self.request("GET", "/api/notes/content?id=inbox/2026-10-02-brute.md")[1]["version"]
@@ -797,7 +816,7 @@ class NotesTest(unittest.TestCase):
         data = self.create("Dans l'inbox", "inbox")[1]
         self.assertTrue((self.brain / "inbox").is_dir())
         status, result = self.undo()
-        self.assertEqual((status, result["undone"]), (200, "note « Dans l'inbox » créée"))
+        self.assertEqual((status, result["undone"]), (200, "note \"Dans l'inbox\" created"))
         self.assertFalse((self.brain / data["id"]).exists())
         self.assertFalse((self.brain / "inbox").exists())
         (self.brain / "inbox").mkdir()
@@ -816,7 +835,7 @@ class NotesTest(unittest.TestCase):
         self.assertEqual(self.request("PATCH", "/api/notes", {"id": note_id, "version": version, "content": "# Titre\n\nChangé"})[0], 200)
         self.assertNotEqual(path.read_bytes(), original)
         status, result = self.undo()
-        self.assertEqual((status, result["undone"]), (200, "note « Titre » modifiée"))
+        self.assertEqual((status, result["undone"]), (200, 'note "Titre" edited'))
         self.assertEqual(path.read_bytes(), original)
 
     def test_undo_is_refused_when_the_note_changed_meanwhile(self):
@@ -838,13 +857,89 @@ class NotesTest(unittest.TestCase):
     def test_note_undo_labels_are_truncated_and_stack_is_lifo_with_actions(self):
         long_title = "T" * 60
         self.create(long_title, self.register)
-        self.assertEqual(self.request("GET", "/api/undo")[1]["label"], f"note « {'T' * 40}… » créée")
+        self.assertEqual(self.request("GET", "/api/undo")[1]["label"], f"note \"{'T' * 40}…\" created")
         status, _ = self.request("POST", "/api/actions", {"register": self.register, "action": {"title": "Nouveau", "owner": "Jane", "state": " ", "priority": "", "due": "", "scheduled": ""}})
         self.assertEqual(status, 201)
         self.assertEqual(self.undo()[0], 200)
-        self.assertEqual(self.request("GET", "/api/undo")[1]["label"], f"note « {'T' * 40}… » créée")
+        self.assertEqual(self.request("GET", "/api/undo")[1]["label"], f"note \"{'T' * 40}…\" created")
         self.assertEqual(self.undo()[0], 200)
         self.assertEqual(list((self.brain / self.CLIENT / "notes").glob(f"{self.today}-*")), [])
+
+
+class WrittenFormatTest(unittest.TestCase):
+    """What the interface writes into a brain file: the source of a new action and the header of a new note."""
+    ENGLISH = "projects/clients/acme/missions/demo-migration"
+    OPEN_EN = "# Actions\n\n## Open\n- [ ] **{prefix}-001** — Jane — Deliver\n\n## Done\n"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)  # last: the servers are stopped first
+        self.root = Path(self.temp.name)
+        self.today = datetime.now(ZoneInfo("Europe/Paris")).date().isoformat()
+        self.day = f"{self.today[8:10]}/{self.today[5:7]}"
+
+    request = TasksWebTest.request
+
+    def make_brain(self, name, registers):
+        """registers: project folder -> register text; the ENGLISH project also gets its project page."""
+        brain = self.root / name
+        for folder, text in registers.items():
+            (brain / folder / "state").mkdir(parents=True)
+            (brain / folder / "state/actions.md").write_text(text, encoding="utf-8")
+        (brain / ".data").mkdir(parents=True, exist_ok=True)
+        if self.ENGLISH in registers:
+            (brain / self.ENGLISH / "demo-migration.md").write_text("# Demo migration\n", encoding="utf-8")
+        return brain
+
+    def serve(self, brain):
+        self.server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(brain))
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(self.stop, self.server, thread)
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+        return brain
+
+    @staticmethod
+    def stop(server, thread):
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=2)
+
+    def new_action(self, folder):
+        action = {"title": "Follow up", "owner": "Jane", "state": " ", "priority": "", "due": "", "scheduled": ""}
+        return self.request("POST", "/api/actions", {"register": f"{folder}/state/actions.md", "action": action})
+
+    def note(self, title, register):
+        return self.request("POST", "/api/notes", {"title": title, "register": register, "content": "Body"})
+
+    def test_action_created_in_an_english_register_has_an_english_source(self):
+        brain = self.serve(self.make_brain("brain", {self.ENGLISH: self.OPEN_EN.format(prefix="ACM")}))
+        status, result = self.new_action(self.ENGLISH)
+        self.assertEqual((status, result["id"], result["undo"]["label"]), (201, "ACM-002", "creation of ACM-002"))
+        text = (brain / self.ENGLISH / "state/actions.md").read_text(encoding="utf-8")
+        self.assertIn(f"    - source: entered in the local interface, {self.day}\n", text)
+        self.assertIn("    - created: ", text)
+
+    def test_project_note_header_is_english_in_an_english_register(self):
+        brain = self.serve(self.make_brain("brain", {self.ENGLISH: self.OPEN_EN.format(prefix="ACM"), "projects/internal/neuf": self.OPEN_EN.format(prefix="NEU")}))
+        date = f"{self.today[8:10]}/{self.today[5:7]}/{self.today[:4]}"
+        status, data = self.note("Kickoff", f"{self.ENGLISH}/state/actions.md")
+        self.assertEqual(status, 201)
+        self.assertEqual((brain / data["id"]).read_text(encoding="utf-8"),
+                         f"# Kickoff\n\n> Note from {date} · project: [acme / demo-migration](../demo-migration.md)\n\nBody\n")
+        self.assertEqual(data["undo"]["label"], 'note "Kickoff" created')
+        status, data = self.note("Idea", "projects/internal/neuf/state/actions.md")
+        self.assertEqual(status, 201)
+        text = (brain / data["id"]).read_text(encoding="utf-8")
+        self.assertIn("> Note from ", text)
+        self.assertTrue(text.split("\n")[2].endswith("project: [neuf (register)](../state/actions.md)"), text)
+
+    def test_inbox_note_header_has_no_project_link(self):
+        date = f"{self.today[8:10]}/{self.today[5:7]}/{self.today[:4]}"
+        brain = self.serve(self.make_brain("brain", {self.ENGLISH: self.OPEN_EN.format(prefix="ACM")}))
+        status, data = self.note("Loose thought", "inbox")
+        self.assertEqual(status, 201)
+        self.assertEqual((brain / data["id"]).read_text(encoding="utf-8"), f"# Loose thought\n\n> Note from {date} · to triage\n\nBody\n")
 
 
 class GitViewTest(unittest.TestCase):
@@ -1050,7 +1145,7 @@ class GitViewTest(unittest.TestCase):
         self.assertIn("tls.pem", data["show"])
         self.assertNotIn("hunter2", data["show"])
         self.assertNotIn("PRIVATE-KEY-DATA", data["show"])
-        self.assertIn("masqué", data["show"])
+        self.assertIn("hidden", data["show"])
         self.assertEqual(self.get(f"/api/git/commit?repo=work&hash={'0' * 40}")[0], 404)
         for bad in ("zzz", head[:7], head.upper(), "--output=x", ""):
             self.assertEqual(self.get(f"/api/git/commit?repo=work&hash={bad}")[0], 404, bad)
@@ -1102,7 +1197,7 @@ class GitViewTest(unittest.TestCase):
         with patch.object(tasks_web.subprocess, "run", side_effect=tasks_web.subprocess.TimeoutExpired("git", 10)):
             status, data = self.get("/api/git")
             self.assertEqual(status, 200)
-            self.assertIn("10 secondes", data["repos"][0]["error"])
+            self.assertIn("10 seconds", data["repos"][0]["error"])
             status, data = self.get("/api/git/diff?repo=work&path=a.txt&staged=0")
             self.assertEqual(status, 502)
             self.assertIn("error", data)
@@ -1153,7 +1248,7 @@ class DocsTest(unittest.TestCase):
         (self.outside / "dehors.md").write_text("# Dehors\n\nmot-secret-externe\n", encoding="utf-8")
         for folder, line in ((self.CLIENT, "- [ ] **ACM-001** — Jane — Livrer"), (self.INTERNAL, "- [ ] **SET-001** — Jane — Ranger")):
             (self.brain / folder / "state").mkdir(parents=True)
-            (self.brain / folder / "state/actions.md").write_text(f"# Actions\n\n## Ouvertes\n{line}\n", encoding="utf-8")
+            (self.brain / folder / "state/actions.md").write_text(f"# Actions\n\n## Open\n{line}\n", encoding="utf-8")
         self.page = self.write(f"{self.CLIENT}/migration.md", "# Migration Demo\n\n## Périmètre\n\nTexte de la fiche mission.\n")
         self.meeting = self.write(f"{self.CLIENT}/notes/2026-10-01-compte-rendu.md", "# Compte rendu\n\nLa RÉUNION du lundi a validé le budget annuel.\n")
         self.write(f"{self.INTERNAL}/notes/2026-10-02-autre.md", "# Autre note\n\nBudget revu : annuel puis trimestriel, sans réunion.\n")
@@ -1439,9 +1534,9 @@ class DocsTest(unittest.TestCase):
                    "[absent](../absent.md) [pdf](../fichier.pdf) [abs](/etc/passwd.md) [dir](../) [cache](../../../../../.hidden/secret.md) "
                    "[ext](https://example.com/a?b=1&c=2) [mail](mailto:a@example.com)\n")
         html = self.render(f"{self.CLIENT}/notes/hors.md")["html"]
-        self.assertEqual(html.count('<span class="doc-link-off" title="Fichier non affiché ici">'), 7)
+        self.assertEqual(html.count('<span class="doc-link-off" title="File not shown here">'), 7)
         for text in ("outil", "artefact", "absent", "pdf", "abs", "dir", "cache"):
-            self.assertIn(f'title="Fichier non affiché ici">{text}</span>', html)
+            self.assertIn(f'title="File not shown here">{text}</span>', html)
         self.assertEqual(html.count("<a "), 2)
         self.assertNotIn("data-doc", html)
         self.assertNotIn("tools/x.md", html)
@@ -1460,7 +1555,7 @@ class DocsTest(unittest.TestCase):
         self.assertIn('id="h-elements-cles-code"', html)
         self.assertIn("<s>barré</s>", html)
         self.assertNotIn("<img", html)
-        self.assertIn('<span class="doc-image-off" title="Image non affichée ici">schéma &lt;b&gt;</span>', html)
+        self.assertIn('<span class="doc-image-off" title="Image not shown here">schéma &lt;b&gt;</span>', html)
         self.assertIn("print('&lt;tag&gt;')", html)
         self.assertIn("<blockquote>", html)
 
@@ -1508,7 +1603,7 @@ class BrainSwitchTest(unittest.TestCase):
         if prefix:
             project = self.DEFAULT_PROJECT if name == "brain" else self.OTHER_PROJECT
             (brain / project / "state").mkdir(parents=True)
-            (brain / project / "state/actions.md").write_text(f"# Actions\n\n## Ouvertes\n- [ ] **{prefix}-001** — Jane — {title}\n", encoding="utf-8")
+            (brain / project / "state/actions.md").write_text(f"# Actions\n\n## Open\n- [ ] **{prefix}-001** — Jane — {title}\n", encoding="utf-8")
         else:
             (brain / "projects").mkdir(exist_ok=True)
         return brain
@@ -1634,7 +1729,7 @@ class BrainSwitchTest(unittest.TestCase):
             joiner = "&" if "?" in path else "?"
             status, data = self.request("GET", f"{path}{joiner}brain=brain-inconnu")
             self.assertEqual((path, status), (path, 400))
-            self.assertEqual(data, {"error": "Brain inconnu."})
+            self.assertEqual(data, {"error": "Unknown brain."})
         before = {key: register.read_bytes() for key, register in self.registers.items()}
         with patch.object(tasks_web, "run_tool") as runner:
             for method, path, payload in (
@@ -1649,7 +1744,7 @@ class BrainSwitchTest(unittest.TestCase):
             ):
                 status, data = self.request(method, path, payload)
                 self.assertEqual((method, path, status), (method, path, 400))
-                self.assertEqual(data, {"error": "Brain inconnu."})
+                self.assertEqual(data, {"error": "Unknown brain."})
             runner.assert_not_called()
         self.assertEqual({key: register.read_bytes() for key, register in self.registers.items()}, before)
         self.assertFalse((self.default / "inbox").exists() or (self.other / "inbox").exists())
@@ -1661,10 +1756,10 @@ class BrainSwitchTest(unittest.TestCase):
         for value in values:
             status, data = self.request("GET", "/api/actions?brain=" + quote(value, safe=""))
             self.assertEqual((value, status), (value, 400))
-            self.assertEqual(data, {"error": "Brain inconnu."})
+            self.assertEqual(data, {"error": "Unknown brain."})
         # A repeated parameter is ambiguous: refused too.
         status, data = self.request("GET", "/api/actions?brain=brain&brain=brain-perso")
-        self.assertEqual((status, data), (400, {"error": "Paramètre brain invalide."}))
+        self.assertEqual((status, data), (400, {"error": "Invalid brain parameter."}))
         status, _ = self.request("POST", "/api/actions?brain=../brain", {"register": f"{self.DEFAULT_PROJECT}/state/actions.md", "action": {}})
         self.assertEqual(status, 400)
 
@@ -1718,9 +1813,9 @@ class BrainSwitchTest(unittest.TestCase):
         # A register of another brain is not a register of the selected one.
         other_before = self.registers["other"].read_bytes()
         status, data = self.new_action("Mauvais brain", f"{self.OTHER_PROJECT}/state/actions.md")
-        self.assertEqual((status, data), (400, {"error": "Projet inconnu."}))
+        self.assertEqual((status, data), (400, {"error": "Unknown project."}))
         status, data = self.new_action("Mauvais brain", f"{self.DEFAULT_PROJECT}/state/actions.md", "?brain=brain-perso")
-        self.assertEqual((status, data), (400, {"error": "Projet inconnu."}))
+        self.assertEqual((status, data), (400, {"error": "Unknown project."}))
         self.assertEqual(self.registers["other"].read_bytes(), other_before)
         self.assertEqual(self.registers["default"].read_bytes(), default_before)
         # The ID counter and the notes belong to the selected brain too.
@@ -1793,7 +1888,7 @@ class BrainSwitchTest(unittest.TestCase):
     def test_default_brain_outside_work_is_offered_first(self):
         elsewhere = Path(self.temp.name) / "ailleurs/brain-externe"
         (elsewhere / "projects/internal/ext/state").mkdir(parents=True)
-        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Ouvertes\n- [ ] **EXT-001** — Jane — Hors de Work\n", encoding="utf-8")
+        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Open\n- [ ] **EXT-001** — Jane — Hors de Work\n", encoding="utf-8")
         self.start(tasks_web.Store(elsewhere))
         data = self.request("GET", "/api/brains")[1]
         self.assertEqual(data["default"], "brain-externe")
@@ -1807,7 +1902,7 @@ class BrainSwitchTest(unittest.TestCase):
     def test_default_brain_outside_work_is_offered_alone_when_work_has_none(self):
         elsewhere = Path(self.temp.name) / "ailleurs/solo"
         (elsewhere / "projects/internal/ext/state").mkdir(parents=True)
-        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Ouvertes\n- [ ] **EXT-001** — Jane — Seul\n", encoding="utf-8")
+        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Open\n- [ ] **EXT-001** — Jane — Seul\n", encoding="utf-8")
         empty_work = Path(self.temp.name) / "work-vide"
         empty_work.mkdir()
         self.start(tasks_web.Store(elsewhere), work=empty_work)
@@ -1819,7 +1914,7 @@ class BrainSwitchTest(unittest.TestCase):
     def test_default_brain_shadows_a_discovered_brain_of_the_same_name(self):
         elsewhere = Path(self.temp.name) / "ailleurs/brain"
         (elsewhere / "projects/internal/ext/state").mkdir(parents=True)
-        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Ouvertes\n- [ ] **EXT-001** — Jane — Autre dossier\n", encoding="utf-8")
+        (elsewhere / "projects/internal/ext/state/actions.md").write_text("# Actions\n\n## Open\n- [ ] **EXT-001** — Jane — Autre dossier\n", encoding="utf-8")
         self.start(tasks_web.Store(elsewhere))
         data = self.request("GET", "/api/brains")[1]
         self.assertEqual([brain["name"] for brain in data["brains"]], ["brain", "brain-acme", "brain-perso"])

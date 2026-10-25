@@ -27,14 +27,14 @@ if /usr/sbin/lsof -nP -iTCP:8765 -sTCP:LISTEN >/dev/null 2>&1; then
     fi
     /bin/sleep 0.2
   done
-  print -u2 'Le port 8765 est déjà utilisé par une autre application. Ferme-la avant de lancer Actions.'
+  print -u2 'Port 8765 is already used by another application. Close it before starting Actions.'
   exit 1
 fi
 
 export PATH="/opt/homebrew/bin:/usr/local/bin:${HOME}/.local/bin:${PATH}"
 uv_bin=$(command -v uv || true)
 if [[ -z "$uv_bin" ]]; then
-  print -u2 'uv est introuvable. Installe ou restaure uv, puis relance Actions.'
+  print -u2 'uv was not found. Install or restore uv, then start Actions again.'
   exit 1
 fi
 
@@ -53,5 +53,5 @@ for attempt in {1..50}; do
   /bin/sleep 0.2
 done
 
-print -u2 "Actions n'a pas démarré. Consulte agents/tasks-web.log dans Work."
+print -u2 "Actions did not start. See agents/tasks-web.log in Work."
 exit 1

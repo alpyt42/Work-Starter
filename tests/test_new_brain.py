@@ -37,7 +37,7 @@ class NewBrainTest(unittest.TestCase):
         result = self.run_tool("brain")
         self.assertEqual(result.returncode, 0, result.stderr)
         brain = self.work / "brain"
-        for path in ("AGENTS.md", "CLAUDE.md", "tasks.md", "inbox.md", "me/about-me.md",
+        for path in ("AGENTS.md", "CLAUDE.md", "tasks.md", "inbox/inbox.md", "me/about-me.md",
                      ".data/doctor.json", "docs/LOCAL-WORKFLOWS.md", "projects/internal/setup/state/actions.md"):
             self.assertTrue((brain / path).is_file(), path)
         # Conventions and templates are read from kit/brain/, never copied.
@@ -161,21 +161,21 @@ class NewBrainTest(unittest.TestCase):
             self.assertFalse(ignored(versioned), versioned)
 
     def test_boundary_options_fill_brain_json(self) -> None:
-        result = self.run_tool("brain-asso", "--scope", "asso", "--description", "Données de l'asso ; jamais de client.",
+        result = self.run_tool("brain-asso", "--scope", "asso", "--description", "Association data; never any client.",
                                "--remote", "git@github.com:asso/*", "--email", "*@asso.org")
         self.assertEqual(result.returncode, 0, result.stderr)
         raw = (self.work / "brain-asso/.data/brain.json").read_text(encoding="utf-8")
         self.assertEqual(json.loads(raw), {
-            "version": 1, "scope": "asso", "description": "Données de l'asso ; jamais de client.",
+            "version": 1, "scope": "asso", "description": "Association data; never any client.",
             "remote": "git@github.com:asso/*", "email": "*@asso.org", "allow": [],
         })
         self.assertEqual(raw, json.dumps(json.loads(raw), indent=2, sort_keys=True, ensure_ascii=False) + "\n")
         self.assertEqual(list(json.loads(raw)), sorted(json.loads(raw)))
 
     def test_partial_boundary_options_keep_the_other_fields_empty(self) -> None:
-        self.assertEqual(self.run_tool("brain-perso", "--scope", "perso").returncode, 0)
+        self.assertEqual(self.run_tool("brain-perso", "--scope", "personal").returncode, 0)
         declared = json.loads((self.work / "brain-perso/.data/brain.json").read_text(encoding="utf-8"))
-        self.assertEqual(declared, {**EMPTY_BOUNDARY, "scope": "perso"})
+        self.assertEqual(declared, {**EMPTY_BOUNDARY, "scope": "personal"})
 
     def test_no_boundary_option_keeps_the_seed_file(self) -> None:
         self.assertEqual(self.run_tool("brain").returncode, 0)

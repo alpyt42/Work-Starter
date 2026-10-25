@@ -5,5 +5,5 @@
   "teams_after": null,
   "mail_processed_ids": [],
   "teams_processed_ids": [],
-  "note": "Ids : internetMessageId pour les mails, id de message pour le chat."
+  "note": "Ids: internetMessageId for mails, message id for chat."
 }

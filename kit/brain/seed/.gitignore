@@ -1,14 +1,14 @@
 .DS_Store
 __pycache__/
 *.tmp
-# secrets locaux : jamais commités
+# local secrets: never committed
 .env
 .env.*
 !.env.example
-# Obsidian : le brain peut s'ouvrir dans le coffre de l'espace de travail, pas de coffre ici
+# Obsidian: the brain can be opened in the workspace vault, no vault of its own here
 /.obsidian/
 /.trash/
-# caches locaux d'un skill (ils peuvent citer des clients) : jamais commités
+# local caches of a skill (they may cite clients): never committed
 .cache/
 *.cache.json
 .*-cache.json

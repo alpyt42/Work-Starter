@@ -27,22 +27,22 @@ def main() -> int:
         return 0
     errors = []
     if not SUBJECT.match(subject):
-        errors.append(f"sujet non conforme (attendu `type(scope): sujet`, types : {TYPES.replace('|', ', ')}) : « {subject} »")
+        errors.append(f"subject does not follow the convention (expected `type(scope): subject`, types: {TYPES.replace('|', ', ')}): \"{subject}\"")
     elif subject.endswith("."):
-        errors.append("le sujet ne se termine pas par un point")
+        errors.append("the subject must not end with a period")
     elif len(subject) > MAX_SUBJECT:
-        errors.append(f"sujet trop long ({len(subject)} caractères, environ 72 attendus, {MAX_SUBJECT} au plus)")
+        errors.append(f"subject too long ({len(subject)} characters, about 72 expected, {MAX_SUBJECT} at most)")
     elif SUBJECT.match(subject) and re.match(r"^[^:]+: [A-Z]", subject):
-        errors.append("le sujet commence par une minuscule")
+        errors.append("the subject must start with a lowercase letter after the colon")
     if any(AI_MARKS.search(line) for line in lines):
-        errors.append("mention d'IA interdite dans le message (pas de Co-Authored-By d'IA ni de « Generated with »)")
+        errors.append("AI attribution is not allowed in the message (no AI Co-Authored-By, no \"Generated with\")")
     if errors:
-        print("Commit refusé :", file=sys.stderr)
+        print("Commit refused:", file=sys.stderr)
         for error in errors:
             print(f"  - {error}", file=sys.stderr)
         return 1
     if len(subject) > 72:
-        print(f"Avertissement : sujet de {len(subject)} caractères (environ 72 attendus).", file=sys.stderr)
+        print(f"Warning: subject of {len(subject)} characters (about 72 expected).", file=sys.stderr)
     return 0
 
 

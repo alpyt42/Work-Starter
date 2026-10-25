@@ -22,6 +22,9 @@ const ids = Object.fromEntries([
   'newNoteError', 'cancelNewNote', 'saveNewNote', 'quitDialog', 'quitConfirm', 'shortcutsDialog', 'toast', 'toastText', 'toastAction'
 ].map(id => [id, document.getElementById(id)]));
 
+// The interface text is English; dates, relative times, case changes and sorting follow the browser's locale.
+const LOCALE = navigator.language || undefined;
+
 // ---------- Session state (view and filters of this tab; no task content) ----------
 const UI_STATE_KEY = 'actions-brain-ui-v1';
 function readUIState() {
@@ -33,14 +36,14 @@ function readUIState() {
 const savedUI = readUIState();
 const VIEWS = ['today', 'list', 'board', 'notes', 'search', 'tools', 'git'];
 const ACTION_VIEWS = ['today', 'list', 'board'];
-const VIEW_TITLES = {today: 'Aujourd’hui', list: 'Actions', board: 'Tableau', notes: 'Notes', search: 'Recherche', tools: 'Outils', git: 'Git'};
+const VIEW_TITLES = {today: 'Today', list: 'Actions', board: 'Board', notes: 'Notes', search: 'Search', tools: 'Tools', git: 'Git'};
 const NAV_BUTTONS = {today: 'todayButton', list: 'listButton', board: 'boardButton', notes: 'notesButton', search: 'searchButton', tools: 'toolsButton', git: 'gitButton'};
 let view = VIEWS.includes(savedUI.view) ? savedUI.view : 'today';
 // The project filter of the sidebar: '' (all), a register path, or a folder prefix ending with '/' (a client and its missions).
 let projectScope = typeof savedUI.project === 'string' ? savedUI.project : '';
 let pendingGroup = typeof savedUI.group === 'string' ? savedUI.group : '';
 // Folded sections, shared by the list and the board: `register|slug` for a group, `register|` for the loose actions of a project,
-// `p:register` for a project, '|' for « Sans groupe » in a board column.
+// `p:register` for a project, '|' for "No group" in a board column.
 const foldedGroups = new Set(Array.isArray(savedUI.foldedGroups) ? savedUI.foldedGroups.filter(key => typeof key === 'string') : []);
 let snapshot = {actions: [], registers: [], owner: '', today: ''};
 let toastTimer;
@@ -118,10 +121,10 @@ const ICONS = {
   check: '<path d="M3.5 8.5l3 3 6-6.5"/>'
 };
 function plural(count, word, words = `${word}s`) { return `${count} ${count === 1 ? word : words}`; }
-const TIME_FORMAT = new Intl.DateTimeFormat('fr-FR', {hour: '2-digit', minute: '2-digit'});
-const DAY_FORMAT = new Intl.DateTimeFormat('fr-FR', {weekday: 'short', day: 'numeric', month: 'short'});
-const DAY_YEAR_FORMAT = new Intl.DateTimeFormat('fr-FR', {day: 'numeric', month: 'short', year: 'numeric'});
-const LONG_FORMAT = new Intl.DateTimeFormat('fr-FR', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
+const TIME_FORMAT = new Intl.DateTimeFormat(LOCALE, {hour: '2-digit', minute: '2-digit'});
+const DAY_FORMAT = new Intl.DateTimeFormat(LOCALE, {weekday: 'short', day: 'numeric', month: 'short'});
+const DAY_YEAR_FORMAT = new Intl.DateTimeFormat(LOCALE, {day: 'numeric', month: 'short', year: 'numeric'});
+const LONG_FORMAT = new Intl.DateTimeFormat(LOCALE, {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
 function parseDay(iso) {
   const [year, month, day] = iso.split('-').map(Number);
   return new Date(year, month - 1, day, 12);
@@ -140,18 +143,18 @@ function formatDay(iso) { return iso ? DAY_YEAR_FORMAT.format(parseDay(iso)) : '
 function formatStamp(value) {
   if (!value) return '';
   const [day, time] = value.split(' ');
-  return time ? `${formatDay(day)} à ${time}` : formatDay(day);
+  return time ? `${formatDay(day)} at ${time}` : formatDay(day);
 }
-// « aujourd’hui », « demain », « hier », otherwise « lun. 27 oct. » (« 12 janv. 2027 » in another year).
+// "today", "tomorrow", "yesterday", otherwise "Mon, Oct 27" ("Jan 12, 2027" in another year), in the browser's locale.
 function relativeDay(iso) {
   const diff = dayDiff(today(), iso);
-  if (diff === 0) return 'aujourd’hui';
-  if (diff === 1) return 'demain';
-  if (diff === -1) return 'hier';
+  if (diff === 0) return 'today';
+  if (diff === 1) return 'tomorrow';
+  if (diff === -1) return 'yesterday';
   return iso.slice(0, 4) === today().slice(0, 4) ? DAY_FORMAT.format(parseDay(iso)) : DAY_YEAR_FORMAT.format(parseDay(iso));
 }
 function closed(action) { return action.state === 'x' || action.state === '-'; }
-// The mission part of « client / mission » (the whole label otherwise), for narrow places; the full label goes in the tooltip.
+// The mission part of "client / mission" (the whole label otherwise), for narrow places; the full label goes in the tooltip.
 function shortProject(label) { return label.split(' / ').at(-1); }
 function dueState(action) {
   if (!action.due) return '';
@@ -160,7 +163,7 @@ function dueState(action) {
 }
 function dueTitle(action) {
   const late = dueState(action) === 'late' ? dayDiff(action.due, today()) : 0;
-  return `Échéance le ${LONG_FORMAT.format(parseDay(action.due))}${late ? `, en retard de ${plural(late, 'jour')}` : ''}`;
+  return `Due on ${LONG_FORMAT.format(parseDay(action.due))}${late ? `, ${plural(late, 'day')} overdue` : ''}`;
 }
 function dueNode(action) {
   const state = dueState(action);
@@ -171,28 +174,28 @@ function dueNode(action) {
 
 // ---------- Status and priority ----------
 const STATUS = {
-  ' ': {label: 'À faire', cls: 's-todo', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/>'},
-  '/': {label: 'En cours', cls: 's-doing', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/><path class="fill" d="M8 4.25a3.75 3.75 0 0 1 0 7.5z"/>'},
-  w: {label: 'En attente', cls: 's-wait', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/><path class="bar" d="M6.6 6.1v3.8M9.4 6.1v3.8"/>'},
-  x: {label: 'Terminée', cls: 's-done', icon: '<circle class="fill" cx="8" cy="8" r="6.5"/><path class="knock" d="M5.3 8.2l1.8 1.8 3.6-3.8"/>'},
-  '-': {label: 'Annulée', cls: 's-cancel', icon: '<circle class="fill" cx="8" cy="8" r="6.5"/><path class="knock" d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2"/>'}
+  ' ': {label: 'To do', cls: 's-todo', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/>'},
+  '/': {label: 'In progress', cls: 's-doing', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/><path class="fill" d="M8 4.25a3.75 3.75 0 0 1 0 7.5z"/>'},
+  w: {label: 'Waiting', cls: 's-wait', icon: '<circle class="ring" cx="8" cy="8" r="5.75"/><path class="bar" d="M6.6 6.1v3.8M9.4 6.1v3.8"/>'},
+  x: {label: 'Done', cls: 's-done', icon: '<circle class="fill" cx="8" cy="8" r="6.5"/><path class="knock" d="M5.3 8.2l1.8 1.8 3.6-3.8"/>'},
+  '-': {label: 'Cancelled', cls: 's-cancel', icon: '<circle class="fill" cx="8" cy="8" r="6.5"/><path class="knock" d="M5.9 5.9l4.2 4.2M10.1 5.9l-4.2 4.2"/>'}
 };
 const STATUS_ORDER = [' ', '/', 'w', 'x', '-'];
 function statusInfo(state) { return STATUS[state] || STATUS[' ']; }
 function statusLabel(state) { return STATUS[state]?.label || state; }
 function statusIcon(state) { return svgIcon(statusInfo(state).icon, `status-icon ${statusInfo(state).cls}`); }
 const PRIORITY = {
-  '⏫': {label: 'Haute', cls: 'prio-high', icon: '<path d="M4 8.5l4-4 4 4M4 12.5l4-4 4 4"/>'},
-  '🔼': {label: 'Moyenne', cls: 'prio-medium', icon: '<path d="M4.5 10 8 6.5l3.5 3.5"/>'},
-  '🔽': {label: 'Basse', cls: 'prio-low', icon: '<path d="M4.5 6.5 8 10l3.5-3.5"/>'}
+  '⏫': {label: 'High', cls: 'prio-high', icon: '<path d="M4 8.5l4-4 4 4M4 12.5l4-4 4 4"/>'},
+  '🔼': {label: 'Medium', cls: 'prio-medium', icon: '<path d="M4.5 10 8 6.5l3.5 3.5"/>'},
+  '🔽': {label: 'Low', cls: 'prio-low', icon: '<path d="M4.5 6.5 8 10l3.5-3.5"/>'}
 };
 function priorityNode(action) {
   const info = PRIORITY[action.priority];
   const node = element('span', info ? `priority ${info.cls}` : 'priority');
   if (info) {
     node.setAttribute('role', 'img');
-    node.setAttribute('aria-label', `Priorité ${info.label.toLowerCase()}`);
-    node.title = `Priorité ${info.label.toLowerCase()}`;
+    node.setAttribute('aria-label', `${info.label} priority`);
+    node.title = `${info.label} priority`;
     node.append(svgIcon(info.icon));
   }
   return node;
@@ -201,9 +204,9 @@ function priorityNode(action) {
 // ---------- Groups ----------
 function groupLabel(slug) {
   const text = slug.replace(/-/g, ' ');
-  return text.charAt(0).toLocaleUpperCase('fr') + text.slice(1);
+  return text.charAt(0).toLocaleUpperCase(LOCALE) + text.slice(1);
 }
-// A free label (« Atelier ingestion ») becomes a slug the way the server expects it: a-z, 0-9 and single hyphens, 40 characters.
+// A free label ("Ingestion workshop") becomes a slug the way the server expects it: a-z, 0-9 and single hyphens, 40 characters.
 function groupSlug(text) {
   return text.toLowerCase().replace(/œ/g, 'oe').replace(/æ/g, 'ae').normalize('NFD').replace(/[\u0300-\u036f]/g, '')
     .replace(/[^a-z0-9]+/g, '-').replace(/^-+/, '').slice(0, 40).replace(/-+$/, '');
@@ -217,7 +220,7 @@ function groupTone(slug) {
 const NO_GROUP = '|';
 function groupKey(action) { return `${action.register}|${action.group}`; }
 function compareGroups(a, b) {
-  return a.project.localeCompare(b.project, 'fr') || a.label.localeCompare(b.label, 'fr') || a.key.localeCompare(b.key);
+  return a.project.localeCompare(b.project, LOCALE) || a.label.localeCompare(b.label, LOCALE) || a.key.localeCompare(b.key);
 }
 
 // ---------- Filters ----------
@@ -225,15 +228,15 @@ function inScope(register, scope = projectScope) {
   return !scope || register === scope || (scope.endsWith('/') && typeof register === 'string' && register.startsWith(scope));
 }
 function isMine(action) {
-  const me = snapshot.owner.toLocaleLowerCase('fr');
-  return action.owner.toLocaleLowerCase('fr').includes(me);
+  const me = snapshot.owner.toLocaleLowerCase(LOCALE);
+  return action.owner.toLocaleLowerCase(LOCALE).includes(me);
 }
 function filteredBase() {
-  const text = ids.searchInput.value.trim().toLocaleLowerCase('fr');
+  const text = ids.searchInput.value.trim().toLocaleLowerCase(LOCALE);
   const mine = ids.ownerFilter.value === 'mine';
   const group = ids.groupFilter.value;
   return snapshot.actions.filter(action =>
-    (!text || `${action.id} ${action.title} ${action.owner} ${action.project} ${action.group ? `${groupLabel(action.group)} ${action.group}` : ''}`.toLocaleLowerCase('fr').includes(text)) &&
+    (!text || `${action.id} ${action.title} ${action.owner} ${action.project} ${action.group ? `${groupLabel(action.group)} ${action.group}` : ''}`.toLocaleLowerCase(LOCALE).includes(text)) &&
     inScope(action.register) &&
     (!group || (group === 'none' ? !action.group : Boolean(action.group) && groupKey(action) === group)) &&
     (!mine || isMine(action))
@@ -257,7 +260,7 @@ function byDue(actions) {
   return [...actions].sort((a, b) =>
     (a.due || '9999').localeCompare(b.due || '9999') || PRIORITY_RANK[a.priority] - PRIORITY_RANK[b.priority] || a.id.localeCompare(b.id));
 }
-// Aujourd'hui: my late, due or scheduled work, my work in progress, what waits on others (state w or someone else's), then the week ahead.
+// Today: my late, due or scheduled work, my work in progress, what waits on others (state w or someone else's), then the week ahead.
 function todaySections(actions) {
   const day = today();
   const week = addDays(day, 7);
@@ -274,7 +277,7 @@ function todaySections(actions) {
 }
 
 // ---------- Projects (sidebar) ----------
-const PARENT_LABELS = {internal: 'Interne', archive: 'Archives'};
+const PARENT_LABELS = {internal: 'Internal', archive: 'Archive'};
 // Registers as a tree: a client and its missions, a folder of internal projects, or a project on its own.
 function projectTree() {
   const parents = [];
@@ -311,7 +314,7 @@ function projectButton(scope, label, count, className = '') {
   button.dataset.scope = scope;
   button.setAttribute('aria-current', String(scope === projectScope));
   button.append(element('span', 'nav-label', label), element('span', 'nav-count', count ? String(count) : ''));
-  button.title = scope ? `${label} : ${plural(count, 'action ouverte', 'actions ouvertes')}` : 'Toutes les actions du brain';
+  button.title = scope ? `${label}: ${plural(count, 'open action')}` : 'All the actions of the brain';
   button.addEventListener('click', () => setProjectScope(scope));
   return button;
 }
@@ -320,7 +323,7 @@ function renderProjectNav() {
   for (const action of snapshot.actions) if (!closed(action)) counts.set(action.register, (counts.get(action.register) || 0) + 1);
   const total = [...counts.values()].reduce((sum, count) => sum + count, 0);
   const all = element('li');
-  all.append(projectButton('', 'Tous les projets', total, 'project-all'));
+  all.append(projectButton('', 'All projects', total, 'project-all'));
   const items = [all];
   for (const parent of projectTree()) {
     const item = element('li');
@@ -338,12 +341,12 @@ function renderProjectNav() {
     }
     items.push(item);
   }
-  if (items.length === 1 && snapshot.registers.length === 0) items.push(element('li', 'project-empty', 'Aucun registre'));
+  if (items.length === 1 && snapshot.registers.length === 0) items.push(element('li', 'project-empty', 'No register'));
   ids.projectNav.replaceChildren(...items);
 }
 function setProjectScope(scope) {
   projectScope = scope;
-  if (scope) ids.docProject.value = ''; // A project of the sidebar and « Inbox » or « Hors projets » exclude each other.
+  if (scope) ids.docProject.value = ''; // A project of the sidebar and "Inbox" or "Outside projects" exclude each other.
   populateGroupFilter();
   renderProjectNav();
   saveUIState();
@@ -359,7 +362,7 @@ function setSummary() {
   const sections = todaySections(open);
   const urgent = sections.late.length + sections.today.length;
   ids.todayCount.textContent = urgent ? String(urgent) : '';
-  ids.todayButton.title = `Aujourd’hui (1) : ${plural(sections.late.length, 'action en retard', 'actions en retard')}, ${plural(sections.today.length, 'pour aujourd’hui', 'pour aujourd’hui')}`;
+  ids.todayButton.title = `Today (1): ${plural(sections.late.length, 'overdue action')}, ${plural(sections.today.length, 'due today', 'due today')}`;
   renderProjectNav();
 }
 
@@ -380,8 +383,8 @@ function statusButton(action) {
   button.tabIndex = -1;
   button.setAttribute('aria-haspopup', 'menu');
   button.setAttribute('aria-expanded', 'false');
-  button.setAttribute('aria-label', `Statut : ${statusLabel(action.state).toLowerCase()}. Changer le statut de ${action.id}`);
-  button.title = `${statusLabel(action.state)} : changer le statut (s)`;
+  button.setAttribute('aria-label', `Status: ${statusLabel(action.state).toLowerCase()}. Change the status of ${action.id}`);
+  button.title = `${statusLabel(action.state)}: change the status (s)`;
   button.append(statusIcon(action.state));
   button.addEventListener('click', event => {
     event.stopPropagation();
@@ -398,12 +401,12 @@ function dueButton(action) {
   button.setAttribute('aria-expanded', 'false');
   if (action.due) {
     button.append(dueNode(action));
-    button.setAttribute('aria-label', `${dueTitle(action)}. Changer l’échéance de ${action.id}`);
-    button.title = `${dueTitle(action)} (d pour changer)`;
+    button.setAttribute('aria-label', `${dueTitle(action)}. Change the due date of ${action.id}`);
+    button.title = `${dueTitle(action)} (d to change)`;
   } else {
     button.append(svgIcon(ICONS.calendar));
-    button.setAttribute('aria-label', `Ajouter une échéance à ${action.id}`);
-    button.title = 'Ajouter une échéance (d)';
+    button.setAttribute('aria-label', `Add a due date to ${action.id}`);
+    button.title = 'Add a due date (d)';
   }
   button.addEventListener('click', event => {
     event.stopPropagation();
@@ -413,14 +416,14 @@ function dueButton(action) {
   return button;
 }
 function deleteButton(action) {
-  const button = iconButton('row-action row-delete', `Supprimer ${action.id}`, ICONS.trash, `Supprimer ${action.id} (annulable)`);
+  const button = iconButton('row-action row-delete', `Delete ${action.id}`, ICONS.trash, `Delete ${action.id} (can be undone)`);
   button.tabIndex = -1;
   button.addEventListener('click', event => { event.stopPropagation(); deleteFromRow(action, button); });
   return button;
 }
 function rowActions(action) {
   const wrap = element('span', 'row-actions');
-  const open = iconButton('row-action', `Ouvrir le détail de ${action.id}`, ICONS.open, 'Ouvrir le détail (Entrée)');
+  const open = iconButton('row-action', `Open the details of ${action.id}`, ICONS.open, 'Open the details (Enter)');
   open.tabIndex = -1;
   open.addEventListener('click', event => { event.stopPropagation(); selectAction(action.id, {focus: false}); openEditor(action); });
   wrap.append(open, deleteButton(action));
@@ -444,7 +447,7 @@ function actionRow(action, {project = false} = {}) {
     parts.push(where);
   }
   const owner = element('span', 'row-owner', action.owner);
-  owner.title = `Responsable : ${action.owner}`;
+  owner.title = `Owner: ${action.owner}`;
   const meta = element('span', 'row-meta');
   meta.append(element('span', '', action.id));
   if (project) meta.append(element('span', '', action.project));
@@ -473,7 +476,7 @@ function applyFolds() {
     section.querySelector(':scope > :first-child > .fold-toggle')?.setAttribute('aria-expanded', String(!folded));
   }
   const keys = listProjectKeys();
-  ids.foldAllButton.textContent = keys.length && keys.every(key => foldedGroups.has(key)) ? 'Tout déplier' : 'Tout replier';
+  ids.foldAllButton.textContent = keys.length && keys.every(key => foldedGroups.has(key)) ? 'Expand all' : 'Collapse all';
 }
 function listProjectKeys() { return [...ids.listView.querySelectorAll('[data-fold^="p:"]')].map(section => section.dataset.fold); }
 function toggleFold(key) {
@@ -501,11 +504,11 @@ function foldToggle(key, label) {
   return toggle;
 }
 function addButton(label, preset) {
-  const button = iconButton('icon-button fold-add', `Ajouter une action à ${label}`, ICONS.plus);
+  const button = iconButton('icon-button fold-add', `Add an action to ${label}`, ICONS.plus);
   button.addEventListener('click', event => { event.stopPropagation(); openEditor(null, preset); });
   return button;
 }
-// Progress over the members of a project or group (cancelled left out, Statut filter ignored).
+// Progress over the members of a project or group (cancelled left out, Status filter ignored).
 function progressStats(members) {
   const counted = members.filter(action => action.state !== '-');
   const done = counted.filter(action => action.state === 'x').length;
@@ -514,9 +517,9 @@ function progressStats(members) {
 }
 function foldMeta(stats) {
   const meta = element('span', 'fold-meta');
-  if (stats.late) meta.append(element('span', 'fold-late', plural(stats.late, 'en retard', 'en retard')));
+  if (stats.late) meta.append(element('span', 'fold-late', plural(stats.late, 'overdue', 'overdue')));
   const fraction = element('span', '', `${stats.done}/${stats.total}`);
-  fraction.title = `${plural(stats.done, 'faite', 'faites')} sur ${stats.total}`;
+  fraction.title = `${stats.done} of ${stats.total} done`;
   const bar = element('span', 'fold-progress');
   bar.style.setProperty('--p', stats.total ? stats.done / stats.total : 0);
   bar.append(element('span'));
@@ -534,7 +537,7 @@ function foldSection(key, headClass, toggle, extra, body) {
   return section;
 }
 
-// ---------- Aujourd'hui ----------
+// ---------- Today ----------
 function actionFiltersActive() {
   return Boolean(projectScope || ids.searchInput.value.trim() || ids.ownerFilter.value || ids.groupFilter.value || (view !== 'today' && ids.scopeFilter.value !== 'active'));
 }
@@ -542,8 +545,8 @@ function actionFiltersActive() {
 function emptyState(title, text, withButton = true) {
   const box = element('div', 'empty-state');
   if (actionFiltersActive()) {
-    box.append(element('h2', '', 'Aucune action pour ces filtres.'), element('p', '', 'Efface les filtres pour tout revoir.'));
-    const button = element('button', 'button', 'Effacer les filtres');
+    box.append(element('h2', '', 'No actions match these filters.'), element('p', '', 'Clear the filters to see everything again.'));
+    const button = element('button', 'button', 'Clear filters');
     button.type = 'button';
     button.addEventListener('click', () => ids.resetFilters.click());
     box.append(button);
@@ -553,7 +556,7 @@ function emptyState(title, text, withButton = true) {
   if (withButton) {
     const button = element('button', 'button button-primary');
     button.type = 'button';
-    button.append(svgIcon(ICONS.plus), element('span', '', 'Nouvelle action'));
+    button.append(svgIcon(ICONS.plus), element('span', '', 'New action'));
     button.addEventListener('click', () => openEditor());
     box.append(button);
   }
@@ -562,16 +565,16 @@ function emptyState(title, text, withButton = true) {
 function renderToday(base) {
   const sections = todaySections(base);
   const definitions = [
-    ['late', 'En retard', sections.late, ''],
-    ['today', 'Aujourd’hui', sections.today, ''],
-    ['doing', 'En cours', sections.doing, ''],
-    ['waiting', 'En attente des autres', sections.waiting, 'en attente ou confiées à quelqu’un d’autre'],
-    ['week', 'Cette semaine', sections.week, `jusqu’au ${DAY_FORMAT.format(parseDay(addDays(today(), 7)))}`]
+    ['late', 'Overdue', sections.late, ''],
+    ['today', 'Today', sections.today, ''],
+    ['doing', 'In progress', sections.doing, ''],
+    ['waiting', 'Waiting on others', sections.waiting, 'waiting, or assigned to someone else'],
+    ['week', 'This week', sections.week, `until ${DAY_FORMAT.format(parseDay(addDays(today(), 7)))}`]
   ];
   const total = definitions.reduce((sum, [, , actions]) => sum + actions.length, 0);
   ids.resultCount.textContent = plural(total, 'action');
   if (!total) {
-    ids.todayView.replaceChildren(emptyState('Rien d’urgent pour aujourd’hui.', 'Les actions en retard, du jour, en cours et en attente des autres apparaissent ici.'));
+    ids.todayView.replaceChildren(emptyState('Nothing urgent for today.', 'Overdue actions, actions due today, work in progress and what waits on others appear here.'));
     return;
   }
   const nodes = [];
@@ -592,10 +595,10 @@ function renderToday(base) {
 
 // ---------- Actions (list) ----------
 function renderList(actions) {
-  const qualifier = ids.scopeFilter.value === 'active' ? ['ouverte', 'ouvertes'] : ids.scopeFilter.value === 'closed' ? ['clôturée', 'clôturées'] : ['', ''];
-  ids.resultCount.textContent = `${plural(actions.length, 'action')}${qualifier[0] ? ` ${actions.length === 1 ? qualifier[0] : qualifier[1]}` : ''}`;
+  const qualifier = ids.scopeFilter.value === 'active' ? 'open ' : ids.scopeFilter.value === 'closed' ? 'closed ' : '';
+  ids.resultCount.textContent = plural(actions.length, `${qualifier}action`);
   if (!actions.length) {
-    ids.listView.replaceChildren(emptyState('Aucune action ici.', 'Essaie un autre filtre ou crée une action.'));
+    ids.listView.replaceChildren(emptyState('No actions here.', 'Try another filter or create an action.'));
     return;
   }
   const base = filteredBase();
@@ -617,12 +620,12 @@ function renderList(actions) {
       groups.get(action.group).push(action);
     }
     const loose = shown.filter(action => !action.group);
-    const sorted = [...groups.entries()].sort((a, b) => groupLabel(a[0]).localeCompare(groupLabel(b[0]), 'fr') || a[0].localeCompare(b[0]));
+    const sorted = [...groups.entries()].sort((a, b) => groupLabel(a[0]).localeCompare(groupLabel(b[0]), LOCALE) || a[0].localeCompare(b[0]));
     for (const [slug, groupActions] of sorted) {
       const key = `${register}|${slug}`;
       const name = groupLabel(slug);
       const stats = progressStats(members.filter(action => action.group === slug));
-      const toggle = foldToggle(key, `Groupe ${name}, ${stats.done} sur ${stats.total} faites`);
+      const toggle = foldToggle(key, `Group ${name}, ${stats.done} of ${stats.total} done`);
       toggle.append(element('span', `group-dot ${groupTone(slug)}`), element('span', 'fold-label', name), foldMeta(stats));
       const rows = rowList(sortActions(groupActions), {});
       rows.classList.add('in-group');
@@ -630,14 +633,14 @@ function renderList(actions) {
     }
     if (loose.length && sorted.length) {
       const key = `${register}|`;
-      const toggle = foldToggle(key, 'Sans groupe');
-      toggle.append(element('span', 'group-dot'), element('span', 'fold-label', 'Sans groupe'), foldMeta(progressStats(members.filter(action => !action.group))));
+      const toggle = foldToggle(key, 'No group');
+      toggle.append(element('span', 'group-dot'), element('span', 'fold-label', 'No group'), foldMeta(progressStats(members.filter(action => !action.group))));
       const rows = rowList(sortActions(loose), {});
       rows.classList.add('in-group');
-      body.append(foldSection(key, 'group-head', toggle, [addButton(`${label}, sans groupe`, {register})], rows));
+      body.append(foldSection(key, 'group-head', toggle, [addButton(`${label}, no group`, {register})], rows));
     } else if (loose.length) body.append(rowList(sortActions(loose), {}));
     const stats = progressStats(members);
-    const toggle = foldToggle(`p:${register}`, `${label}, ${stats.done} sur ${stats.total} faites`);
+    const toggle = foldToggle(`p:${register}`, `${label}, ${stats.done} of ${stats.total} done`);
     toggle.append(element('span', 'fold-label', label), foldMeta(stats));
     nodes.push(foldSection(`p:${register}`, 'project-head', toggle, [addButton(label, {register})], body));
   }
@@ -645,7 +648,7 @@ function renderList(actions) {
   applyFolds();
 }
 
-// ---------- Tableau ----------
+// ---------- Board ----------
 function makeCard(action, grouped = false) {
   const card = element('article', actionClasses(`card ${statusInfo(action.state).cls}`, action));
   card.dataset.id = action.id;
@@ -654,7 +657,7 @@ function makeCard(action, grouped = false) {
   const title = element('button', 'card-title', action.title);
   title.type = 'button';
   title.tabIndex = -1;
-  title.title = `${action.title}\nResponsable : ${action.owner}`;
+  title.title = `${action.title}\nOwner: ${action.owner}`;
   top.append(statusButton(action), title);
   const meta = element('div', 'card-meta');
   meta.append(element('span', 'row-id', action.id));
@@ -665,7 +668,7 @@ function makeCard(action, grouped = false) {
   }
   if (grouped) {
     const owner = element('span', 'card-project', action.owner);
-    owner.title = `Responsable : ${action.owner}`;
+    owner.title = `Owner: ${action.owner}`;
     meta.append(owner);
   }
   if (action.due) meta.append(dueNode(action));
@@ -689,15 +692,15 @@ function makeCard(action, grouped = false) {
   });
   return card;
 }
-// A column's cards under one header per (project, group), « Sans groupe » last; the header folds them (keys shared with the list).
+// A column's cards under one header per (project, group), "No group" last; the header folds them (keys shared with the list).
 function boardGroup(key, cards, group = null, state = ' ') {
-  const toggle = foldToggle(key, group ? `${group.label}, ${group.project}, ${plural(cards.length, 'carte')}` : `Sans groupe, ${plural(cards.length, 'carte')}`);
+  const toggle = foldToggle(key, group ? `${group.label}, ${group.project}, ${plural(cards.length, 'card')}` : `No group, ${plural(cards.length, 'card')}`);
   if (group) {
     const where = element('span', 'board-group-project', shortProject(group.project));
     where.title = group.project;
     toggle.append(element('span', `group-dot ${groupTone(group.slug)}`), element('span', 'fold-label', group.label), where);
   }
-  else toggle.append(element('span', 'group-dot'), element('span', 'fold-label', 'Sans groupe'));
+  else toggle.append(element('span', 'group-dot'), element('span', 'fold-label', 'No group'));
   toggle.append(element('span', 'board-group-count', String(cards.length)));
   const body = element('div', 'board-group-cards');
   cards.forEach(action => body.append(makeCard(action, Boolean(group))));
@@ -709,10 +712,10 @@ function boardGroup(key, cards, group = null, state = ' ') {
 function renderBoard(base) {
   const scope = ids.scopeFilter.value;
   const columns = [
-    {state: ' ', title: 'À faire'},
-    {state: '/', title: 'En cours'},
-    {state: 'w', title: 'En attente'},
-    {state: 'x', title: 'Terminées récemment'}
+    {state: ' ', title: 'To do'},
+    {state: '/', title: 'In progress'},
+    {state: 'w', title: 'Waiting'},
+    {state: 'x', title: 'Recently done'}
   ];
   let shownTotal = 0;
   const panels = [];
@@ -729,7 +732,7 @@ function renderBoard(base) {
     heading.append(statusIcon(column.state), element('span', '', column.title), element('span', 'board-count', String(actions.length)));
     panel.setAttribute('aria-labelledby', heading.id);
     const cards = element('div', 'board-cards');
-    if (!actions.length) cards.append(element('p', 'board-empty', 'Aucune action'));
+    if (!actions.length) cards.append(element('p', 'board-empty', 'No actions'));
     else if (!actions.some(action => action.group)) actions.forEach(action => cards.append(makeCard(action)));
     else {
       const buckets = new Map();
@@ -873,7 +876,7 @@ function openStatusMenu(action, anchor) {
     () => updateStatus(action, state, anchor),
     {role: 'menuitemradio', checked: state === action.state, hint: String(index + 1)}
   ));
-  openPopover(anchor, items, {label: `Statut de ${action.id}`});
+  openPopover(anchor, items, {label: `Status of ${action.id}`});
 }
 function nextMonday(day) {
   const date = parseDay(day);
@@ -882,10 +885,10 @@ function nextMonday(day) {
 }
 function openDueMenu(action, anchor) {
   const day = today();
-  const choices = [['Aujourd’hui', day], ['Demain', addDays(day, 1)]];
-  if (nextMonday(day) !== addDays(day, 1)) choices.push(['Lundi prochain', nextMonday(day)]);
-  choices.push(['Dans une semaine', addDays(day, 7)]);
-  const nodes = [element('p', 'menu-heading', `Échéance de ${action.id}`)];
+  const choices = [['Today', day], ['Tomorrow', addDays(day, 1)]];
+  if (nextMonday(day) !== addDays(day, 1)) choices.push(['Next Monday', nextMonday(day)]);
+  choices.push(['In a week', addDays(day, 7)]);
+  const nodes = [element('p', 'menu-heading', `Due date of ${action.id}`)];
   for (const [label, value] of choices) {
     nodes.push(menuItem([element('span', 'menu-item-text', label)], () => updateDue(action, value, anchor), {hint: DAY_FORMAT.format(parseDay(value))}));
   }
@@ -893,7 +896,7 @@ function openDueMenu(action, anchor) {
   const input = element('input');
   input.type = 'date';
   input.value = action.due || '';
-  input.setAttribute('aria-label', 'Autre date');
+  input.setAttribute('aria-label', 'Other date');
   input.addEventListener('keydown', event => {
     if (event.key === 'Enter' && input.value) { event.preventDefault(); closePopover(false); updateDue(action, input.value, anchor); }
   });
@@ -904,8 +907,8 @@ function openDueMenu(action, anchor) {
   input.addEventListener('keydown', event => { if (/^\d$/.test(event.key)) input.dataset.typed = '1'; });
   pick.append(input);
   nodes.push(element('div', 'menu-separator'), pick);
-  if (action.due) nodes.push(menuItem([element('span', 'menu-item-text', 'Retirer l’échéance')], () => updateDue(action, '', anchor)));
-  openPopover(anchor, nodes, {role: 'dialog', label: `Échéance de ${action.id}`});
+  if (action.due) nodes.push(menuItem([element('span', 'menu-item-text', 'Remove the due date')], () => updateDue(action, '', anchor)));
+  openPopover(anchor, nodes, {role: 'dialog', label: `Due date of ${action.id}`});
 }
 ids.popover.addEventListener('keydown', event => {
   const items = popoverItems();
@@ -923,7 +926,7 @@ ids.popover.addEventListener('keydown', event => {
     event.stopPropagation();
     closePopover();
   } else if (event.key === 'Tab') {
-    // Focus stays in the popover: Tab and Maj+Tab cycle through its items.
+    // Focus stays in the popover: Tab and Shift+Tab cycle through its items.
     event.preventDefault();
     items[(index + (event.shiftKey ? -1 : 1) + items.length) % items.length]?.focus();
   } else if (/^[1-5]$/.test(event.key) && ids.popover.getAttribute('role') === 'menu') {
@@ -1019,7 +1022,7 @@ function defaultRegister() {
   if (snapshot.registers.some(register => register.path === projectScope)) return projectScope;
   return snapshot.registers.find(register => inScope(register.path))?.path || snapshot.registers[0]?.path || '';
 }
-// Group filter: « Tous », « Sans groupe », then the groups as `register|slug`; one <optgroup> per project unless one register is selected.
+// Group filter: "All", "No group", then the groups as `register|slug`; one <optgroup> per project unless one register is selected.
 function populateGroupFilter() {
   const selected = ids.groupFilter.value || pendingGroup;
   pendingGroup = '';
@@ -1036,13 +1039,13 @@ function populateGroupFilter() {
     if (nodes.at(-1)?.label !== entry.project) { const section = document.createElement('optgroup'); section.label = entry.project; nodes.push(section); }
     nodes.at(-1).append(new Option(entry.label, entry.value));
   }
-  ids.groupFilter.replaceChildren(new Option('Tous', ''), new Option('Sans groupe', 'none'), ...nodes);
+  ids.groupFilter.replaceChildren(new Option('All', ''), new Option('No group', 'none'), ...nodes);
   ids.groupFilter.value = [...ids.groupFilter.options].some(option => option.value === selected) ? selected : '';
   titleGroupFilter();
 }
 function titleGroupFilter() {
   const chosen = ids.groupFilter.selectedOptions[0];
-  ids.groupFilter.title = chosen?.value && chosen.parentElement.label ? `${chosen.parentElement.label} : ${chosen.textContent}` : '';
+  ids.groupFilter.title = chosen?.value && chosen.parentElement.label ? `${chosen.parentElement.label}: ${chosen.textContent}` : '';
 }
 
 // ---------- Editor: the detail panel (create and edit) ----------
@@ -1064,8 +1067,8 @@ function fillGroupOptions(choice = groupChoice(), keep = false) {
   if (keep && choice.slug) slugs.add(choice.slug);
   if (choice.fresh && slugs.has(groupSlug(choice.text))) choice = {slug: groupSlug(choice.text)};
   const fresh = Boolean(choice.fresh || (choice.slug && !slugs.has(choice.slug)));
-  const sorted = [...slugs].sort((a, b) => groupLabel(a).localeCompare(groupLabel(b), 'fr') || a.localeCompare(b));
-  ids.editorGroup.replaceChildren(new Option('Aucun groupe', ''), ...sorted.map(slug => new Option(groupLabel(slug), slug)), new Option('Nouveau groupe…', NEW_GROUP));
+  const sorted = [...slugs].sort((a, b) => groupLabel(a).localeCompare(groupLabel(b), LOCALE) || a.localeCompare(b));
+  ids.editorGroup.replaceChildren(new Option('No group', ''), ...sorted.map(slug => new Option(groupLabel(slug), slug)), new Option('New group…', NEW_GROUP));
   ids.editorGroup.value = fresh ? NEW_GROUP : choice.slug || '';
   ids.editorGroupNew.value = choice.fresh ? choice.text : fresh ? groupLabel(choice.slug) : '';
   showGroupField();
@@ -1075,10 +1078,10 @@ function showGroupField(focus = false) {
   const slug = groupValue();
   const register = snapshot.registers.find(item => item.path === ids.editorProject.value);
   ids.editorGroupNewLabel.hidden = !choice.fresh;
-  ids.editorGroupHint.textContent = !choice.fresh ? (slug ? `Enregistré : ${slug}` : 'Facultatif : regroupe les actions d’un même lot.') :
-    !choice.text.trim() ? 'Saisis un libellé : il sera converti en identifiant.' :
-    !slug ? 'Aucune lettre ni chiffre : pas de groupe.' :
-    `${(register?.groups || []).includes(slug) ? 'Groupe existant' : 'Nouveau groupe'} : ${slug}`;
+  ids.editorGroupHint.textContent = !choice.fresh ? (slug ? `Saved as: ${slug}` : 'Optional: groups related actions together.') :
+    !choice.text.trim() ? 'Enter a label: it will be converted to an identifier.' :
+    !slug ? 'No letter or digit: no group.' :
+    `${(register?.groups || []).includes(slug) ? 'Existing group' : 'New group'}: ${slug}`;
   if (focus && choice.fresh) ids.editorGroupNew.focus();
 }
 function formAction() {
@@ -1101,26 +1104,26 @@ function sizeTitleField() {
 function renderStamps(action) {
   if (!action) { ids.editorStamps.hidden = true; ids.editorStamps.replaceChildren(); return; }
   const pairs = [
-    ['Créée', action.created_at ? formatStamp(action.created_at) : 'Non renseignée'],
-    ['Mise à jour', action.updated_at ? formatStamp(action.updated_at) : 'Non renseignée']
+    ['Created', action.created_at ? formatStamp(action.created_at) : 'Not set'],
+    ['Updated', action.updated_at ? formatStamp(action.updated_at) : 'Not set']
   ];
-  if (closed(action)) pairs.push(['Clôture', action.done ? formatDay(action.done) : 'Non renseignée']);
+  if (closed(action)) pairs.push(['Closed', action.done ? formatDay(action.done) : 'Not set']);
   ids.editorStamps.replaceChildren(...pairs.flatMap(([label, value]) => [element('dt', '', label), element('dd', '', value)]));
   ids.editorStamps.hidden = false;
 }
 // preset (creation only): {register, group (slug), state}. focus: 'auto' (title when creating, heading when editing), 'title', 'none'.
 function openEditor(action = null, preset = null, {focus = 'auto'} = {}) {
   const same = action && editorAction && editorAction.id === action.id;
-  if (editorDirty() && !same && !confirm('Abandonner les modifications non enregistrées de cette action ?')) return false;
+  if (editorDirty() && !same && !confirm('Discard the unsaved changes to this action?')) return false;
   closePopover(false);
   if (!editorOpen()) editorReturnFocus = document.activeElement;
   const historyRequest = ++editorHistoryRequest;
   editorAction = action;
   ids.editor.dataset.actionId = action?.id || '';
   ids.editor.dataset.version = action?.version || '';
-  ids.editorTitle.textContent = action ? action.id : 'Nouvelle action';
+  ids.editorTitle.textContent = action ? action.id : 'New action';
   const target = !action && preset?.register && snapshot.registers.find(register => register.path === preset.register);
-  ids.editorHint.textContent = action ? action.project : target ? `${target.label}${preset.group ? `, groupe ${groupLabel(preset.group)}` : ''}` : '';
+  ids.editorHint.textContent = action ? action.project : target ? `${target.label}${preset.group ? `, group ${groupLabel(preset.group)}` : ''}` : '';
   ids.editorProjectField.hidden = Boolean(action);
   ids.editorProject.disabled = Boolean(action);
   ids.editorProject.value = action?.register || preset?.register || defaultRegister();
@@ -1132,21 +1135,21 @@ function openEditor(action = null, preset = null, {focus = 'auto'} = {}) {
   closeNoteForm(false);
   ids.noteInput.value = '';
   ids.addNoteButton.disabled = true;
-  ids.editorHistoryList.replaceChildren(element('li', 'note-empty', 'Chargement…'));
+  ids.editorHistoryList.replaceChildren(element('li', 'note-empty', 'Loading…'));
   ids.editorHistoryCount.textContent = '';
   ids.editorOwner.value = action?.owner || snapshot.owner;
   ids.editorState.value = action?.state || (!action && preset?.state) || ' ';
   ids.editorPriority.value = action?.priority || '';
   ids.editorDue.value = action?.due || '';
   ids.editorScheduled.value = action?.scheduled || '';
-  ids.saveEditor.textContent = action ? 'Enregistrer' : 'Créer l’action';
-  ids.cancelEditor.textContent = action ? 'Fermer' : 'Annuler';
+  ids.saveEditor.textContent = action ? 'Save' : 'Create action';
+  ids.cancelEditor.textContent = action ? 'Close' : 'Cancel';
   ids.deleteEditor.hidden = !action;
   renderStamps(action);
   setEditorBusy(false);
   ids.editorError.hidden = true;
   ids.editor.hidden = false;
-  ids.editor.setAttribute('aria-label', action ? `Action ${action.id}` : 'Nouvelle action');
+  ids.editor.setAttribute('aria-label', action ? `Action ${action.id}` : 'New action');
   sizeTitleField();
   editorInitial = editorSignature();
   updateEditorButtons();
@@ -1158,14 +1161,14 @@ function openEditor(action = null, preset = null, {focus = 'auto'} = {}) {
       renderNotes(details);
     }).catch(error => {
       if (historyRequest !== editorHistoryRequest || !editorOpen()) return;
-      ids.editorHistoryList.replaceChildren(element('li', 'note-empty', `Historique indisponible : ${error.message}`));
+      ids.editorHistoryList.replaceChildren(element('li', 'note-empty', `History unavailable: ${error.message}`));
     });
   }
   return true;
 }
 function closeEditor({force = false, refocus = true} = {}) {
   if (!editorOpen()) return true;
-  if (!force && editorDirty() && !confirm('Abandonner les modifications non enregistrées de cette action ?')) return false;
+  if (!force && editorDirty() && !confirm('Discard the unsaved changes to this action?')) return false;
   const wasEditing = editorAction?.id;
   ids.editor.hidden = true;
   editorHistoryRequest += 1;
@@ -1188,19 +1191,19 @@ function syncEditorAfterRefresh() {
 }
 function renderNotes(details) {
   noteState = {id: details.id, version: details.details_version, notes: details.notes};
-  const shown = details.notes.filter(note => !/^-?\s*(créée|mise à jour)\s*:/i.test(note.text));
+  const shown = details.notes.filter(note => !/^-?\s*(created|updated)\s*:/i.test(note.text));
   ids.editorHistoryList.replaceChildren();
-  if (!shown.length) ids.editorHistoryList.append(element('li', 'note-empty', 'Aucune note pour l’instant.'));
+  if (!shown.length) ids.editorHistoryList.append(element('li', 'note-empty', 'No notes yet.'));
   for (const note of shown) {
     const item = element('li', `note-item${note.deletable ? '' : ' note-source'}`);
     const text = note.text.replace(/^-\s+/, '').replace(/\[([^\]]+)\]\([^)]+\)/g, '$1');
     const body = element('span', 'note-text');
-    const dated = text.match(/^(\d{2}\/\d{2}) : ([\s\S]*)$/);
+    const dated = text.match(/^(\d{2}\/\d{2}): ([\s\S]*)$/);
     if (dated) body.append(element('span', 'note-date', dated[1]), dated[2]);
     else body.textContent = text;
     item.append(body);
     if (note.deletable) {
-      const button = iconButton('icon-button note-delete', 'Supprimer la note', ICONS.trash);
+      const button = iconButton('icon-button note-delete', 'Delete the note', ICONS.trash);
       button.addEventListener('click', () => deleteNote(note));
       item.append(button);
     }
@@ -1217,7 +1220,7 @@ function setNoteBusy(busy) {
   ids.editorHistoryList.querySelectorAll('.note-delete').forEach(button => { button.disabled = busy; });
 }
 function showNoteError(error) {
-  ids.noteError.textContent = error.status === 409 ? 'L’historique a changé dans le registre : ferme puis rouvre l’action pour le recharger.' : error.message;
+  ids.noteError.textContent = error.status === 409 ? 'The history changed in the register: close and reopen the action to reload it.' : error.message;
   ids.noteError.hidden = false;
 }
 function forgetDetails(id, fresh) {
@@ -1247,7 +1250,7 @@ async function changeNotes(send) {
     forgetDetails(id, fresh);
     if (session !== editorHistoryRequest || !editorOpen()) return null;
     renderNotes(fresh);
-    // The action line changed (« mise à jour »): its new version keeps the panel and later saves in step.
+    // The action line changed ("updated"): its new version keeps the panel and later saves in step.
     editorAction = {...editorAction, version: fresh.version, updated_at: fresh.updated_at};
     ids.editor.dataset.version = fresh.version;
     renderStamps(editorAction);
@@ -1265,7 +1268,7 @@ async function submitNote() {
   if (noteBusy || !noteState) return;
   const note = ids.noteInput.value.replace(/\s*[\r\n\u2028\u2029]+\s*/g, ' ').trim();
   if (!note) {
-    showNoteError(new Error('Saisis une note avant d’ajouter.'));
+    showNoteError(new Error('Enter a note before adding it.'));
     ids.noteInput.focus();
     return;
   }
@@ -1280,7 +1283,7 @@ async function submitNote() {
   } else if (editorOpen()) ids.noteInput.focus();
 }
 async function deleteNote(note) {
-  if (noteBusy || !noteState || !confirm('Supprimer cette note du registre ?')) return;
+  if (noteBusy || !noteState || !confirm('Delete this note from the register?')) return;
   const {id, version} = noteState;
   const fresh = await changeNotes(() => request(`/api/actions/${encodeURIComponent(id)}/notes/${note.index}`, {
     method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
@@ -1294,7 +1297,7 @@ function setEditorBusy(busy) {
   ids.deleteEditor.disabled = busy;
   ids.saveEditor.setAttribute('aria-busy', String(busy));
 }
-// No confirmation: Annuler (and Git) restore a deleted action. Checks `version` and `details_version`, then stacks the undo.
+// No confirmation: Undo (and Git) restore a deleted action. Checks `version` and `details_version`, then stacks the undo.
 async function removeAction(id, version, detailsVersion = null) {
   const details = detailsVersion ?? (await loadDetails({id, version})).details_version;
   const result = await request(`/api/actions/${encodeURIComponent(id)}`, {
@@ -1314,10 +1317,10 @@ async function deleteEditor() {
     await removeAction(id, ids.editor.dataset.version, noteState?.id === id ? noteState.version : null);
     closeEditor({force: true, refocus: false});
     await refresh();
-    showToast('Action supprimée', {undo: true});
+    showToast('Action deleted', {undo: true});
     focusAction(id, 'title', index);
   } catch (error) {
-    ids.editorError.textContent = error.status === 409 ? 'Le registre a changé : ferme puis rouvre l’action avant de la supprimer.' : error.message;
+    ids.editorError.textContent = error.status === 409 ? 'The register changed: close and reopen the action before deleting it.' : error.message;
     ids.editorError.hidden = false;
   } finally {
     setEditorBusy(false);
@@ -1332,12 +1335,12 @@ async function deleteFromRow(action, button) {
     await removeAction(action.id, action.version);
     if (editorAction?.id === action.id) closeEditor({force: true, refocus: false});
     await refresh();
-    showToast('Action supprimée', {undo: true});
+    showToast('Action deleted', {undo: true});
     focusAction(action.id, 'title', index);
   } catch (error) {
     const conflict = error.status === 409;
     if (conflict) await refresh();
-    showError(conflict ? `Le registre a changé : la liste a été actualisée, vérifie ${action.id} puis recommence.` : error.message);
+    showError(conflict ? `The register changed: the list was refreshed, check ${action.id} and try again.` : error.message);
     button.disabled = false;
   }
 }
@@ -1355,7 +1358,7 @@ async function saveEditor(event) {
         body: JSON.stringify({version: ids.editor.dataset.version, action})
       })).undo);
       editorInitial = editorSignature(); // saved: the panel follows the fresh line after the refresh
-      showToast('Action mise à jour', {undo: true});
+      showToast('Action updated', {undo: true});
       await refresh();
       if (editorOpen()) ids.editorTitle.focus({preventScroll: true});
     } else {
@@ -1366,11 +1369,11 @@ async function saveEditor(event) {
       setUndo(result.undo);
       closeEditor({force: true, refocus: false});
       await refresh();
-      showToast(`Action ${result.id} créée`, {undo: true});
+      showToast(`Action ${result.id} created`, {undo: true});
       focusAction(result.id);
     }
   } catch (error) {
-    ids.editorError.textContent = error.status === 409 ? 'Le registre a changé depuis l’ouverture : copie tes modifications, ferme le panneau puis rouvre l’action.' : error.message;
+    ids.editorError.textContent = error.status === 409 ? 'The register changed since you opened it: copy your changes, close the panel, then reopen the action.' : error.message;
     ids.editorError.hidden = false;
   } finally {
     setEditorBusy(false);
@@ -1394,17 +1397,17 @@ async function patchAction(action, changes, message, {anchor = null, part = 'tit
     await refresh();
   } catch (error) {
     await refresh();
-    showError(error.status === 409 ? `Le registre a changé : la liste a été actualisée, vérifie ${action.id} puis recommence.` : error.message);
+    showError(error.status === 409 ? `The register changed: the list was refreshed, check ${action.id} and try again.` : error.message);
   }
   if (keepFocus && ACTION_VIEWS.includes(view)) focusAction(action.id, part, index);
 }
 function updateStatus(action, state, anchor = null) {
   if (state === action.state) return Promise.resolve();
-  return patchAction(action, {state}, 'Statut mis à jour', {anchor, part: 'status'});
+  return patchAction(action, {state}, 'Status updated', {anchor, part: 'status'});
 }
 function updateDue(action, due, anchor = null) {
   if (due === action.due) return Promise.resolve();
-  return patchAction(action, {due}, due ? 'Échéance mise à jour' : 'Échéance retirée', {anchor, part: 'due'});
+  return patchAction(action, {due}, due ? 'Due date updated' : 'Due date removed', {anchor, part: 'due'});
 }
 
 // ---------- Brains ----------
@@ -1429,14 +1432,14 @@ async function request(url, options = {}) {
   try {
     const response = await fetch(brainUrl(url), options);
     if (!write && epoch !== brainEpoch && !BRAIN_NEUTRAL.has(url.split('?')[0])) {
-      const stale = new Error('Réponse d’un autre brain ignorée.');
+      const stale = new Error('Response from another brain ignored.');
       stale.stale = true;
       throw stale;
     }
     let payload;
-    try { payload = await response.json(); } catch { throw new Error('Réponse locale illisible.'); }
+    try { payload = await response.json(); } catch { throw new Error('Unreadable local response.'); }
     if (!response.ok) {
-      const error = new Error(payload.error || 'Opération impossible.');
+      const error = new Error(payload.error || 'Operation failed.');
       error.status = response.status;
       throw error;
     }
@@ -1487,7 +1490,7 @@ function brainOption(brain, index) {
   text.append(element('span', 'brain-option-name', brain.label || brain.name));
   if (brain.scope) text.append(element('span', 'brain-option-scope', brain.scope));
   option.append(swatch, text, svgIcon(ICONS.check, 'brain-check'));
-  option.title = [brain.name, brain.description].filter(Boolean).join(' : ');
+  option.title = [brain.name, brain.description].filter(Boolean).join(': ');
   option.addEventListener('click', () => chooseBrain(brain.name));
   return option;
 }
@@ -1503,7 +1506,7 @@ function renderBrainSwitch() {
   ids.brainName.textContent = brainLabel(currentBrain);
   ids.brainScope.textContent = known?.scope || '';
   ids.brainMini.textContent = brainLabel(currentBrain) || 'Brain';
-  ids.brainButton.title = known ? [known.name, known.description].filter(Boolean).join(' : ') : '';
+  ids.brainButton.title = known ? [known.name, known.description].filter(Boolean).join(': ') : '';
   ids.brainMenu.replaceChildren(...brains.map(brainOption));
   if (!several) closeBrainMenu(false);
   else if (brainMenuOpen()) setBrainActive(Math.max(0, brains.findIndex(brain => brain.name === active)));
@@ -1569,7 +1572,7 @@ function resetBrainState() {
   gitSelected = null;
   ids.gitCount.textContent = '';
   ids.gitRepos.replaceChildren();
-  showGitDetail({message: 'Choisis un fichier modifié ou un commit pour voir ses différences ici.'});
+  showGitDetail({message: 'Choose a changed file or a commit to see its diff here.'});
   clearTimeout(docTimer);
   notesRequest += 1;
   docSearchRequest += 1;
@@ -1589,23 +1592,23 @@ function resetBrainState() {
   docMarks = [];
   docEditing = false;
   docNote = null;
-  ids.docPaneEmpty.textContent = 'Choisis un document pour le lire.';
+  ids.docPaneEmpty.textContent = 'Choose a document to read it.';
   ids.docList.replaceChildren();
   ids.docArticle.replaceChildren();
   ids.docEditor.value = '';
   setDocError('');
   setDocStatus('');
   renderDocPane();
-  ids.toolResultTitle.textContent = 'Résultat';
+  ids.toolResultTitle.textContent = 'Result';
   ids.toolResultCommand.hidden = true;
-  ids.toolResultStatus.textContent = 'Prêt';
+  ids.toolResultStatus.textContent = 'Ready';
   ids.toolResultStatus.className = '';
   ids.toolResultEmpty.hidden = false;
   ids.toolResultOutput.hidden = true;
   ids.toolResultOutput.textContent = '';
   setUndo(null);
   ids.errorBanner.hidden = true;
-  ids.lastSync.textContent = 'Chargement…';
+  ids.lastSync.textContent = 'Loading…';
   ids.todayCount.textContent = '';
   ids.openCount.textContent = '';
   populateProjects();
@@ -1622,13 +1625,13 @@ function enterBrain(name) {
 function switchBrain(name) {
   if (name === currentBrain) return false;
   if (pendingWrites > 0) {
-    showToast('Une opération est en cours : attends sa fin pour changer de brain.');
+    showToast('An operation is in progress: wait for it to finish before switching brain.');
     return false;
   }
-  if (editorDirty() && !confirm('Abandonner les modifications non enregistrées de cette action ?')) return false;
-  if (docDirty() && !confirm('Abandonner les modifications non enregistrées de cette note ?')) return false;
+  if (editorDirty() && !confirm('Discard the unsaved changes to this action?')) return false;
+  if (docDirty() && !confirm('Discard the unsaved changes to this note?')) return false;
   enterBrain(name);
-  showToast(`Brain ${brainLabel(name)} ouvert`);
+  showToast(`Brain ${brainLabel(name)} opened`);
   return true;
 }
 // Reads the brains of the Work (rediscovered by the server each time). Startup: the brain comes from the URL, then the browser's memory,
@@ -1652,7 +1655,7 @@ async function loadBrains({initial = false} = {}) {
       foldedGroups.clear();
     }
   } else if (fallback && !names.includes(currentBrain)) {
-    if (currentBrain) showToast(`Le brain ${previousLabel} n’existe plus : retour à ${brainLabel(fallback)}.`);
+    if (currentBrain) showToast(`Brain ${previousLabel} no longer exists: back to ${brainLabel(fallback)}.`);
     enterBrain(fallback);
     return true;
   }
@@ -1660,9 +1663,9 @@ async function loadBrains({initial = false} = {}) {
   return false;
 }
 
-// ---------- Outils ----------
+// ---------- Tools ----------
 async function loadTools() {
-  ids.toolsCatalog.replaceChildren(element('p', 'git-loading', 'Chargement des outils…'));
+  ids.toolsCatalog.replaceChildren(element('p', 'git-loading', 'Loading tools…'));
   try {
     tools = (await request('/api/tools')).tools;
     const groups = [...new Set(tools.map(tool => tool.group))];
@@ -1675,17 +1678,17 @@ async function loadTools() {
       section.append(summary);
       for (const tool of tools.filter(item => item.group === group)) {
         const row = element('div', 'tool-row');
-        row.dataset.search = `${tool.group} ${tool.label} ${tool.description} ${tool.command}`.toLocaleLowerCase('fr');
+        row.dataset.search = `${tool.group} ${tool.label} ${tool.description} ${tool.command}`.toLocaleLowerCase(LOCALE);
         const copy = element('div', 'tool-copy');
         const name = element('div', 'tool-name');
         name.append(element('span', '', tool.label));
-        if (tool.confirm) name.append(element('span', 'tool-writes', 'modifie le brain'));
+        if (tool.confirm) name.append(element('span', 'tool-writes', 'writes to the brain'));
         const description = element('p', '', tool.description);
         description.title = `${tool.description}\n${tool.command}`;
         copy.append(name, description);
-        const button = element('button', 'button button-small', 'Lancer');
+        const button = element('button', 'button button-small', 'Run');
         button.type = 'button';
-        button.setAttribute('aria-label', `Lancer ${tool.label}`);
+        button.setAttribute('aria-label', `Run ${tool.label}`);
         button.title = tool.command;
         button.addEventListener('click', () => runTool(tool, button));
         row.append(copy, button);
@@ -1700,7 +1703,7 @@ async function loadTools() {
   }
 }
 function filterTools() {
-  const query = ids.toolSearch.value.trim().toLocaleLowerCase('fr');
+  const query = ids.toolSearch.value.trim().toLocaleLowerCase(LOCALE);
   let count = 0;
   for (const group of ids.toolsCatalog.querySelectorAll('.tool-group')) {
     let visible = 0;
@@ -1713,49 +1716,49 @@ function filterTools() {
     if (query && visible) group.open = true;
     count += visible;
   }
-  ids.resultCount.textContent = tools.length ? plural(count, 'outil') : '';
+  ids.resultCount.textContent = tools.length ? plural(count, 'tool') : '';
 }
 async function runTool(tool, button) {
   if (tool.confirm && !confirm(tool.confirm)) return;
   const buttons = ids.toolsCatalog.querySelectorAll('button');
   buttons.forEach(item => { item.disabled = true; });
-  button.textContent = 'En cours…';
+  button.textContent = 'Running…';
   ids.toolResultTitle.textContent = tool.label;
   ids.toolResultCommand.textContent = tool.command;
   ids.toolResultCommand.hidden = false;
-  ids.toolResultStatus.textContent = 'Exécution en cours';
+  ids.toolResultStatus.textContent = 'Running';
   ids.toolResultStatus.className = '';
   ids.toolResultEmpty.hidden = true;
   ids.toolResultOutput.hidden = false;
-  ids.toolResultOutput.textContent = 'La commande travaille. Son résultat apparaîtra ici.';
+  ids.toolResultOutput.textContent = 'The command is running. Its output will appear here.';
   try {
     const result = await request('/api/tools/run', {
       method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
       body: JSON.stringify({id: tool.id})
     });
-    ids.toolResultStatus.textContent = result.ok ? 'Terminée' : 'Échec';
+    ids.toolResultStatus.textContent = result.ok ? 'Done' : 'Failed';
     ids.toolResultStatus.className = result.ok ? 'tool-status-ok' : 'tool-status-error';
-    ids.toolResultOutput.textContent = result.output + (result.truncated ? '\n\n[Sortie tronquée]' : '');
+    ids.toolResultOutput.textContent = result.output + (result.truncated ? '\n\n[Output truncated]' : '');
     if (tool.confirm && result.ok) {
       detailCache.clear();
       await refresh();
     }
   } catch (error) {
-    ids.toolResultStatus.textContent = 'Échec';
+    ids.toolResultStatus.textContent = 'Failed';
     ids.toolResultStatus.className = 'tool-status-error';
     ids.toolResultOutput.textContent = error.message;
   } finally {
     buttons.forEach(item => { item.disabled = false; });
-    button.textContent = 'Lancer';
+    button.textContent = 'Run';
   }
 }
 
 // ---------- Git (read only) ----------
-const GIT_LABELS = {M: 'Modifié', A: 'Ajouté', D: 'Supprimé', R: 'Renommé', C: 'Copié', U: 'Conflit', '?': 'Non suivi'};
+const GIT_LABELS = {M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'Untracked'};
 const GIT_GROUPS = [
-  {key: 'staged', title: 'Indexés', test: file => file.staged},
-  {key: 'unstaged', title: 'Modifiés', test: file => file.unstaged},
-  {key: 'untracked', title: 'Non suivis', test: file => file.untracked}
+  {key: 'staged', title: 'Staged', test: file => file.staged},
+  {key: 'unstaged', title: 'Unstaged', test: file => file.unstaged},
+  {key: 'untracked', title: 'Untracked', test: file => file.untracked}
 ];
 let gitRepos = [];
 let gitLoaded = false;
@@ -1773,7 +1776,7 @@ function gitLetter(file, group) {
 }
 function gitPathNode(file) {
   const path = element('span', 'git-path');
-  if (file.orig_path) path.append(element('span', 'git-orig', file.orig_path), ' vers ');
+  if (file.orig_path) path.append(element('span', 'git-orig', file.orig_path), ' to ');
   const slash = file.path.lastIndexOf('/');
   if (slash >= 0) path.append(element('span', 'git-dir', file.path.slice(0, slash + 1)));
   path.append(element('span', 'git-name', file.path.slice(slash + 1)));
@@ -1785,8 +1788,8 @@ function gitCountsNode(file, group) {
   let deleted = file.deleted;
   if (group === 'staged' && file.staged_added !== null) [added, deleted] = [file.staged_added, file.staged_deleted];
   if (group === 'unstaged' && file.unstaged_added !== null) [added, deleted] = [file.unstaged_added, file.unstaged_deleted];
-  if (file.sensitive) counts.textContent = 'masqué';
-  else if (file.binary) counts.textContent = 'binaire';
+  if (file.sensitive) counts.textContent = 'hidden';
+  else if (file.binary) counts.textContent = 'binary';
   else if (added !== null && deleted !== null) counts.append(element('span', 'git-plus', `+${added}`), ' ', element('span', 'git-minus', `−${deleted}`));
   return counts;
 }
@@ -1794,7 +1797,7 @@ function gitRelativeDate(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const seconds = (date.getTime() - Date.now()) / 1000;
-  const formatter = new Intl.RelativeTimeFormat('fr', {numeric: 'auto'});
+  const formatter = new Intl.RelativeTimeFormat(LOCALE, {numeric: 'auto'});
   const steps = [[60, 'second', 1], [3600, 'minute', 60], [86400, 'hour', 3600], [2592000, 'day', 86400]];
   for (const [limit, unit, size] of steps) {
     if (Math.abs(seconds) < limit) return formatter.format(Math.round(seconds / size), unit);
@@ -1816,7 +1819,7 @@ function gitFileRow(repo, file, group) {
   const badge = element('span', `git-badge git-badge-${gitBadgeClass(letter)}`, letter);
   badge.title = GIT_LABELS[letter] || letter;
   row.append(badge, gitPathNode(file), gitCountsNode(file, group));
-  row.setAttribute('aria-label', `${GIT_LABELS[letter] || letter} : ${file.orig_path ? `${file.orig_path} vers ` : ''}${file.path}`);
+  row.setAttribute('aria-label', `${GIT_LABELS[letter] || letter}: ${file.orig_path ? `${file.orig_path} to ` : ''}${file.path}`);
   const selection = {repo: repo.id, kind: 'file', path: file.path, group};
   gitRowSelections.set(row, selection);
   row.setAttribute('aria-pressed', String(gitSameSelection(selection, gitSelected)));
@@ -1825,8 +1828,8 @@ function gitFileRow(repo, file, group) {
 }
 function gitCommitRow(repo, commit) {
   const row = gitRow('git-commit');
-  const subject = element('span', 'git-subject', commit.subject || '(sans message)');
-  if (commit.unpushed) subject.append(element('span', 'git-pill', 'non poussé'));
+  const subject = element('span', 'git-subject', commit.subject || '(no message)');
+  if (commit.unpushed) subject.append(element('span', 'git-pill', 'unpushed'));
   const meta = element('span', 'git-commit-meta', `${commit.author}, ${gitRelativeDate(commit.date)}`);
   meta.title = commit.date;
   const main = element('span', 'git-commit-main');
@@ -1842,31 +1845,31 @@ function gitSyncNode(repo) {
   const sync = element('span', 'git-sync');
   if (repo.upstream && repo.ahead !== null && repo.behind !== null) {
     sync.textContent = `↑${repo.ahead} ↓${repo.behind}`;
-    sync.title = `${gitPlural(repo.ahead, 'commit')} à pousser, ${gitPlural(repo.behind, 'commit')} à récupérer, par rapport à ${repo.upstream} (dernière synchro locale, aucun fetch depuis cette page)`;
+    sync.title = `${gitPlural(repo.ahead, 'commit')} to push, ${gitPlural(repo.behind, 'commit')} to pull, compared with ${repo.upstream} (last local sync, no fetch from this page)`;
   } else if (repo.upstream) {
-    sync.textContent = 'branche distante introuvable';
+    sync.textContent = 'remote branch not found';
     sync.title = repo.upstream;
-  } else sync.textContent = 'pas de branche distante';
+  } else sync.textContent = 'no remote branch';
   return sync;
 }
 function gitRepoCard(repo) {
   const card = element('section', 'git-card');
-  card.setAttribute('aria-label', `Dépôt ${repo.label}`);
+  card.setAttribute('aria-label', `Repository ${repo.label}`);
   const head = element('div', 'git-card-head');
   head.append(element('h2', '', repo.label));
   if (!repo.available) {
-    card.append(head, element('p', 'git-unavailable', 'Dépôt Git introuvable sur cette machine.'));
+    card.append(head, element('p', 'git-unavailable', 'Git repository not found on this machine.'));
     return card;
   }
   if (repo.error) {
     card.append(head, element('p', 'git-error', repo.error));
     return card;
   }
-  head.append(element('span', 'git-branch', repo.detached ? `HEAD détachée (${repo.branch})` : repo.branch || '(aucune branche)'), gitSyncNode(repo),
-    element('span', 'git-count', repo.files.length ? gitPlural(repo.files.length, 'changement') : 'propre'));
+  head.append(element('span', 'git-branch', repo.detached ? `Detached HEAD (${repo.branch})` : repo.branch || '(no branch)'), gitSyncNode(repo),
+    element('span', 'git-count', repo.files.length ? gitPlural(repo.files.length, 'change') : 'clean'));
   card.append(head);
   const populated = GIT_GROUPS.map(group => [group, repo.files.filter(group.test)]).filter(([, files]) => files.length);
-  if (!populated.length) card.append(element('p', 'git-empty', 'Aucun changement local.'));
+  if (!populated.length) card.append(element('p', 'git-empty', 'No local changes.'));
   for (const [group, files] of populated) {
     const section = element('div', 'git-group');
     const list = element('ul', 'git-list');
@@ -1885,14 +1888,14 @@ function gitRepoCard(repo) {
     item.append(gitCommitRow(repo, commit));
     list.append(item);
   }
-  commits.append(element('h3', '', 'Derniers commits'), list.children.length ? list : element('p', 'git-empty', 'Aucun commit.'));
+  commits.append(element('h3', '', 'Latest commits'), list.children.length ? list : element('p', 'git-empty', 'No commits.'));
   card.append(commits);
   return card;
 }
 function renderGit() {
   const files = gitRepos.reduce((total, repo) => total + (repo.files ? repo.files.length : 0), 0);
   ids.gitCount.textContent = gitLoaded && files ? String(files) : '';
-  if (view === 'git') ids.resultCount.textContent = gitLoaded ? `${gitPlural(files, 'changement')} locaux` : '';
+  if (view === 'git') ids.resultCount.textContent = gitLoaded ? gitPlural(files, 'local change') : '';
   if (!gitLoaded) return;
   const focused = ids.gitRepos.contains(document.activeElement) ? gitRowSelections.get(document.activeElement) : null;
   const scroll = ids.gitRepos.scrollTop;
@@ -1918,29 +1921,29 @@ function gitStillListed() {
 }
 function loadGit() {
   if (gitLoading) return gitLoading;
-  ids.gitStatus.textContent = gitLoaded ? 'Actualisation…' : 'Chargement…';
+  ids.gitStatus.textContent = gitLoaded ? 'Refreshing…' : 'Loading…';
   ids.gitStatus.classList.remove('git-status-error');
-  if (!gitLoaded) ids.gitRepos.replaceChildren(element('p', 'git-loading', 'Chargement des dépôts…'));
+  if (!gitLoaded) ids.gitRepos.replaceChildren(element('p', 'git-loading', 'Loading repositories…'));
   const loadId = gitLoadId;
   gitLoading = (async () => {
     try {
       gitRepos = (await request('/api/git')).repos;
       gitLoaded = true;
-      ids.gitStatus.textContent = `Actualisé à ${TIME_FORMAT.format(new Date())}`;
+      ids.gitStatus.textContent = `Refreshed at ${TIME_FORMAT.format(new Date())}`;
       renderGit();
       if (gitSelected && !gitStillListed()) {
         gitSelected = null;
-        showGitDetail({message: 'Ce changement n’est plus présent. Choisis un autre fichier ou commit.'});
+        showGitDetail({message: 'This change is no longer present. Choose another file or commit.'});
       } else if (gitSelected) loadGitDiff();
     } catch (error) {
       if (error.stale || loadId !== gitLoadId) return;
-      ids.gitStatus.textContent = 'Échec';
+      ids.gitStatus.textContent = 'Failed';
       ids.gitStatus.classList.add('git-status-error');
       if (!gitLoaded) {
         const message = element('p', 'git-error', error.message);
         message.setAttribute('role', 'alert');
         ids.gitRepos.replaceChildren(message);
-      } else showToast(`Git : ${error.message}`);
+      } else showToast(`Git: ${error.message}`);
     } finally {
       if (loadId === gitLoadId) gitLoading = null;
     }
@@ -1952,7 +1955,7 @@ function selectGit(selection) {
   markGitSelection();
   loadGitDiff();
 }
-function showGitDetail({title = 'Différences', status = 'Prêt', failed = false, message = '', note = '', lines = null}) {
+function showGitDetail({title = 'Diff', status = 'Ready', failed = false, message = '', note = '', lines = null}) {
   ids.gitDetailTitle.textContent = title;
   ids.gitDetailStatus.textContent = status;
   ids.gitDetailStatus.className = failed ? 'git-status-error' : '';
@@ -1986,10 +1989,10 @@ async function loadGitDiff() {
   if (!selection) return;
   const repo = gitRepos.find(item => item.id === selection.repo);
   const label = repo ? repo.label : selection.repo;
-  const groupTitle = selection.kind === 'file' ? GIT_GROUPS.find(group => group.key === selection.group).title.replace(/s$/, '').toLowerCase() : '';
-  const title = selection.kind === 'commit' ? `${label} : ${selection.short} ${selection.subject || ''}`.trim() : `${label} : ${selection.path} (${groupTitle})`;
+  const groupTitle = selection.kind === 'file' ? GIT_GROUPS.find(group => group.key === selection.group).title.toLowerCase() : '';
+  const title = selection.kind === 'commit' ? `${label}: ${selection.short} ${selection.subject || ''}`.trim() : `${label}: ${selection.path} (${groupTitle})`;
   const requestId = ++gitDiffRequest;
-  showGitDetail({title, status: 'Chargement…', message: 'Chargement des différences…'});
+  showGitDetail({title, status: 'Loading…', message: 'Loading the diff…'});
   try {
     const params = new URLSearchParams({repo: selection.repo});
     let url;
@@ -2004,33 +2007,33 @@ async function loadGitDiff() {
     const result = await request(url);
     if (requestId !== gitDiffRequest) return;
     if (selection.kind === 'commit') {
-      showGitDetail({title, note: result.truncated ? 'Aperçu tronqué à 300 Ko.' : '', lines: result.show.replace(/\n$/, '').split('\n')});
+      showGitDetail({title, note: result.truncated ? 'Preview truncated at 300 KB.' : '', lines: result.show.replace(/\n$/, '').split('\n')});
     } else if (result.hidden) {
-      showGitDetail({title, message: 'Contenu masqué : ce fichier est considéré comme sensible (clé, secret, .env…). Rien n’est affiché.'});
+      showGitDetail({title, message: 'Content hidden: this file is treated as sensitive (key, secret, .env…). Nothing is shown.'});
     } else if (result.binary && !result.diff.trim()) {
-      showGitDetail({title, message: 'Fichier binaire : aucun aperçu des différences.'});
+      showGitDetail({title, message: 'Binary file: no diff preview.'});
     } else {
       const notes = [];
-      if (result.binary) notes.push('Fichier binaire : pas de détail ligne à ligne.');
-      if (result.staged && selection.group !== 'staged') notes.push('Aucun changement non indexé : différences indexées affichées.');
-      if (result.truncated) notes.push('Aperçu tronqué à 300 Ko.');
-      showGitDetail({title, note: notes.join(' '), message: result.diff ? '' : 'Aucune différence à afficher.', lines: result.diff ? result.diff.replace(/\n$/, '').split('\n') : null});
+      if (result.binary) notes.push('Binary file: no line-by-line detail.');
+      if (result.staged && selection.group !== 'staged') notes.push('No unstaged change: showing the staged diff.');
+      if (result.truncated) notes.push('Preview truncated at 300 KB.');
+      showGitDetail({title, note: notes.join(' '), message: result.diff ? '' : 'No difference to show.', lines: result.diff ? result.diff.replace(/\n$/, '').split('\n') : null});
     }
   } catch (error) {
     if (requestId !== gitDiffRequest) return;
-    showGitDetail({title, status: 'Échec', failed: true, message: error.message});
+    showGitDetail({title, status: 'Failed', failed: true, message: error.message});
   }
 }
 
 // ---------- Undo ----------
-// Undo labels come from the server (« statut de ABC-001 → En cours »): no arrow in the interface.
-function undoText(label) { return String(label || '').replace(/\s*→\s*/g, ' vers '); }
+// Undo labels come from the server ("status of ABC-001 → In progress"): the arrow is shown as "to" in the interface.
+function undoText(label) { return String(label || '').replace(/\s*→\s*/g, ' to '); }
 function setUndo(state) {
   undoState = state || {available: false, label: null, depth: 0};
   renderUndo();
 }
 function renderUndo() {
-  const text = undoState.available ? `Annuler : ${undoText(undoState.label)}` : 'Rien à annuler';
+  const text = undoState.available ? `Undo: ${undoText(undoState.label)}` : 'Nothing to undo';
   ids.undoLabel.textContent = text;
   ids.undoButton.setAttribute('aria-disabled', String(undoBusy || !undoState.available));
   ids.undoButton.title = text;
@@ -2051,7 +2054,7 @@ async function undoLast() {
     setUndo(result.undo);
     detailCache.clear();
     await refresh();
-    showToast(`Annulé : ${undoText(result.undone)}`);
+    showToast(`Undone: ${undoText(result.undone)}`);
   } catch (error) {
     showToast(error.message);
     await refresh();
@@ -2087,7 +2090,7 @@ async function refresh() {
     detailCache.clear();
     loadUndo();
     ids.errorBanner.hidden = true;
-    ids.lastSync.textContent = `Actualisé à ${TIME_FORMAT.format(new Date())}`;
+    ids.lastSync.textContent = `Refreshed at ${TIME_FORMAT.format(new Date())}`;
     validateScope();
     populateProjects();
     setSummary();
@@ -2110,7 +2113,7 @@ async function refreshQuietly() {
   } catch { /* The next refresh will catch up. */ }
 }
 
-// ---------- Documents: Notes and Recherche ----------
+// ---------- Documents: Notes and Search ----------
 function docFoldChar(char) {
   let folded = docFoldCache.get(char);
   if (folded === undefined) {
@@ -2195,7 +2198,7 @@ function setDocStatus(message, failed = false) {
   ids.docStatus.textContent = message;
   ids.docStatus.className = failed ? 'doc-status doc-status-error' : 'doc-status';
 }
-// Where the documents come from: « Inbox » or « Hors projets » of the chip, else the sidebar project (a client prefix is filtered here).
+// Where the documents come from: "Inbox" or "Outside projects" of the chip, else the sidebar project (a client prefix is filtered here).
 function docProjectParam() {
   if (ids.docProject.value) return ids.docProject.value;
   return snapshot.registers.some(register => register.path === projectScope) ? projectScope : '';
@@ -2216,7 +2219,7 @@ function docItem(item, searching) {
   if (searching) title.append(docMarked(item.title, docFindRanges(item.title, docTerms)));
   else title.textContent = item.title;
   const meta = element('span', 'doc-item-meta');
-  meta.append(element('span', '', item.project || 'Hors projets'));
+  meta.append(element('span', '', item.project || 'Outside projects'));
   if (item.date) meta.append(element('span', 'doc-item-date', formatDay(item.date)));
   button.append(title, meta);
   if (searching) {
@@ -2242,7 +2245,7 @@ function renderDocList() {
     const items = notesData.filter(docScopeMatch);
     ids.resultCount.textContent = plural(items.length, 'note');
     if (!items.length) {
-      ids.docList.replaceChildren(docEmpty('Aucune note ici.', filtering ? 'Aucune note pour ce filtre.' : 'Crée une note : elle s’enregistre dans le projet choisi ou dans l’Inbox.'));
+      ids.docList.replaceChildren(docEmpty('No notes here.', filtering ? 'No notes for this filter.' : 'Create a note: it is saved in the chosen project or in the Inbox.'));
       return;
     }
     const list = element('ul', 'doc-items');
@@ -2252,24 +2255,24 @@ function renderDocList() {
     const searching = docMode === 'search';
     if (searching && docError) {
       ids.resultCount.textContent = '';
-      ids.docList.replaceChildren(docEmpty('Recherche impossible.', docError));
+      ids.docList.replaceChildren(docEmpty('Search failed.', docError));
       return;
     }
     if (!searching && !notesLoaded) { ids.docList.replaceChildren(); return; }
     const items = (searching ? docResults : recentDocs).filter(docScopeMatch);
     ids.resultCount.textContent = searching
-      ? `${plural(docTotal, 'résultat')}${docTotal > items.length ? `, ${items.length} affichés` : ''}`
-      : plural(items.length, 'document récent', 'documents récents');
+      ? `${plural(docTotal, 'result')}${docTotal > items.length ? `, ${items.length} shown` : ''}`
+      : plural(items.length, 'recent document');
     if (!items.length) {
       ids.docList.replaceChildren(searching
-        ? docEmpty('Aucun résultat.', 'Aucun document ne contient ces termes.')
-        : docEmpty('Aucun document ici.', filtering ? 'Aucun document pour ce filtre.' : 'Le brain ne contient encore aucun document.'));
+        ? docEmpty('No results.', 'No document contains these terms.')
+        : docEmpty('No documents here.', filtering ? 'No documents for this filter.' : 'The brain does not contain any document yet.'));
       return;
     }
     const list = element('ul', 'doc-items');
     list.append(...items.map(item => docItem(item, searching)));
     if (searching) ids.docList.replaceChildren(list);
-    else ids.docList.replaceChildren(element('h2', 'doc-list-heading', 'Modifiés récemment'), list);
+    else ids.docList.replaceChildren(element('h2', 'doc-list-heading', 'Recently modified'), list);
   }
   if (focused) ids.docList.querySelector(`.doc-item[data-doc-id="${CSS.escape(focused)}"]`)?.focus();
 }
@@ -2281,7 +2284,7 @@ function markDocSelection() {
 }
 async function loadNotes() {
   const requestId = ++notesRequest;
-  if (!notesLoaded) setDocStatus('Chargement…');
+  if (!notesLoaded) setDocStatus('Loading…');
   try {
     const [data, recent] = await Promise.all([request('/api/notes'), request(`/api/docs/recent?project=${encodeURIComponent(docProjectParam())}`)]);
     if (requestId !== notesRequest) return;
@@ -2292,7 +2295,7 @@ async function loadNotes() {
     if (isDocsView()) renderDocsView();
   } catch (error) {
     if (requestId !== notesRequest || error.stale) return;
-    setDocStatus(`Échec : ${error.message}`, true);
+    setDocStatus(`Failed: ${error.message}`, true);
   }
 }
 async function runDocSearch() {
@@ -2312,7 +2315,7 @@ async function runDocSearch() {
     return;
   }
   docMode = 'search';
-  setDocStatus('Recherche…');
+  setDocStatus('Searching…');
   try {
     const data = await request(`/api/search?${new URLSearchParams({q: query, project: docProjectParam()})}`);
     if (requestId !== docSearchRequest) return;
@@ -2320,7 +2323,7 @@ async function runDocSearch() {
     docTotal = data.total;
     docTruncated = data.truncated;
     docTerms = data.terms;
-    setDocStatus(data.truncated ? `Les ${data.results.length} meilleurs résultats sont affichés.` : '');
+    setDocStatus(data.truncated ? `The ${data.results.length} best results are shown.` : '');
   } catch (error) {
     if (requestId !== docSearchRequest || error.stale) return;
     docResults = [];
@@ -2369,7 +2372,7 @@ function renderDocPane() {
   }
   const listed = notesData.find(item => item.id === doc.id) || recentDocs.find(item => item.id === doc.id);
   ids.docPaneTitle.textContent = doc.title;
-  ids.docPaneMeta.replaceChildren(element('span', '', doc.project || 'Hors projets'), ...(listed?.date ? [element('span', 'doc-item-date', formatDay(listed.date))] : []));
+  ids.docPaneMeta.replaceChildren(element('span', '', doc.project || 'Outside projects'), ...(listed?.date ? [element('span', 'doc-item-date', formatDay(listed.date))] : []));
   ids.docPanePath.textContent = doc.id;
 }
 function scrollDocTo(node, center) {
@@ -2414,7 +2417,7 @@ function showDocArticle(html, terms, anchor, keepScroll) {
 }
 // nav: 'root' (picked from the list or created), 'link' (internal link, pushes history), 'back', 'keep' (reload in place).
 async function openDoc(id, {nav = 'root', terms = [], anchor = ''} = {}) {
-  if (nav !== 'keep' && docDirty() && !confirm('Abandonner les modifications non enregistrées de cette note ?')) return;
+  if (nav !== 'keep' && docDirty() && !confirm('Discard the unsaved changes to this note?')) return;
   if (nav === 'root') docHistory = [];
   else if (nav === 'link' && docCurrent) docHistory.push({id: docCurrent.id, terms: docMarks});
   else if (nav === 'back') docHistory.pop();
@@ -2425,7 +2428,7 @@ async function openDoc(id, {nav = 'root', terms = [], anchor = ''} = {}) {
   setDocError('');
   if (!quiet) {
     docCurrent = null;
-    ids.docPaneEmpty.textContent = 'Chargement du document…';
+    ids.docPaneEmpty.textContent = 'Loading the document…';
     renderDocPane();
   }
   markDocSelection();
@@ -2442,9 +2445,9 @@ async function openDoc(id, {nav = 'root', terms = [], anchor = ''} = {}) {
       docCurrent = null;
       docEditing = false;
       docNote = null;
-      ids.docPaneEmpty.textContent = 'Ce document n’existe plus.';
+      ids.docPaneEmpty.textContent = 'This document no longer exists.';
     } else if (!quiet) {
-      ids.docPaneEmpty.textContent = 'Document indisponible.';
+      ids.docPaneEmpty.textContent = 'Document unavailable.';
       setDocError(error.message);
     } else setDocError(error.message);
     renderDocPane();
@@ -2469,14 +2472,14 @@ async function startDocEdit() {
     renderDocPane();
     ids.docEditor.focus();
   } catch (error) {
-    if (!error.stale) setDocError(error.status === 404 ? 'Cette note n’existe plus.' : error.message);
+    if (!error.stale) setDocError(error.status === 404 ? 'This note no longer exists.' : error.message);
   } finally {
     ids.docEdit.disabled = false;
   }
 }
 function cancelDocEdit() {
   if (docSaving) return;
-  if (docDirty() && !confirm('Abandonner les modifications non enregistrées de cette note ?')) return;
+  if (docDirty() && !confirm('Discard the unsaved changes to this note?')) return;
   docEditing = false;
   docNote = null;
   setDocError('');
@@ -2497,13 +2500,13 @@ async function saveDoc() {
     docEditing = false;
     docNote = null;
     docSaving = false;
-    showToast('Note enregistrée', {undo: true});
+    showToast('Note saved', {undo: true});
     await Promise.all([loadNotes(), openDoc(docCurrent.id, {nav: 'keep'})]);
     if (docMode === 'search' && view === 'search') runDocSearch();
     ids.docEdit.focus();
   } catch (error) {
     setDocError(error.status === 409
-      ? `${error.message} Tes modifications restent dans le champ : copie-les, puis annule et rouvre la note.`
+      ? `${error.message} Your changes stay in the field: copy them, then cancel and reopen the note.`
       : error.message);
   } finally {
     docSaving = false;
@@ -2525,11 +2528,11 @@ function newNoteFolder() {
   return register ? register.replace(/state\/actions\.md$/, 'notes/') : '';
 }
 function updateNewNoteWhere() {
-  ids.newNoteWhere.textContent = `Fichier créé : ${newNoteFolder()}AAAA-MM-JJ-titre.md`;
+  ids.newNoteWhere.textContent = `File created: ${newNoteFolder()}YYYY-MM-DD-title.md`;
 }
 function openNewNote() {
   closePopover(false);
-  ids.newNoteProject.replaceChildren(new Option('Inbox (à trier)', INBOX_REGISTER), ...snapshot.registers.map(register => new Option(register.label, register.path)));
+  ids.newNoteProject.replaceChildren(new Option('Inbox (to triage)', INBOX_REGISTER), ...snapshot.registers.map(register => new Option(register.label, register.path)));
   const paths = [...ids.newNoteProject.options].map(option => option.value);
   const preferred = ids.docProject.value === INBOX_REGISTER ? INBOX_REGISTER : projectScope;
   ids.newNoteProject.value = paths.includes(preferred) ? preferred : INBOX_REGISTER;
@@ -2553,9 +2556,9 @@ async function createNote(event) {
     });
     setUndo(result.undo);
     ids.newNoteDialog.close();
-    if (docDirty() && !confirm('Abandonner les modifications non enregistrées du document ouvert ?')) {
+    if (docDirty() && !confirm('Discard the unsaved changes to the open document?')) {
       if (isDocsView()) await loadNotes();
-      showToast('Note créée', {undo: true});
+      showToast('Note created', {undo: true});
       return;
     }
     docEditing = false;
@@ -2568,7 +2571,7 @@ async function createNote(event) {
       renderProjectNav();
     }
     setView('notes');
-    showToast('Note créée', {undo: true});
+    showToast('Note created', {undo: true});
     await openDoc(result.id, {nav: 'root'});
   } catch (error) {
     ids.newNoteError.textContent = error.message;
@@ -2592,7 +2595,7 @@ ids.toast.addEventListener('focusin', () => clearTimeout(toastTimer));
 ids.toast.addEventListener('mouseleave', () => { clearTimeout(toastTimer); toastTimer = setTimeout(hideToast, 2500); });
 ids.toastAction.addEventListener('click', () => { ids.toastAction.hidden = true; hideToast(); undoLast(); });
 
-// ---------- Sidebar, drawer and the « Plus d’options » menu ----------
+// ---------- Sidebar, drawer and the "More options" menu ----------
 const SIDEBAR_KEY = 'actions-brain-sidebar-v1';
 const narrowQuery = window.matchMedia('(max-width: 900px)');
 function readSidebarCollapsed() {
@@ -2602,7 +2605,7 @@ function updateSidebarToggle() {
   const narrow = narrowQuery.matches;
   const open = narrow ? ids.app.classList.contains('drawer-open') : !ids.app.classList.contains('sidebar-collapsed');
   ids.sidebarToggle.setAttribute('aria-expanded', String(open));
-  const label = narrow ? (open ? 'Fermer le menu' : 'Ouvrir le menu') : open ? 'Masquer la barre latérale' : 'Afficher la barre latérale';
+  const label = narrow ? (open ? 'Close menu' : 'Open menu') : open ? 'Hide the sidebar' : 'Show the sidebar';
   ids.sidebarToggle.setAttribute('aria-label', label);
   ids.sidebarToggle.title = `${label} ([)`;
   ids.mainContent.inert = narrow && open;
@@ -2678,12 +2681,12 @@ ids.quitConfirm.addEventListener('click', async () => {
       body: '{}'
     });
     ids.quitDialog.close();
-    document.body.replaceChildren(element('main', 'stopped-screen', 'Actions Brain est arrêté. Tu peux fermer cet onglet. Relance l’app depuis le Dock pour la rouvrir.'));
+    document.body.replaceChildren(element('main', 'stopped-screen', 'Actions Brain has stopped. You can close this tab. Relaunch the app from the Dock to open it again.'));
     window.close();
   } catch (error) {
     ids.quitConfirm.disabled = false;
     ids.quitDialog.close();
-    showToast(`Arrêt impossible : ${error.message}`);
+    showToast(`Could not stop: ${error.message}`);
   }
 });
 
@@ -2834,9 +2837,9 @@ ids.brainMenu.addEventListener('keydown', event => {
   else if (key === 'Tab') closeBrainMenu(false);
   else if (key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
     // Type-ahead: the next brain whose name starts with the typed letter.
-    const letter = key.toLocaleLowerCase('fr');
+    const letter = key.toLocaleLowerCase(LOCALE);
     const ordered = [...brains.keys()].map(offset => (brainMenuIndex + 1 + offset) % brains.length);
-    const next = ordered.find(position => (brains[position].label || brains[position].name).toLocaleLowerCase('fr').startsWith(letter));
+    const next = ordered.find(position => (brains[position].label || brains[position].name).toLocaleLowerCase(LOCALE).startsWith(letter));
     if (next !== undefined) setBrainActive(next);
     return;
   } else return;
@@ -2854,7 +2857,7 @@ ids.editorForm.addEventListener('change', updateEditorButtons);
 ids.deleteEditor.addEventListener('click', deleteEditor);
 ids.editorActionTitle.addEventListener('input', sizeTitleField);
 ids.editorActionTitle.addEventListener('keydown', event => {
-  // The title is one line in the register: Entrée saves (Maj+Entrée is ignored as well).
+  // The title is one line in the register: Enter saves (Shift+Enter is ignored as well).
   if (event.key === 'Enter' && !event.isComposing) { event.preventDefault(); if (!event.shiftKey) ids.editorForm.requestSubmit(); }
 });
 ids.editorProject.addEventListener('change', () => fillGroupOptions());

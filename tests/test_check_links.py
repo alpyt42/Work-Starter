@@ -45,9 +45,9 @@ class CheckLinksTest(unittest.TestCase):
 
             portable = check("--allow-missing-local")
             self.assertEqual(portable.returncode, 0, portable.stdout + portable.stderr)
-            self.assertIn("liens locaux non vérifiés: 4", portable.stdout)
-            self.assertIn("⚠ LIEN MD MORT (../artifacts/missing.md) — 3× (local, non bloquant)", portable.stdout)
-            self.assertIn("⚠ LIEN MD MORT (../repos/missing/README.md) — 1× (local, non bloquant)", portable.stdout)
+            self.assertIn("unverified local links: 4", portable.stdout)
+            self.assertIn("⚠ DEAD MD LINK (../artifacts/missing.md) — 3× (local, non-blocking)", portable.stdout)
+            self.assertIn("⚠ DEAD MD LINK (../repos/missing/README.md) — 1× (local, non-blocking)", portable.stdout)
             self.assertIn("       index.md", portable.stdout)
             self.assertIn("       page.md", portable.stdout)
 
@@ -60,10 +60,10 @@ class CheckLinksTest(unittest.TestCase):
             )
             broken = check("--allow-missing-local")
             self.assertEqual(broken.returncode, 1, broken.stdout + broken.stderr)
-            self.assertIn("⛔ LIEN MD MORT (missing.md)", broken.stdout)
-            self.assertIn("⛔ LIEN MD MORT (../../elsewhere.md)", broken.stdout)
-            self.assertIn("⚠ LIEN MD MORT (../artifacts/missing.md)", broken.stdout)
-            self.assertIn("⚠ LIEN MD MORT (../repos/missing/README.md)", broken.stdout)
+            self.assertIn("⛔ DEAD MD LINK (missing.md)", broken.stdout)
+            self.assertIn("⛔ DEAD MD LINK (../../elsewhere.md)", broken.stdout)
+            self.assertIn("⚠ DEAD MD LINK (../artifacts/missing.md)", broken.stdout)
+            self.assertIn("⚠ DEAD MD LINK (../repos/missing/README.md)", broken.stdout)
 
     def test_templates_under_skill_assets_are_skipped_but_the_rest_is_checked(self) -> None:
         for use_git in (False, True):
@@ -92,16 +92,16 @@ class CheckLinksTest(unittest.TestCase):
 
                 result = check()
                 self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-                self.assertIn("fichiers      : 4", result.stdout)
-                self.assertIn("morts (md)    : 0", result.stdout)
+                self.assertIn("files         : 4", result.stdout)
+                self.assertIn("dead (md)     : 0", result.stdout)
 
                 # The rest of skills/ and an `assets` folder elsewhere are still checked.
-                (brain / "skills/demo/references/guide.md").write_text("[mort](missing.md)\n", encoding="utf-8")
-                (brain / "projects/assets/note.md").write_text("[mort](absent.md)\n", encoding="utf-8")
+                (brain / "skills/demo/references/guide.md").write_text("[dead](missing.md)\n", encoding="utf-8")
+                (brain / "projects/assets/note.md").write_text("[dead](absent.md)\n", encoding="utf-8")
                 result = check()
                 self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-                self.assertIn("⛔ LIEN MD MORT (missing.md)", result.stdout)
-                self.assertIn("⛔ LIEN MD MORT (absent.md)", result.stdout)
+                self.assertIn("⛔ DEAD MD LINK (missing.md)", result.stdout)
+                self.assertIn("⛔ DEAD MD LINK (absent.md)", result.stdout)
                 self.assertNotIn("SPEC.md", result.stdout)
 
     def test_missing_or_empty_brain_fails_instead_of_reporting_zero_links(self) -> None:
@@ -117,7 +117,7 @@ class CheckLinksTest(unittest.TestCase):
                     check=False,
                 )
                 self.assertEqual(result.returncode, 2, result.stdout + result.stderr)
-                self.assertNotIn("morts (md)", result.stdout)
+                self.assertNotIn("dead (md)", result.stdout)
 
 
 class CrossBrainLinksTest(unittest.TestCase):
@@ -128,7 +128,7 @@ class CrossBrainLinksTest(unittest.TestCase):
         self.work = Path(self._tmp.name).resolve() / "Work"
         for name in ("brain", "brain-perso", "brain-asso"):
             (self.work / name / "projects").mkdir(parents=True)
-        (self.work / "brain-perso/notes.md").write_text("# Notes perso\n", encoding="utf-8")
+        (self.work / "brain-perso/notes.md").write_text("# Personal notes\n", encoding="utf-8")
         (self.work / "brain/page.md").write_text("# Page\n", encoding="utf-8")
         (self.work / "kit/brain").mkdir(parents=True)
         (self.work / "kit/brain/AGENTS.md").write_text("# Conventions\n", encoding="utf-8")
@@ -154,37 +154,37 @@ class CrossBrainLinksTest(unittest.TestCase):
         self.write("brain", "index.md", "[page](page.md)\n[perso](../brain-perso/notes.md)\n")
         result = self.check("brain")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("inter-brains  : 1", result.stdout)
-        self.assertIn("morts (md)    : 0", result.stdout)
-        self.assertIn("⛔ LIEN INTER-BRAINS (../brain-perso/notes.md) — 1×", result.stdout)
+        self.assertIn("cross-brain   : 1", result.stdout)
+        self.assertIn("dead (md)     : 0", result.stdout)
+        self.assertIn("⛔ CROSS-BRAIN LINK (../brain-perso/notes.md) — 1×", result.stdout)
         self.assertIn("       index.md", result.stdout)
 
     def test_nested_file_and_missing_target_are_reported_as_cross_brain_not_dead(self) -> None:
         self.write("brain", "projects/clients/acme/acme.md", "[x](../../../../brain-asso/projects/missing.md)\n")
         result = self.check("brain")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("inter-brains  : 1", result.stdout)
-        self.assertIn("morts (md)    : 0", result.stdout)
+        self.assertIn("cross-brain   : 1", result.stdout)
+        self.assertIn("dead (md)     : 0", result.stdout)
         self.assertIn("(../../../../brain-asso/projects/missing.md)", result.stdout)
 
     def test_folder_and_non_markdown_targets_in_another_brain_are_refused(self) -> None:
         self.write("brain", "index.md", "[inbox](../brain-perso/projects/)\n[data](../brain-perso/.data/doctor.json)\n")
         result = self.check("brain")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("inter-brains  : 2", result.stdout)
+        self.assertIn("cross-brain   : 2", result.stdout)
 
     def test_allow_missing_local_does_not_excuse_a_cross_brain_link(self) -> None:
         self.write("brain", "index.md", "[perso](../brain-perso/notes.md)\n[art](../artifacts/missing.md)\n")
         result = self.check("brain", "--allow-missing-local")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("LIEN INTER-BRAINS", result.stdout)
-        self.assertIn("liens locaux non vérifiés: 1", result.stdout)
+        self.assertIn("CROSS-BRAIN LINK", result.stdout)
+        self.assertIn("unverified local links: 1", result.stdout)
 
     def test_the_rule_applies_from_every_brain(self) -> None:
         self.write("brain-perso", "index.md", "[page](../brain/page.md)\n")
         result = self.check("brain-perso")
         self.assertEqual(result.returncode, 1, result.stdout + result.stderr)
-        self.assertIn("⛔ LIEN INTER-BRAINS (../brain/page.md)", result.stdout)
+        self.assertIn("⛔ CROSS-BRAIN LINK (../brain/page.md)", result.stdout)
 
     def test_links_inside_the_brain_and_to_shared_folders_are_fine(self) -> None:
         (self.work / "artifacts").mkdir()
@@ -194,7 +194,7 @@ class CrossBrainLinksTest(unittest.TestCase):
                    "[art](../artifacts/out.md)\n[web](https://example.org/brain-perso/x.md)\n")
         result = self.check("brain-perso")
         self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
-        self.assertIn("inter-brains  : 0", result.stdout)
+        self.assertIn("cross-brain   : 0", result.stdout)
 
     def test_names_that_only_look_like_brains_are_not_brains(self) -> None:
         (self.work / "brain-notes-archive").mkdir()
@@ -229,8 +229,8 @@ class CheckLinksScriptTest(unittest.TestCase):
 
     def test_every_brain_is_checked_and_any_failure_fails_the_script(self) -> None:
         self.assertEqual(self.check().returncode, 0)
-        (self.root / "brain/index.md").write_text("[mort](first-missing.md)\n", encoding="utf-8")
-        (self.root / "brain-perso/index.md").write_text("[mort](second-missing.md)\n", encoding="utf-8")
+        (self.root / "brain/index.md").write_text("[dead](first-missing.md)\n", encoding="utf-8")
+        (self.root / "brain-perso/index.md").write_text("[dead](second-missing.md)\n", encoding="utf-8")
         (self.root / "brain-zeta/index.md").write_text("[ok](index.md)\n", encoding="utf-8")
         result = self.check()
         self.assertNotEqual(result.returncode, 0, result.stdout + result.stderr)

@@ -1,9 +1,9 @@
-# Actions — Setup du système
+# Actions — System setup
 
-> Registre faisant foi pour les actions de maintenance du brain. Préfixe réservé : `SET`.
+> Authoritative register for the brain's maintenance actions. Reserved prefix: `SET`.
 
-## Ouvertes
+## Open
 
-## Terminées
+## Done
 
-## Annulées
+## Cancelled

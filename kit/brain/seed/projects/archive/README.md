@@ -1,5 +1,5 @@
 # projects/archive/
 
-Les projets clos, déplacés entiers depuis leur axe et seulement sur demande explicite du propriétaire. Une mission client close va plutôt dans `projects/clients/<client>/archive/<mission>/`, l'index client restant en place. Après un déplacement, réparer les liens.
+Closed projects, moved whole from their axis and only on the owner's explicit request. A closed client mission goes instead in `projects/clients/<client>/archive/<mission>/`, the client index staying in place. After a move, fix the links.
 
-[Retour à projects/](../README.md)
+[Back to projects/](../README.md)

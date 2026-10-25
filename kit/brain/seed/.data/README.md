@@ -1,15 +1,15 @@
 # .data/
 
-États et réglages privés de ce brain et de ses skills. Versionnés avec le brain, jamais cités dans un dépôt d'outillage public. Aucun secret ici : les jetons vont dans un `.env` ignoré de l'espace de travail.
+Private states and settings of this brain and its skills. Versioned with the brain, never cited in a public tooling repository. No secrets here: tokens go in an ignored `.env` at the workspace level.
 
-| Fichier | Rôle | Skill ou outil |
+| File | Role | Skill or tool |
 |---|---|---|
-| `brain.json` | périmètre du brain : `scope`, `description` (ce qu'il contient et ne doit jamais contenir), `remote` et `email` attendus (motifs `fnmatch`), `allow` (noms de clients d'un autre brain autorisés ici) | agents, `brain-state.py brains`, `check-no-client.py`, doctor de la machine |
-| `work-config.json` | skills de tiers à installer (`skills.thirdParty`) et skills désactivés (`skills.disabled`) | `tools/machine/work_config.py`, `update.sh` |
-| `doctor.json` | nom d'affichage du propriétaire, utilisé par les contrôles et outils de pilotage | `brain-clean`, outils du brain |
-| `local-paths.json` | brains attendus et dossiers d'entrée hors de l'espace, relatifs à `$HOME` (réglages de la personne : seul le brain par défaut `brain/` les porte) | `brain-state.py`, `cr-reunion` |
-| `transcripts.json` | transcripts déjà traités, doublons ou exclus | `cr-reunion` |
-| `messages-state.json` | curseurs et identifiants de messages traités | `veille-messages` |
-| `client-repos.json` | catalogue privé des URLs Git client (voir [`kit/brain/docs/REPOSITORIES.md`](../../kit/brain/docs/REPOSITORIES.md)) | `tools/repos/client-repos.py` |
+| `brain.json` | boundary of the brain: `scope` (for example `personal`, `employer` or `client`), `description` (what it holds and must never hold), expected `remote` and `email` (`fnmatch` patterns), `allow` (client names of another brain that may appear here) | agents, `brain-state.py brains`, `check-no-client.py`, the machine doctor |
+| `work-config.json` | third-party skills to install (`skills.thirdParty`) and disabled skills (`skills.disabled`) | `tools/machine/work_config.py`, `update.sh` |
+| `doctor.json` | `owner`: display name of the brain's owner. Read by `tools/brain/action.py` (owner of the board and default owner of new actions) and by `tools/brain/decision.py` (default person who accepts or rejects a decision); also the default owner of the **New action** form | `tools/brain/action.py`, `tools/brain/decision.py` |
+| `local-paths.json` | expected brains and input folders outside the workspace, relative to `$HOME` (personal settings of the machine: only the default brain `brain/` carries them) | `brain-state.py`, `cr-reunion` |
+| `transcripts.json` | transcripts already handled, one entry per file: `status` (`processed`, `ignored`, `split`, `duplicate` or `undecided`), `processed_on` (date), `destinations` (where its content went) and `note` | `cr-reunion` |
+| `messages-state.json` | cursors and ids of processed messages (`status` of a message: `processed` or `ignored`) | `veille-messages` |
+| `client-repos.json` | private catalogue of client Git URLs (see [`kit/brain/docs/REPOSITORIES.md`](../../kit/brain/docs/REPOSITORIES.md)) | `tools/repos/client-repos.py` |
 
-Un skill privé de ce brain ([`skills/`](../skills/README.md)) peut ajouter son propre fichier d'état ici ; il le crée lui-même et le déclare dans ce tableau. L'état d'un skill s'écrit toujours dans le `.data/` du brain où il écrit.
+A private skill of this brain ([`skills/`](../skills/README.md)) may add its own state file here; it creates the file itself and declares it in this table. A skill's state is always written in the `.data/` of the brain it writes to.

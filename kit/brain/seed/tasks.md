@@ -5,43 +5,42 @@ cssclasses:
 
 # Actions
 
-Les prochaines actions, la liste par projet et le kanban, au même endroit. Tant que le propriétaire n'est pas renseigné dans le starter, les vues montrent tous les responsables.
+Next actions, the list by project and the kanban, in one place. Until the owner is set in the starter, the views show every owner.
 
 > [!task-nav]
-> [Pilotage](#pilotage) · [Liste par projet](#liste-par-projet) · [Kanban](#kanban) · [Historique](#historique) · [Inbox](inbox.md)
+> [Focus](#focus) · [By project](#by-project) · [Kanban](#kanban) · [History](#history) · [Inbox](inbox/inbox.md)
 
 ```meta-bind-button
-label: Nouvelle action
+label: New action
 icon: plus
 style: primary
-tooltip: Ajouter une tâche dans le registre du projet choisi
+tooltip: Add a task to the register of the chosen project
 actions:
   - type: runTemplaterFile
-    templateFile: kit/brain/templates/templater/nouvelle-action.md
+    templateFile: kit/brain/templates/templater/new-action.md
 ```
 
-Choisis le projet, puis renseigne l'action. Le formulaire la range au bon endroit avec son ID, sa priorité et son échéance.
+Choose the project, then fill in the action. The form files it in the right place with its ID, priority and due date.
 
-> [!info]- Dans le navigateur
-> Depuis la racine de l'espace de travail, lance `uv run tools/tasks-web/tasks-web.py`, puis ouvre `http://127.0.0.1:8765/`. Cette [interface locale](../tools/tasks-web/README.md) lit et modifie les mêmes registres.
+> [!info]- In the browser
+> From the Work root, run `uv run tools/tasks-web/tasks-web.py`, then open `http://127.0.0.1:8765/`. This [local interface](../tools/tasks-web/README.md) reads and edits the same registers.
 
-## Pilotage
+## Focus
 
-> [!task-focus]+ Aujourd'hui
+> [!task-focus]+ Today
 > ```tasks
 > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
 > (status.type is TODO) OR (status.type is IN_PROGRESS)
-> status.name does not include attente
 > (scheduled before tomorrow) OR (due before tomorrow)
 > sort by priority
 > sort by due
 > sort by description
 > ```
 
-> Choisis jusqu'à trois actions avec le crayon 📝 : **Scheduled / Planifiée = aujourd'hui**. Les échéances du jour, les retards et les actions planifiées non terminées remontent ici.
+> Pick up to three actions with the pencil 📝: **Scheduled = today**. Today's due dates, overdue actions and unfinished scheduled actions show up here.
 
 > [!task-grid]
-> > [!task-active]+ En cours
+> > [!task-active]+ In progress
 > > ```tasks
 > > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
 > > status.type is IN_PROGRESS
@@ -50,12 +49,11 @@ Choisis le projet, puis renseigne l'action. Le formulaire la range au bon endroi
 > > sort by description
 > > ```
 >
-> > [!task-next]+ À lancer
-> > Les 8 premières par priorité, puis échéance. La liste complète reste dans les projets.
+> > [!task-next]+ Up next
+> > The first 8 by priority, then due date. The full list stays in the projects.
 > > ```tasks
 > > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
 > > status.type is TODO
-> > status.name does not include attente
 > > (no scheduled date) OR (scheduled after today)
 > > (no due date) OR (due after today)
 > > (no start date) OR (starts before tomorrow)
@@ -65,19 +63,19 @@ Choisis le projet, puis renseigne l'action. Le formulaire la range au bon endroi
 > > limit 8
 > > ```
 
-> [!task-wait]+ À relancer
+> [!task-wait]+ Follow up
 > ```tasks
 > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
-> status.name includes attente
+> status.type is ON_HOLD
 > sort by due
 > sort by priority
 > sort by description
 > ```
 
-> [!task-calendar]- Échéances · 7 prochains jours
+> [!task-calendar]- Due · next 7 days
 > ```tasks
 > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
-> (status.type is TODO) OR (status.type is IN_PROGRESS)
+> (status.type is TODO) OR (status.type is IN_PROGRESS) OR (status.type is ON_HOLD)
 > due after today
 > due on or before in 7 days
 > sort by due
@@ -85,12 +83,12 @@ Choisis le projet, puis renseigne l'action. Le formulaire la range au bon endroi
 > sort by description
 > ```
 
-## Liste par projet
+## By project
 
-> [!task-project]- [Setup du système](projects/internal/setup/setup.md)
+> [!task-project]- [System setup](projects/internal/setup/setup.md)
 > ```tasks
 > path includes {{BRAIN}}/projects/internal/setup/state/actions.md
-> (status.type is TODO) OR (status.type is IN_PROGRESS)
+> (status.type is TODO) OR (status.type is IN_PROGRESS) OR (status.type is ON_HOLD)
 > sort by status.type
 > sort by status.name reverse
 > sort by priority
@@ -98,11 +96,11 @@ Choisis le projet, puis renseigne l'action. Le formulaire la range au bon endroi
 > sort by description
 > ```
 
-> [!task-project]- Autres projets
+> [!task-project]- Other projects
 > ```tasks
 > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
 > path does not include {{BRAIN}}/projects/internal/setup/state/actions.md
-> (status.type is TODO) OR (status.type is IN_PROGRESS)
+> (status.type is TODO) OR (status.type is IN_PROGRESS) OR (status.type is ON_HOLD)
 > sort by path
 > sort by status.type
 > sort by status.name reverse
@@ -111,24 +109,23 @@ Choisis le projet, puis renseigne l'action. Le formulaire la range au bon endroi
 > sort by description
 > ```
 
-Ajoute un encadré dédié quand un projet doit rester visible, puis exclus son registre d'« Autres projets ».
+Add a dedicated box when a project must stay visible, then exclude its register from “Other projects”.
 
 ## Kanban
 
-Pour déplacer une action, fais un clic droit sur sa case ou utilise le crayon 📝. Les colonnes lisent directement les registres.
+To move an action, right-click its checkbox or use the pencil 📝. The columns read the registers directly.
 
 > [!board]
-> > [!column] À faire
+> > [!column] To do
 > > ```tasks
 > > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
 > > status.type is TODO
-> > status.name does not include attente
 > > sort by priority
 > > sort by due
 > > short mode
 > > ```
 >
-> > [!column] En cours
+> > [!column] In progress
 > > ```tasks
 > > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
 > > status.type is IN_PROGRESS
@@ -137,16 +134,16 @@ Pour déplacer une action, fais un clic droit sur sa case ou utilise le crayon �
 > > short mode
 > > ```
 >
-> > [!column] En attente
+> > [!column] Waiting
 > > ```tasks
 > > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
-> > status.name includes attente
+> > status.type is ON_HOLD
 > > sort by due
 > > sort by priority
 > > short mode
 > > ```
 >
-> > [!column] Terminées récemment
+> > [!column] Recently done
 > > ```tasks
 > > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions\.md$/
 > > (status.type is DONE) OR (status.type is CANCELLED)
@@ -157,9 +154,9 @@ Pour déplacer une action, fais un clic droit sur sa case ou utilise le crayon �
 > > short mode
 > > ```
 
-## Historique
+## History
 
-> [!task-history]- 15 dernières clôtures
+> [!task-history]- Last 15 closed
 > ```tasks
 > path regex matches /^{{BRAIN}}\/projects\/.*\/state\/actions(-archive-\d{4})?\.md$/
 > (status.type is DONE) OR (status.type is CANCELLED)
@@ -169,13 +166,13 @@ Pour déplacer une action, fais un clic droit sur sa case ou utilise le crayon �
 > limit 15
 > ```
 
-> [!help]- Les gestes utiles
-> **Terminer** : cocher la case ; la date de fin est ajoutée au registre.
+> [!help]- How to
+> **Finish**: tick the checkbox; the done date is added to the register.
 >
-> **Commencer ou mettre en attente** : clic droit sur la case, ou crayon 📝, puis choisir l'état.
+> **Start or put on hold**: right-click the checkbox, or use the pencil 📝, then choose the state.
 >
-> **Prioriser** : choisir une priorité avec le crayon 📝. **Planifier** indique quand travailler ; **Due / Échéance** indique quand livrer.
+> **Prioritise**: choose a priority with the pencil 📝. **Scheduled** says when to work on it; **Due** says when to deliver.
 >
-> **Capturer sans classer** : écrire dans l'[Inbox](inbox.md), puis trier plus tard.
+> **Capture without filing**: write in the [Inbox](inbox/inbox.md), then triage it later.
 >
-> Les dates simples sont lues par Tasks. Les formulations vagues restent dans le registre. Voir les [conventions](../kit/brain/docs/CONVENTIONS.md).
+> Plain dates are read by Tasks. Vague wordings stay in the register. See the [conventions](../kit/brain/docs/CONVENTIONS.md).

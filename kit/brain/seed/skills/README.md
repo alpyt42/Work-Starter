@@ -1,18 +1,18 @@
 # skills/
 
-Skills **privés** de ce brain : des procédures d'agent qui touchent à ses données (comptes rendus, tri, outils propres à l'employeur ou à un client). Elles vivent ici, dans le dépôt privé du brain, jamais dans le starter public. Les états qu'elles produisent vont dans le [`.data/`](../.data/README.md) de ce même brain.
+**Private** skills of this brain: agent procedures that touch its data (meeting minutes, triage, tools specific to the employer or a client). They live here, in the brain's private repository, never in the public starter. The states they produce go in the [`.data/`](../.data/README.md) of this same brain.
 
-Un skill = un dossier `skills/<nom>/` :
+A skill = a folder `skills/<name>/`:
 
-- `SKILL.md` — nom, description (quand l'utiliser) et procédure.
-- `scripts/`, `references/`, `assets/` — facultatifs : code, documentation à ouvrir au bon moment, fichiers modèles.
-- `.install-as-copy` — fichier marqueur à ajouter pour un skill qui doit être **copié** chez l'agent plutôt que lié à ce dossier.
+- `SKILL.md` — name, description (when to use it) and procedure.
+- `scripts/`, `references/`, `assets/` — optional: code, documentation to open at the right time, template files.
+- `.install-as-copy` — marker file to add for a skill that must be **copied** to the agent rather than linked to this folder.
 
-Les skills de tiers (catalogue public) ne sont pas copiés ici : ils sont listés dans [`.data/work-config.json`](../.data/work-config.json) (`skills.thirdParty`) et installés par `tools/machine/update.sh` ; `skills.disabled` liste ceux qu'on désactive. Pour reprendre dans ce brain un skill déjà présent dans l'espace : `uv run tools/machine/work_config.py adopt --brain <brain>`.
+Third-party skills (public catalogue) are not copied here: they are listed in [`.data/work-config.json`](../.data/work-config.json) (`skills.thirdParty`) and installed by `tools/machine/update.sh`; `skills.disabled` lists the ones you turn off. To adopt in this brain a skill already present in the workspace: `uv run tools/machine/work_config.py adopt --brain <brain>`.
 
-## Retrouver la racine de Work depuis un script
+## Find the Work root from a script
 
-Un script de skill (`scripts/`) ne compte jamais un nombre fixe de `parents[N]` pour atteindre la racine de l'espace : le dossier du skill peut être déplacé, et le script tourne aussi par le lien `.claude/skills/<nom>`. Il remonte depuis `Path(__file__).resolve()` jusqu'au premier dossier qui contient `tools/machine/work_config.py` (la racine de Work ; `WORK_DIR`, s'il est défini, l'emporte), puis en déduit le brain et `tools/` :
+A skill script (`scripts/`) never counts a fixed number of `parents[N]` to reach the workspace root: the skill folder can be moved, and the script also runs through the `.claude/skills/<name>` link. It walks up from `Path(__file__).resolve()` to the first folder that contains `tools/machine/work_config.py` (the Work root; `WORK_DIR`, if set, wins), then derives the brain and `tools/` from it:
 
 ```python
 import os
@@ -21,8 +21,8 @@ from pathlib import Path
 
 here = Path(__file__).resolve()
 found = next((p for p in here.parents if (p / "tools/machine/work_config.py").is_file()), None)
-work = Path(os.environ.get("WORK_DIR") or found or sys.exit("racine de Work introuvable : définir WORK_DIR"))
+work = Path(os.environ.get("WORK_DIR") or found or sys.exit("Work root not found: set WORK_DIR"))
 brain, tools = Path(os.environ.get("BRAIN_DIR") or work / "brain"), work / "tools"
 ```
 
-Le brain par défaut est `brain/` ; pour un autre brain (`brain-<nom>`), le script lit `BRAIN_DIR`, comme les outils de `tools/`.
+The default brain is `brain/`; for another brain (`brain-<name>`), the script reads `BRAIN_DIR`, like the tools in `tools/`.
