@@ -896,7 +896,7 @@ class Store:
         infos = []
         for path in self.registers():
             entries = action_tool.load(path, self.brain)
-            label = entries[0]["project"] if entries else path.parent.parent.name
+            label = entries[0]["project"] if entries else action_tool.project_label(path, self.brain)
             prefixes = {entry["id"].split("-", 1)[0] for entry in entries}
             infos.append({"file": path, "path": path.relative_to(self.brain).as_posix(), "label": label,
                           "prefix": next(iter(prefixes)) if len(prefixes) == 1 else "", "entries": entries,

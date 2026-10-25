@@ -67,6 +67,16 @@ class TasksWebTest(unittest.TestCase):
             with error:
                 return error.code, json.loads(error.read())
 
+    def test_empty_client_register_keeps_its_client_in_the_label(self):
+        empty = self.brain / "projects/clients/acme/missions/rollout/state/actions.md"
+        empty.parent.mkdir(parents=True)
+        empty.write_text("# Actions — rollout\n\n## Open\n\n## Done\n\n## Cancelled\n", encoding="utf-8")
+        status, data = self.request("GET", "/api/actions")
+        self.assertEqual(status, 200)
+        labels = {register["path"]: register["label"] for register in data["registers"]}
+        self.assertEqual(labels["projects/clients/acme/missions/rollout/state/actions.md"], "acme / rollout")
+        self.assertEqual(labels["projects/clients/example/missions/test/state/actions.md"], "example / test")
+
     def test_reads_real_register_format(self):
         status, data = self.request("GET", "/api/actions")
         self.assertEqual(status, 200)
