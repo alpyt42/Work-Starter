@@ -69,9 +69,9 @@
             <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true"><path d="M3 5.5h10M3 10.5h10"/><circle cx="6" cy="5.5" r="1.5"/><circle cx="10" cy="10.5" r="1.5"/></svg>
             <span class="nav-label">Tools</span>
           </button>
-          <button id="gitButton" class="nav-item nav-compact" type="button" data-view="git" title="Read only: local state of Work and of the brain. Nothing is fetched, committed or pushed; sensitive files are not shown.">
+          <button id="gitButton" class="nav-item nav-compact" type="button" data-view="git" title="Save the changes of each brain and send them to its online copy. Nothing is saved or sent until you click.">
             <svg class="nav-icon" viewBox="0 0 16 16" aria-hidden="true"><circle cx="5" cy="4" r="1.5"/><circle cx="5" cy="12" r="1.5"/><circle cx="11" cy="6" r="1.5"/><path d="M5 5.5v5M11 7.5c0 2-2 2.5-6 3"/></svg>
-            <span class="nav-label">Git</span><span id="gitCount" class="nav-count"></span>
+            <span class="nav-label">Sync</span><span id="gitCount" class="nav-count"></span>
           </button>
         </div>
         <div class="footer-meta">
@@ -101,6 +101,10 @@
           </button>
           <div class="view-heading">
             <h1 id="viewTitle">Today</h1>
+            <span id="syncInfo" class="info info-title" hidden>
+              <button id="syncInfoButton" class="info-button" type="button" aria-label="About Sync" aria-describedby="syncInfoTip"><svg viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="5.75"/><path d="M8 7.2v3.6M8 5.2h.01"/></svg></button>
+              <span id="syncInfoTip" class="info-tip" role="tooltip"><span class="info-tip-box"><span class="info-tip-line">Each brain is a Git repository. Save and send records the changed notes and sends them to the brain's online copy.</span></span></span>
+            </span>
             <span id="resultCount" class="result-count" tabindex="-1"></span>
             <span id="gitStatus" class="view-status" role="status" aria-live="polite" hidden></span>
           </div>
@@ -191,6 +195,7 @@
               </div>
               <div class="doc-pane-actions">
                 <button id="docEdit" class="button" type="button" hidden>Edit</button>
+                <button id="docDelete" class="button button-danger" type="button" hidden title="Delete this note"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M3 4.5h10M6.5 4.5V3h3v1.5M4.5 4.5l.7 8.5h5.6l.7-8.5"/></svg>Delete</button>
                 <button id="docCancel" class="button" type="button" hidden>Cancel</button>
                 <button id="docSave" class="button button-primary" type="button" hidden title="Save (⌘ Enter)">Save</button>
               </div>
@@ -213,14 +218,8 @@
             <pre id="toolResultOutput" tabindex="0" hidden></pre>
           </section>
         </div>
-        <div id="gitView" class="git-view" aria-label="Git changes" hidden>
-          <div id="gitRepos" class="git-repos"></div>
-          <section id="gitDetail" class="git-detail" aria-labelledby="gitDetailTitle">
-            <div class="git-detail-head"><h2 id="gitDetailTitle">Diff</h2><span id="gitDetailStatus" role="status" aria-live="polite">Ready</span></div>
-            <p id="gitDetailEmpty" class="git-detail-empty">Choose a changed file or a commit to see its diff here.</p>
-            <p id="gitDetailNote" class="git-detail-note" hidden></p>
-            <div id="gitDiff" class="git-diff" tabindex="0" aria-label="Diff" hidden></div>
-          </section>
+        <div id="gitView" class="git-view" aria-label="Save and send" hidden>
+          <div id="gitCards" class="git-cards"></div>
         </div>
       </div>
     </main>
@@ -303,6 +302,30 @@
       <p id="newNoteError" class="form-error" role="alert" hidden></p>
       <div class="dialog-actions"><button id="cancelNewNote" class="button" type="button">Cancel</button><button id="saveNewNote" class="button button-primary" type="submit">Create note</button></div>
     </form>
+  </dialog>
+  <dialog id="deleteNoteDialog" class="dialog dialog-small" aria-labelledby="deleteNoteHeading" aria-describedby="deleteNoteText">
+    <form method="dialog">
+      <h2 id="deleteNoteHeading">Delete the note?</h2>
+      <p id="deleteNoteText" class="dialog-intro"></p>
+      <ul id="deleteNoteLinks" class="delete-note-links" hidden></ul>
+      <p id="deleteNoteError" class="form-error" role="alert" hidden></p>
+      <div class="dialog-actions"><button id="deleteNoteCancel" class="button" type="submit" value="cancel" autofocus>Cancel</button><button id="deleteNoteConfirm" class="button button-danger-solid" type="button">Delete</button></div>
+    </form>
+  </dialog>
+  <dialog id="gitConfirmDialog" class="dialog dialog-small" aria-labelledby="gitConfirmHeading" aria-describedby="gitConfirmText">
+    <form method="dialog">
+      <h2 id="gitConfirmHeading">Save and send?</h2>
+      <p id="gitConfirmText" class="dialog-intro"></p>
+      <ul id="gitConfirmList" class="git-confirm-list"></ul>
+      <div class="dialog-actions"><button class="button" type="submit" value="cancel" autofocus>Cancel</button><button id="gitConfirmGo" class="button button-primary" type="button">Save and send</button></div>
+    </form>
+  </dialog>
+  <dialog id="gitChangesDialog" class="dialog dialog-wide" aria-labelledby="gitChangesTitle">
+    <div class="git-changes-head">
+      <div class="git-changes-heading"><h2 id="gitChangesTitle">See changes</h2><p id="gitChangesMeta" class="git-changes-meta"></p></div>
+      <button id="gitChangesClose" class="icon-button" type="button" aria-label="Close" title="Close (Esc)"><svg viewBox="0 0 16 16" aria-hidden="true"><path d="M4 4l8 8M12 4l-8 8"/></svg></button>
+    </div>
+    <div id="gitChangesBody" class="git-changes-body" tabindex="0" aria-label="Changes of this note"></div>
   </dialog>
   <dialog id="quitDialog" class="dialog dialog-small" aria-labelledby="quitHeading" aria-describedby="quitText">
     <form method="dialog">

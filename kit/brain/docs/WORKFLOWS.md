@@ -23,7 +23,7 @@ In one line: **inbox = thoughts land here · registers = actions, once · tasks 
 
 The [conventions](CONVENTIONS.md#tasks-board-and-inbox) detail the filters and the required plugins; the guide `kit/obsidian/README.md` explains how to set up Obsidian on another machine.
 
-In a local browser, `uv run tools/tasks-web/tasks-web.py` opens a sidebar with the Today, Actions, Board, Timeline, Notes, Search, Tools and Git views, with the **New action** and **New note** buttons ([guide](../../../tools/tasks-web/README.md)). The interface edits the same registers; refresh the page after an edit made elsewhere.
+In a local browser, `uv run tools/tasks-web/tasks-web.py` opens a sidebar with the Today, Actions, Board, Timeline, Notes, Search, Tools and Sync views, with the **New action** and **New note** buttons ([guide](../../../tools/tasks-web/README.md)). The interface edits the same registers; refresh the page after an edit made elsewhere. Its Sync view is the one place where a person saves and sends a brain without a terminal: one card per brain, a confirmation, then `git add -A`, `git commit` (`docs: save N notes from tasks-web`) and `git push` of that brain only, with the brain's hooks; the agents keep following [`GIT.md`](GIT.md) (an explicit request for each action, staged paths only).
 
 ## The two ways to interact (use both)
 

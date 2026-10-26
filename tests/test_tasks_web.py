@@ -13,6 +13,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import unittest
@@ -24,6 +25,7 @@ from urllib.parse import quote
 from urllib.request import Request, urlopen
 from zoneinfo import ZoneInfo
 
+REPO = Path(__file__).resolve().parents[1]
 TOOL = Path(__file__).resolve().parents[1] / "tools/tasks-web/tasks-web.py"
 spec = importlib.util.spec_from_file_location("tasks_web", TOOL)
 tasks_web = importlib.util.module_from_spec(spec)
@@ -463,6 +465,45 @@ class TasksWebTest(unittest.TestCase):
         self.request("POST", "/api/undo", {"label": "status of EXM-001 → To do"})
         self.request("POST", "/api/undo", {"label": "status of EXM-001 → Done"})
         self.assertEqual(self.raw(), original)
+
+    @unittest.skipUnless(shutil.which("git"), "git is required")
+    def test_noop_and_return_to_synced_state_keep_the_previous_updated_stamp(self):
+        self.register.write_text(self.register.read_text(encoding="utf-8").replace(
+            "    - source: note initiale\n", "    - source: note initiale\n    - created: 2026-10-01 09:00\n    - updated: 2026-10-20 16:24\n"),
+            encoding="utf-8")
+        environment = {**os.environ, "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+        def git(*args):
+            return subprocess.run(["git", "-C", str(self.brain), "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+                                  env=environment, check=True, capture_output=True, text=True)
+
+        for args in (("init", "-q"), ("add", "-A"), ("commit", "-q", "-m", "test: register")):
+            git(*args)
+        branch = git("branch", "--show-current").stdout.strip()
+        git("branch", "sync-point")
+        git("config", f"branch.{branch}.remote", ".")
+        git("config", f"branch.{branch}.merge", "refs/heads/sync-point")
+
+        original = self.raw()
+        before = self.register.stat()
+        current = self.request("GET", "/api/actions")[1]["actions"][0]
+        action = {"title": current["raw_title"], "owner": current["owner"], "state": current["state"],
+                  "priority": current["priority"], "due": current["due"], "scheduled": current["scheduled"]}
+        status, result = self.request("PATCH", "/api/actions/EXM-001", {"version": current["version"], "action": action})
+        after = self.register.stat()
+        self.assertEqual((status, result["undo"]["available"]), (200, False))
+        self.assertEqual((after.st_ino, after.st_mtime_ns), (before.st_ino, before.st_mtime_ns))
+
+        action["state"] = "/"
+        self.assertEqual(self.request("PATCH", "/api/actions/EXM-001", {"version": current["version"], "action": action})[0], 200)
+        git("add", "-A")
+        git("commit", "-q", "-m", "test: unsent local change")
+        current = next(item for item in self.request("GET", "/api/actions")[1]["actions"] if item["id"] == "EXM-001")
+        action["state"] = " "
+        self.assertEqual(self.request("PATCH", "/api/actions/EXM-001", {"version": current["version"], "action": action})[0], 200)
+        self.assertEqual(self.raw(), original)
+        relative = self.register.relative_to(self.brain).as_posix()
+        self.assertEqual(git("diff", "--name-only", "sync-point", "--", relative).stdout, "")
 
     def test_created_date_is_written_exposed_and_kept_on_update(self):
         status, created = self.create_action("Préparer la revue")
@@ -1034,268 +1075,389 @@ class WrittenFormatTest(unittest.TestCase):
         self.assertEqual((brain / data["id"]).read_text(encoding="utf-8"), f"# Loose thought\n\n> Note from {date} · to triage\n\nBody\n")
 
 
+def uv_on_hook_path():
+    """The Git hooks of the brains run `uv`: they look for it in the usual places."""
+    extra = [str(Path.home() / ".local/bin"), "/opt/homebrew/bin", "/usr/local/bin"]
+    return shutil.which("uv", path=os.pathsep.join([*extra, os.environ.get("PATH", "")])) is not None
+
+
+@unittest.skipUnless(uv_on_hook_path(), "uv is required by the Git hooks")
 class GitViewTest(unittest.TestCase):
+    """The Sync view on a scratch Work: fictitious brains, each with a local bare remote, an upstream and the real hooks.
+
+    Nothing here touches the real Work or its brains: the identity comes from a scratch ~/.gitconfig (includeIf rules
+    and boundary files), the remotes are local bare repositories (no SSH) and every hook is the one of tools/machine/hooks.
+    """
+    NOTES = "projects/clients/acme/missions/rollout/notes"
+    REGISTER = "projects/clients/acme/missions/rollout/state/actions.md"
+    SETUP = "projects/internal/setup"
+    OPEN = "# Actions — rollout\n\n## Open\n- [ ] **ACM-001** — Jane Doe — Prepare the kickoff\n    - source: kickoff\n\n## Done\n\n## Cancelled\n"
+    LONG = "# Long note\n\n" + "".join(f"line {number}\n" for number in range(1, 31))
+    ACME = {
+        REGISTER: OPEN,
+        f"{NOTES}/2026-10-01-kickoff.md": "# Kickoff meeting\n\nAgenda one\nAgenda two\n",
+        f"{NOTES}/2026-10-02-budget.md": "# Budget\n\nFirst line\n",
+        f"{NOTES}/2026-10-03-long.md": LONG,
+        f"{SETUP}/state/actions.md": "# Actions — setup\n\n## Open\n\n## Done\n\n## Cancelled\n",
+        f"{SETUP}/notes/no-heading.md": "Just text, no heading.\n",
+    }
+    GLOBEX = {"projects/clients/initech/initech.md": "# Initech\n", "projects/internal/ops/state/actions.md": "# Actions — ops\n\n## Open\n\n## Done\n\n## Cancelled\n"}
+
     def setUp(self):
-        self.temp = tempfile.TemporaryDirectory()
-        root = Path(self.temp.name)
-        self.brain = root / "brain"
-        (self.brain / "projects").mkdir(parents=True)
-        self.work = root / "work"
-        self.work.mkdir()
-        self.nogit = root / "nogit"
-        self.nogit.mkdir()
-        self.git("init", "-q", "-b", "main")
-        (self.work / "a.txt").write_text("one\ntwo\nthree\n", encoding="utf-8")
-        (self.work / "b.txt").write_text("keep\n", encoding="utf-8")
-        (self.work / "gone.txt").write_text("bye\nbye\n", encoding="utf-8")
-        (self.work / "old.txt").write_text("".join(f"line {n}\n" for n in range(20)), encoding="utf-8")
-        (self.work / "both.txt").write_text("x\n", encoding="utf-8")
-        (self.work / ".env.prod").write_text("TOKEN=1\n", encoding="utf-8")
-        self.git("add", "-A")
-        self.commit("first")
-        (self.work / "c.txt").write_text("c\n", encoding="utf-8")
-        self.git("add", "c.txt")
-        self.commit("second")
-        self.server = tasks_web.TaskServer(
-            ("127.0.0.1", 0), tasks_web.Store(self.brain),
-            git_repos=[("work", "Work", self.work), ("brain", "brain", self.nogit)],
-        )
-        self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
-        self.thread.start()
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name).resolve()
+        self.home, self.work, self.remotes, self.no_hooks = (self.root / name for name in ("home", "Work", "remotes", "no-hooks"))
+        for folder in (self.home, self.work, self.remotes, self.no_hooks):
+            folder.mkdir()
+        (self.work / "tools").symlink_to(REPO / "tools")
+        (self.work / "kit").symlink_to(REPO / "kit")
+        # A clean Git environment for the test and for the server it runs: only the scratch global config, with includeIf rules and
+        # useConfigOnly (no identity without a rule), no optional index refresh, no SSH override, no prompt.
+        environment = {key: value for key, value in os.environ.items() if not key.startswith("GIT_")}
+        environment.update(GIT_CONFIG_GLOBAL=str(self.home / ".gitconfig"), GIT_CONFIG_NOSYSTEM="1", GIT_TERMINAL_PROMPT="0",
+                           GIT_OPTIONAL_LOCKS="0", WORK_DIR=str(self.work))
+        patcher = patch.dict(os.environ, environment, clear=True)
+        patcher.start()
+        self.addCleanup(patcher.stop)
+        text = "[user]\n    useConfigOnly = true\n"
+        for name, boundary in (("brain-acme", "acme"), ("brain-globex", "globex"), ("brain-local", "acme"), ("brain-plain", "acme")):
+            text += f'[includeIf "gitdir:{self.work}/{name}/"]\n    path = {self.home}/.gitconfig-{boundary}\n'
+            (self.home / f".gitconfig-{boundary}").write_text(f"[user]\n    name = {boundary.title()} Person\n    email = ada@{boundary}.example\n", encoding="utf-8")
+        (self.home / ".gitconfig").write_text(text, encoding="utf-8")
+        self.acme = self.make_brain("brain-acme", "acme", self.ACME)
+        self.globex = self.make_brain("brain-globex", "globex", self.GLOBEX)
+        self.server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(self.acme), work=self.work)
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (self.server.shutdown(), self.server.server_close(), thread.join(timeout=2)))
         self.base = f"http://127.0.0.1:{self.server.server_port}"
 
-    def tearDown(self):
-        self.server.shutdown()
-        self.server.server_close()
-        self.thread.join(timeout=2)
-        self.temp.cleanup()
+    # --- fixtures
 
-    def git(self, *args):
-        return subprocess.run(["git", *args], cwd=self.work, check=True, capture_output=True, text=True).stdout
+    def git(self, repo, *args, check=True):
+        result = subprocess.run(["git", "-C", str(repo), *args], capture_output=True, text=True)
+        if check:
+            self.assertEqual(result.returncode, 0, f"git {' '.join(args)}: {result.stdout}{result.stderr}")
+        return result.stdout
 
-    def commit(self, message):
-        self.git("-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "-m", message)
+    def commit(self, brain, message="chore: change"):
+        """A commit without hooks, for the fixtures only."""
+        self.git(brain, "-c", f"core.hooksPath={self.no_hooks}", "add", "-A")
+        self.git(brain, "-c", f"core.hooksPath={self.no_hooks}", "commit", "-q", "-m", message)
 
-    def change(self):
-        """Modified, staged, both, untracked, deleted, renamed and sensitive files."""
-        (self.work / "a.txt").write_text("one\nTWO\nthree\nfour\n", encoding="utf-8")
-        (self.work / "gone.txt").unlink()
-        self.git("mv", "old.txt", "new.txt")
-        (self.work / "new.txt").write_text("".join(f"line {n}\n" for n in range(20)) + "extra\n", encoding="utf-8")
-        (self.work / "b.txt").write_text("keep\nstaged\n", encoding="utf-8")
-        self.git("add", "b.txt")
-        (self.work / "both.txt").write_text("x\ny\n", encoding="utf-8")
-        self.git("add", "both.txt")
-        (self.work / "both.txt").write_text("x\ny\nz\nw\n", encoding="utf-8")
-        (self.work / "fresh.txt").write_text("alpha\nbeta", encoding="utf-8")
-        (self.work / "blob.bin").write_bytes(b"\x00\x01\x02")
-        (self.work / ".env").write_text("SECRET=hunter2\n", encoding="utf-8")
+    def write(self, brain, relative, text):
+        path = brain / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+        return path
 
-    def get(self, path):
+    def make_brain(self, name, boundary, files, remote=True):
+        """A brain created from the seed (hooks installed after its first commit, as bootstrap.sh does), pushed to a local bare remote."""
+        result = subprocess.run([sys.executable, str(REPO / "tools/brain/new-brain.py"), name, "--scope", "employer", "--description", "Fictitious brain.",
+                                 "--remote", f"*/remotes/{name}.git", "--email", f"*@{boundary}.example"], capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        brain = self.work / name
+        for relative, text in files.items():
+            self.write(brain, relative, text)
+        self.commit(brain, "chore: seed")
+        if remote:
+            bare = self.remotes / f"{name}.git"
+            subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(bare)], check=True)
+            self.git(brain, "remote", "add", "origin", str(bare))
+            self.git(brain, "push", "-q", "-u", "origin", "main")
+        for hook, installed in (("brain-pre-commit", "pre-commit"), ("commit-msg", "commit-msg"), ("pre-push", "pre-push")):
+            target = brain / ".git/hooks" / installed
+            shutil.copy2(REPO / "tools/machine/hooks" / hook, target)
+            target.chmod(0o755)
+        return brain
+
+    def head(self, brain):
+        return self.git(brain, "rev-parse", "HEAD").strip()
+
+    def remote_head(self, name="brain-acme"):
+        return subprocess.run(["git", "--git-dir", str(self.remotes / f"{name}.git"), "rev-parse", "refs/heads/main"], capture_output=True, text=True).stdout.strip()
+
+    def other_clone_pushes(self, name="brain-acme"):
+        """Another computer adds a commit to the online copy; the brain only learns about it at its next fetch."""
+        other = self.root / "other"
+        if not other.exists():
+            subprocess.run(["git", "clone", "-q", str(self.remotes / f"{name}.git"), str(other)], check=True)
+        self.write(other, "elsewhere.md", "# Elsewhere\n")
+        self.git(other, "add", "-A")
+        self.git(other, "-c", "user.name=Other Person", "-c", "user.email=other@acme.example", "-c", f"core.hooksPath={self.no_hooks}", "commit", "-q", "-m", "chore: elsewhere")
+        self.git(other, "push", "-q", "origin", "main")
+
+    def snapshot(self, brain):
+        """HEAD, the staged names and the bytes of the index and of every file: what a refused save must leave as it found it."""
+        files = {str(path.relative_to(brain)): path.read_bytes() for path in sorted(brain.rglob("*")) if path.is_file() and ".git" not in path.relative_to(brain).parts}
+        return {"head": self.head(brain), "staged": self.git(brain, "diff", "--cached", "--name-only"), "index": (brain / ".git/index").read_bytes(), "files": files}
+
+    # --- requests
+
+    def request(self, method, path, payload=None, token=True, origin=True, headers=None):
+        headers = dict(headers or {})
+        if payload is not None:
+            headers["Content-Type"] = "application/json"
+        if token:
+            headers["X-Tasks-Token"] = self.server.token
+        if origin:
+            headers["Origin"] = self.base
+        request = Request(self.base + path, data=json.dumps(payload).encode() if payload is not None else None, method=method, headers=headers)
         try:
-            with urlopen(self.base + path, timeout=5) as response:
+            with urlopen(request, timeout=120) as response:
                 return response.status, json.loads(response.read())
         except HTTPError as error:
             with error:
                 return error.code, json.loads(error.read())
 
-    def files(self):
-        status, data = self.get("/api/git")
+    def cards(self, query=""):
+        status, data = self.request("GET", "/api/git" + query)
+        self.assertEqual(status, 200, data)
+        return {card["name"]: card for card in data["brains"]}
+
+    def card(self, name="brain-acme"):
+        return self.cards()[name]
+
+    def save(self, name="brain-acme", route="save", version=None):
+        return self.request("POST", f"/api/git/{route}?brain={name}", {"version": version or self.card(name)["version"]})
+
+    # --- who is listed
+
+    def test_only_the_brains_are_listed_never_work_and_never_a_path(self):
+        self.git(self.work, "init", "-q", "-b", "main")
+        self.write(self.work, "notes-of-work.md", "# Work file\n")
+        before = self.snapshot(self.acme)
+        status, data = self.request("GET", "/api/git")
         self.assertEqual(status, 200)
-        return {item["path"]: item for item in data["repos"][0]["files"]}
+        self.assertEqual([card["name"] for card in data["brains"]], ["brain-acme", "brain-globex"])
+        self.assertEqual([card["label"] for card in data["brains"]], ["Acme", "Globex"])
+        self.assertNotIn("Work", json.dumps(data))
+        self.assertNotIn(str(self.work), json.dumps(data))  # no folder of Work or of a brain (the online copy URLs live elsewhere)
+        for value in ("Work", "..", ".", str(self.work), str(self.acme), "brain-acme/..", "../Work", "brain-nope", "", "BRAIN-ACME", "%2e%2e"):
+            query = "?brain=" + quote(value, safe="")
+            self.assertEqual(self.request("GET", "/api/git" + query), (400, {"error": "Unknown brain."}), value)
+            self.assertEqual(self.request("GET", "/api/git/changes" + query + "&path=a.md")[0], 400, value)
+            self.assertEqual(self.request("POST", "/api/git/save" + query, {"version": "0" * 32})[0], 400, value)
+            self.assertEqual(self.request("POST", "/api/git/send" + query, {"version": "0" * 32})[0], 400, value)
+        self.assertEqual(self.request("GET", "/api/git?brain=brain-acme&brain=brain-globex"), (400, {"error": "Invalid brain parameter."}))
+        # Work has not been touched: it has no commit, and nothing was written to a brain.
+        self.assertEqual(self.git(self.work, "rev-parse", "--verify", "-q", "HEAD", check=False), "")
+        self.assertEqual(self.snapshot(self.acme), before)
 
-    def test_clean_repo_and_missing_git_directory(self):
-        status, data = self.get("/api/git")
-        self.assertEqual(status, 200)
-        work, other = data["repos"]
-        self.assertEqual((work["id"], work["label"], work["available"], work["branch"]), ("work", "Work", True, "main"))
-        self.assertEqual((work["files"], work["upstream"], work["ahead"], work["behind"], work["detached"]), ([], None, None, None, False))
-        self.assertEqual([item["subject"] for item in work["commits"]], ["second", "first"])
-        self.assertRegex(work["commits"][0]["hash"], r"^[0-9a-f]{40}$")
-        self.assertEqual(work["commits"][0]["author"], "T")
-        self.assertEqual(other["available"], False)
-        self.assertEqual(other["files"], [])
+    def test_the_chosen_brain_comes_first_and_every_other_brain_follows(self):
+        self.assertEqual(list(self.cards("?brain=brain-globex")), ["brain-globex", "brain-acme"])
+        self.assertEqual(list(self.cards("?brain=brain-acme")), ["brain-acme", "brain-globex"])
+        self.assertEqual(list(self.cards()), ["brain-acme", "brain-globex"])
+        self.make_brain("brain-local", "acme", {}, remote=False)
+        self.assertEqual(list(self.cards("?brain=brain-local")), ["brain-local", "brain-acme", "brain-globex"])
 
-    def test_status_parsing_and_line_counts(self):
-        self.change()
-        files = self.files()
-        self.assertEqual({k: files["a.txt"][k] for k in ("index", "worktree", "staged", "unstaged", "added", "deleted")}, {"index": ".", "worktree": "M", "staged": False, "unstaged": True, "added": 2, "deleted": 1})
-        self.assertEqual((files["b.txt"]["index"], files["b.txt"]["staged"], files["b.txt"]["unstaged"], files["b.txt"]["added"]), ("M", True, False, 1))
-        self.assertEqual((files["gone.txt"]["worktree"], files["gone.txt"]["deleted"], files["gone.txt"]["added"]), ("D", 2, 0))
-        self.assertEqual((files["both.txt"]["staged"], files["both.txt"]["unstaged"], files["both.txt"]["added"]), (True, True, 3))
-        self.assertEqual((files["both.txt"]["staged_added"], files["both.txt"]["unstaged_added"]), (1, 2))
-        renamed = files["new.txt"]
-        self.assertEqual((renamed["index"], renamed["orig_path"], renamed["staged"]), ("R", "old.txt", True))
-        self.assertNotIn("old.txt", files)
-        fresh = files["fresh.txt"]
-        self.assertEqual((fresh["untracked"], fresh["worktree"], fresh["index"], fresh["added"], fresh["deleted"], fresh["staged"], fresh["unstaged"]), (True, "?", ".", 2, 0, False, False))
-        self.assertEqual((files["blob.bin"]["binary"], files["blob.bin"]["added"]), (True, None))
-        self.assertTrue(files[".env"]["sensitive"])
+    def test_the_old_repository_routes_are_gone(self):
+        for path in ("/api/git/diff?repo=work&path=a.md", f"/api/git/commit?repo=work&hash={'0' * 40}"):
+            self.assertEqual(self.request("GET", path)[0], 404, path)
 
-    def test_binary_tracked_file_is_flagged_from_numstat(self):
-        (self.work / "img.bin").write_bytes(b"\x00\x01")
-        self.git("add", "img.bin")
-        self.commit("binary")
-        (self.work / "img.bin").write_bytes(b"\x00\x02\x03")
-        item = self.files()["img.bin"]
-        self.assertEqual((item["binary"], item["added"], item["deleted"]), (True, None, None))
-        status, data = self.get("/api/git/diff?repo=work&path=img.bin&staged=0")
-        self.assertEqual((status, data["binary"]), (200, True))
+    # --- the sentence of each state
 
-    def test_unpushed_and_ahead_behind_use_local_refs_only(self):
-        remote = Path(self.temp.name) / "remote.git"
-        subprocess.run(["git", "init", "-q", "--bare", str(remote)], check=True)
-        self.git("remote", "add", "origin", str(remote))
-        self.git("push", "-q", "-u", "origin", "main")
-        (self.work / "c.txt").write_text("c2\n", encoding="utf-8")
-        self.git("-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "-am", "third")
-        status, data = self.get("/api/git")
-        work = data["repos"][0]
-        self.assertEqual((work["upstream"], work["ahead"], work["behind"]), ("origin/main", 1, 0))
-        self.assertEqual([item["unpushed"] for item in work["commits"]], [True] + [False] * (tasks_web.GIT_COMMIT_LIMIT - 1))
+    def test_each_state_has_one_plain_sentence_with_the_last_save(self):
+        clean = self.card()
+        self.assertEqual((clean["state"], clean["message"], clean["pending"], clean["action"], clean["count"], clean["unsent"]),
+                         ("clean", "Everything is saved and sent.", False, None, 0, 0))
+        self.assertRegex(clean["last_saved"], r"^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}[+-]\d{2}:\d{2}$")
+        self.assertEqual(set(clean), {"name", "label", "state", "message", "pending", "action", "count", "unsent", "changes", "more", "last_saved", "version", "url", "web_url"})
+        self.write(self.acme, f"{self.NOTES}/2026-10-01-kickoff.md", "# Kickoff meeting\n\nChanged\n")
+        one = self.card()
+        self.assertEqual((one["state"], one["message"], one["pending"], one["action"]), ("changes", "1 note changed since the last save.", True, "save"))
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        self.write(self.acme, f"{self.NOTES}/2026-10-05-plan.md", "# Plan\n")
+        three = self.card()
+        self.assertEqual((three["state"], three["message"], three["count"]), ("changes", "3 notes changed since the last save.", 3))
+        self.assertNotEqual(one["version"], three["version"])
+        self.commit(self.acme)
+        unsent = self.card()
+        self.assertEqual((unsent["state"], unsent["message"], unsent["pending"], unsent["action"], unsent["unsent"], unsent["count"]),
+                         ("unsent", "Saved on this computer, not sent yet.", True, "send", 1, 0))
+        self.assertEqual(self.card("brain-globex")["state"], "clean")
 
-    def test_diff_for_unstaged_staged_both_and_rename(self):
-        self.change()
-        status, data = self.get("/api/git/diff?repo=work&path=a.txt&staged=0")
-        self.assertEqual(status, 200)
-        self.assertIn("-two", data["diff"])
-        self.assertIn("+TWO", data["diff"])
-        self.assertEqual((data["hidden"], data["binary"], data["truncated"], data["staged"]), (False, False, False, False))
-        status, data = self.get("/api/git/diff?repo=work&path=both.txt&staged=1")
-        self.assertIn("+y", data["diff"])
-        self.assertNotIn("+z", data["diff"])
-        status, data = self.get("/api/git/diff?repo=work&path=both.txt&staged=0")
-        self.assertIn("+z", data["diff"])
-        self.assertFalse(data["staged"])
-        # Only staged changes: staged=0 falls back to the staged diff.
-        status, data = self.get("/api/git/diff?repo=work&path=b.txt&staged=0")
-        self.assertEqual(status, 200)
-        self.assertIn("+staged", data["diff"])
-        self.assertTrue(data["staged"])
-        status, data = self.get("/api/git/diff?repo=work&path=new.txt&staged=1")
-        self.assertIn("rename from old.txt", data["diff"])
-        status, _ = self.get("/api/git/diff?repo=work&path=a.txt&staged=1")
-        self.assertEqual(status, 404)
+    def test_the_online_copy_is_known_as_of_the_last_fetch_only(self):
+        self.other_clone_pushes()
+        self.assertEqual(self.card()["state"], "clean")  # no automatic network call: the page does not fetch
+        self.git(self.acme, "fetch", "-q", "origin")
+        behind = self.card()
+        self.assertEqual((behind["state"], behind["message"], behind["action"], behind["pending"]),
+                         ("behind", "This brain was changed on another computer. Ask your agent to bring those changes here before saving.", None, False))
+        # With notes to save, the brain is behind all the same, and still has something waiting.
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        both = self.card()
+        self.assertEqual((both["state"], both["count"], both["action"], both["pending"]), ("behind", 1, None, True))
 
-    def test_untracked_diff_is_a_pseudo_diff_and_binary_is_refused(self):
-        self.change()
-        status, data = self.get("/api/git/diff?repo=work&path=fresh.txt&staged=0")
-        self.assertEqual(status, 200)
-        self.assertIn("+++ b/fresh.txt", data["diff"])
-        self.assertIn("@@ -0,0 +1,2 @@", data["diff"])
-        self.assertIn("+alpha\n+beta\n", data["diff"])
-        status, data = self.get("/api/git/diff?repo=work&path=blob.bin&staged=0")
-        self.assertEqual((status, data["binary"], data["diff"]), (200, True, ""))
+    def test_saving_is_unavailable_where_it_cannot_be_done_safely(self):
+        plain = self.work / "brain-plain"
+        (plain / ".data").mkdir(parents=True)
+        (plain / "projects").mkdir()
+        (plain / "AGENTS.md").write_text("# Brain\n", encoding="utf-8")
+        local = self.make_brain("brain-local", "acme", {}, remote=False)
+        cases = {
+            "brain-plain": "Saving is unavailable here (this brain is not set up for saving): ask your agent to set it up.",
+            "brain-local": "Saving is unavailable here (this brain has no online copy yet): ask your agent to connect it.",
+        }
+        for name, sentence in cases.items():
+            card = self.card(name)
+            self.assertEqual((card["state"], card["message"], card["action"], card["pending"], card["version"] == ""), ("unavailable", sentence, None, False, name == "brain-plain"), name)
+        self.git(self.globex, "checkout", "-q", "--detach")
+        self.assertEqual(self.card("brain-globex")["message"], "Saving is unavailable here (this brain is not on its working branch): ask your agent to fix it.")
+        self.git(self.globex, "checkout", "-q", "main")
+        self.assertEqual(self.card("brain-globex")["state"], "clean")
+        (self.globex / ".git/MERGE_HEAD").write_text(self.head(self.globex) + "\n", encoding="utf-8")
+        self.assertEqual(self.card("brain-globex")["message"], "Saving is unavailable here (a merge or a rebase is in progress): ask your agent to finish it.")
+        (self.globex / ".git/MERGE_HEAD").unlink()
+        (self.globex / ".git/rebase-merge").mkdir()
+        self.assertEqual(self.card("brain-globex")["state"], "unavailable")
+        (self.globex / ".git/rebase-merge").rmdir()
+        self.assertEqual(self.card("brain-globex")["state"], "clean")
+        # An unreadable repository is one more sentence, never a traceback.
+        (local / ".git/HEAD").write_text("garbage\n", encoding="utf-8")
+        self.assertIn("(Git could not read this brain)", self.card("brain-local")["message"])
+        # What the person is told never carries a command, a branch or a path.
+        for card in self.cards().values():
+            self.assertNotRegex(card["message"], r"git (add|commit|push)|origin|main|/")
 
-    def test_rejects_unknown_repo_path_traversal_and_clean_files(self):
-        self.change()
-        for query in ("repo=nope&path=a.txt", "repo=brain&path=a.txt", "repo=work&path=../x", "repo=work&path=b.txt%2F..%2Fa.txt",
-                      "repo=work&path=c.txt", "repo=work&path=%2Fetc%2Fpasswd", "repo=work&path=nothing.txt"):
-            status, data = self.get(f"/api/git/diff?{query}&staged=0")
-            self.assertEqual(status, 404, query)
-            self.assertIn("error", data)
-        self.assertEqual(self.get("/api/git/diff?repo=work&staged=0")[0], 400)
-        self.assertEqual(self.get("/api/git/diff?repo=work&path=a.txt&staged=2")[0], 400)
+    def test_the_online_copy_url_is_the_push_url_of_the_upstream_remote(self):
+        self.assertEqual(self.card()["url"], str(self.remotes / "brain-acme.git"))
+        self.assertIsNone(self.card()["web_url"])  # a local path has no web page
+        self.assertEqual(self.card("brain-globex")["url"], str(self.remotes / "brain-globex.git"))
+        # Another remote becomes the upstream: its URL is shown, not the one of origin.
+        backup = self.root / "mirror/remotes/brain-acme.git"  # still inside the boundary the brain declares, so the pre-push check accepts it
+        backup.parent.mkdir(parents=True)
+        subprocess.run(["git", "init", "-q", "--bare", "-b", "main", str(backup)], check=True)
+        self.git(self.acme, "remote", "add", "backup", str(backup))
+        self.git(self.acme, "push", "-q", "backup", "main")
+        self.git(self.acme, "config", "branch.main.remote", "backup")
+        card = self.card()
+        self.assertEqual((card["url"], card["state"]), (str(backup), "clean"))
+        # A push URL of its own is the one a push goes to.
+        self.git(self.acme, "remote", "set-url", "--push", "backup", str(self.remotes / "pushing.git"))
+        self.assertEqual(self.card()["url"], str(self.remotes / "pushing.git"))
 
-    def test_untracked_symlink_is_not_followed(self):
-        outside = Path(self.temp.name) / "outside.txt"
-        outside.write_text("private\n", encoding="utf-8")
-        (self.work / "link.txt").symlink_to(outside)
-        self.assertIn("link.txt", self.files())
-        status, data = self.get("/api/git/diff?repo=work&path=link.txt&staged=0")
-        self.assertEqual(status, 404)
-        self.assertNotIn("private", json.dumps(data))
+    def test_without_an_upstream_the_origin_url_is_shown_and_without_a_remote_there_is_none(self):
+        local = self.make_brain("brain-local", "acme", {}, remote=False)
+        self.assertEqual((self.card("brain-local")["url"], self.card("brain-local")["web_url"]), ("", None))
+        self.git(local, "remote", "add", "origin", str(self.remotes / "somewhere.git"))
+        card = self.card("brain-local")
+        self.assertEqual((card["state"], card["url"]), ("unavailable", str(self.remotes / "somewhere.git")))
+        # A remote that is not origin and is not the upstream is not the online copy.
+        self.git(local, "remote", "rename", "origin", "elsewhere")
+        self.assertEqual(self.card("brain-local")["url"], "")
+        # Not a repository, or one that cannot be read: nothing to show.
+        plain = self.work / "brain-plain"
+        (plain / ".data").mkdir(parents=True)
+        (plain / "projects").mkdir()
+        (plain / "AGENTS.md").write_text("# Brain\n", encoding="utf-8")
+        self.assertEqual(self.card("brain-plain")["url"], "")
+        (local / ".git/HEAD").write_text("garbage\n", encoding="utf-8")
+        self.assertEqual(self.card("brain-local")["url"], "")
 
-    def test_sensitive_files_are_hidden(self):
-        self.change()
-        for name in (".env", ".env.local", "server.pem", "my.key", "Credentials.json", "app-secret.txt", "id_rsa", "a.kdbx", "x.token", "id_ed25519.pub"):
-            (self.work / name).write_text("SECRET=hunter2\n", encoding="utf-8")
-            status, data = self.get(f"/api/git/diff?repo=work&path={name}&staged=0")
-            self.assertEqual(status, 200, name)
-            self.assertTrue(data["hidden"], name)
-            self.assertEqual(data["diff"], "", name)
-        # Tracked and modified sensitive file: still hidden.
-        (self.work / ".env.prod").write_text("TOKEN=2\n", encoding="utf-8")
-        status, data = self.get("/api/git/diff?repo=work&path=.env.prod&staged=0")
-        self.assertTrue(data["hidden"])
-        self.assertNotIn("TOKEN", json.dumps(data))
+    def test_credentials_in_the_url_are_never_shown(self):
+        cases = {
+            "https://jane:secret-token@git.example.test/acme/brain.git": "https://***@git.example.test/acme/brain.git",  # secret-scan: ignore (fictitious URL: tests redaction)
+            "https://secret-token@git.example.test/acme/brain.git": "https://***@git.example.test/acme/brain.git",  # secret-scan: ignore (fictitious URL: tests redaction)
+            "ssh://git:secret-token@git.example.test/acme/brain.git": "ssh://git@git.example.test/acme/brain.git",  # secret-scan: ignore (fictitious URL: tests redaction)
+            "ssh://git:secret-token@git.example.test:2222/acme/brain.git": "ssh://git@git.example.test:2222/acme/brain.git",  # secret-scan: ignore (fictitious URL: tests redaction)
+            "ssh://git@git.example.test/acme/brain.git": "ssh://git@git.example.test/acme/brain.git",
+            "git@git.example.test:acme/brain.git": "git@git.example.test:acme/brain.git",
+            "https://git.example.test/acme/brain.git": "https://git.example.test/acme/brain.git",
+        }
+        checks = load_script("tools/machine/preflight-push.py", self.work)  # the rule of the push checks, loaded on its own
+        for url, shown in cases.items():
+            self.git(self.acme, "remote", "set-url", "origin", url)
+            data = self.cards()
+            self.assertEqual(data["brain-acme"]["url"], shown, url)
+            self.assertEqual(data["brain-acme"]["web_url"], "https://git.example.test/acme/brain", url)  # the page of the repository, from the hidden URL
+            self.assertEqual(shown, checks.redact(url), url)
+            self.assertNotIn("secret-token", json.dumps(data), url)
+        # The push URL is the one shown, hidden the same way.
+        self.git(self.acme, "remote", "set-url", "--push", "origin", "https://jane:secret-token@push.example.test/acme/brain.git")  # secret-scan: ignore (fictitious URL: tests redaction)
+        card = self.card()
+        self.assertEqual(card["url"], "https://***@push.example.test/acme/brain.git")
+        self.assertEqual(card["web_url"], "https://push.example.test/acme/brain")
+        self.assertEqual(tasks_web.git_online_copy(self.acme, "origin"), "https://***@push.example.test/acme/brain.git")
 
-    def test_commit_endpoint_validates_hash_and_hides_sensitive_hunks(self):
-        (self.work / "plain.txt").write_text("visible content\n", encoding="utf-8")
-        (self.work / "prod.env").write_text("x\n", encoding="utf-8")
-        (self.work / ".env").write_text("SECRET=hunter2\n", encoding="utf-8")
-        (self.work / "tls.pem").write_text("PRIVATE-KEY-DATA\n", encoding="utf-8")
-        self.git("add", "-f", "-A")
-        self.commit("add files")
-        head = self.git("rev-parse", "HEAD").strip()
-        status, data = self.get(f"/api/git/commit?repo=work&hash={head}")
-        self.assertEqual(status, 200)
-        self.assertEqual((data["repo"], data["hash"], data["truncated"]), ("work", head, False))
-        self.assertIn("add files", data["show"])
-        self.assertIn("+visible content", data["show"])
-        self.assertIn(".env", data["show"])
-        self.assertIn("tls.pem", data["show"])
-        self.assertNotIn("hunter2", data["show"])
-        self.assertNotIn("PRIVATE-KEY-DATA", data["show"])
-        self.assertIn("hidden", data["show"])
-        self.assertEqual(self.get(f"/api/git/commit?repo=work&hash={'0' * 40}")[0], 404)
-        for bad in ("zzz", head[:7], head.upper(), "--output=x", ""):
-            self.assertEqual(self.get(f"/api/git/commit?repo=work&hash={bad}")[0], 404, bad)
-        self.assertEqual(self.get(f"/api/git/commit?repo=nope&hash={head}")[0], 404)
+    def test_nothing_unavailable_can_be_saved_or_sent(self):
+        plain = self.work / "brain-plain"
+        (plain / ".data").mkdir(parents=True)
+        (plain / "projects").mkdir()
+        (plain / "AGENTS.md").write_text("# Brain\n", encoding="utf-8")
+        self.write(plain, "note.md", "# Note\n")
+        for route in ("save", "send"):
+            status, data = self.request("POST", f"/api/git/{route}?brain=brain-plain", {"version": "0" * 32})
+            self.assertEqual(status, 409, route)
+            self.assertIn("Saving is unavailable here", data["error"])
+        self.assertFalse((plain / ".git").exists())
 
-    def test_commit_beyond_the_listed_limit_is_refused(self):
-        first = self.git("rev-list", "--max-parents=0", "HEAD").strip()
-        for number in range(10):
-            (self.work / "c.txt").write_text(f"{number}\n", encoding="utf-8")
-            self.git("-c", "user.name=T", "-c", "user.email=t@example.com", "commit", "-q", "-am", f"n{number}")
-        status, data = self.get("/api/git")
-        self.assertEqual(len(data["repos"][0]["commits"]), tasks_web.GIT_COMMIT_LIMIT)
-        self.assertEqual(self.get(f"/api/git/commit?repo=work&hash={first}")[0], 404)
+    # --- the changed notes
 
-    def test_diff_and_commit_output_is_truncated(self):
-        big = "".join(f"line number {n} with padding\n" for n in range(20000))
-        self.assertGreater(len(big), 300_000)
-        (self.work / "big.txt").write_text(big, encoding="utf-8")
-        status, data = self.get("/api/git/diff?repo=work&path=big.txt&staged=0")
-        self.assertEqual(status, 200)
-        self.assertTrue(data["truncated"])
-        self.assertLessEqual(len(data["diff"].encode()), 300_000)
-        self.git("add", "big.txt")
-        self.commit("big")
-        head = self.git("rev-parse", "HEAD").strip()
-        status, data = self.get(f"/api/git/commit?repo=work&hash={head}")
-        self.assertTrue(data["truncated"])
-        self.assertLessEqual(len(data["show"].encode()), 300_000)
+    def test_changed_notes_have_a_title_a_project_and_the_change_in_a_word(self):
+        a = self.acme
+        self.write(a, f"{self.NOTES}/2026-10-01-kickoff.md", "# Kickoff meeting\n\nChanged\n")
+        self.write(a, f"{self.NOTES}/2026-10-05-new-ideas.md", "---\ntags: x\n# not a title\n---\n\n```\n# not a title either\n```\n\n# New ideas\n\ntext\n")
+        self.write(a, f"{self.SETUP}/notes/plain-text.md", "No heading here.\n")
+        (a / f"{self.NOTES}/2026-10-02-budget.md").unlink()
+        self.write(a, "inbox/2026-10-06-loose-thought.md", "# Loose thought\n")
+        self.write(a, "me/extra-profile.md", "# Extra profile\n")
+        self.write(a, self.REGISTER, self.OPEN.replace("Prepare the kickoff", "Prepare the kickoff and the plan"))
+        self.write(a, "me/credentials.json", '{"user": "jane"}\n')
+        (a / f"{self.SETUP}/notes/no-heading.md").rename(a / f"{self.SETUP}/notes/moved-note.md")
+        (a / f"{self.NOTES}/2026-10-03-long.md").write_text(self.LONG.replace("line 3\n", "line three\n"), encoding="utf-8")
+        card = self.card()
+        by_path = {item["path"]: item for item in card["changes"]}
+        self.assertEqual(card["count"], len(card["changes"]), by_path.keys())
+        expected = {
+            f"{self.NOTES}/2026-10-01-kickoff.md": ("Kickoff meeting", "acme / rollout", "Edited"),
+            f"{self.NOTES}/2026-10-05-new-ideas.md": ("New ideas", "acme / rollout", "New"),
+            f"{self.SETUP}/notes/plain-text.md": ("plain-text", "setup", "New"),
+            f"{self.NOTES}/2026-10-02-budget.md": ("Budget", "acme / rollout", "Deleted"),
+            "inbox/2026-10-06-loose-thought.md": ("Loose thought", "Inbox", "New"),
+            "me/extra-profile.md": ("Extra profile", "", "New"),
+            self.REGISTER: ("Actions — rollout", "acme / rollout", "Edited"),
+            "me/credentials.json": ("credentials", "", "New"),
+            f"{self.SETUP}/notes/moved-note.md": ("moved-note", "setup", "Renamed"),
+            f"{self.NOTES}/2026-10-03-long.md": ("Long note", "acme / rollout", "Edited"),
+        }
+        self.assertEqual({path: (item["title"], item["project"], item["change"]) for path, item in by_path.items()}, expected)
+        self.assertEqual(by_path[f"{self.SETUP}/notes/moved-note.md"]["from"], f"{self.SETUP}/notes/no-heading.md")
+        self.assertNotIn(f"{self.SETUP}/notes/no-heading.md", by_path)
+        self.assertEqual({path for path, item in by_path.items() if item["hidden"]}, {"me/credentials.json"})
+        for item in card["changes"]:
+            self.assertEqual(set(item), {"path", "title", "project", "change", "from", "hidden"})
+        # In human terms only: no hash, no branch, no line counts.
+        text = json.dumps(card)
+        self.assertNotRegex(text, r"[0-9a-f]{40}")
+        for word in ("main", "origin", "+", "ahead", "behind", "staged"):
+            self.assertNotIn(word, [item["title"] for item in card["changes"]])
+        self.assertEqual(card["more"], 0)
 
-    def test_git_endpoints_refuse_foreign_hosts_and_writes(self):
-        request = Request(self.base + "/api/git", headers={"Host": "evil.example"})
-        with self.assertRaises(HTTPError) as caught:
-            urlopen(request, timeout=3)
-        self.assertEqual(caught.exception.code, 403)
-        caught.exception.close()
-        status, _ = self.request_post("/api/git")
-        self.assertNotEqual(status, 200)
+    def test_a_staged_change_is_listed_once_and_a_deleted_project_keeps_its_name(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-01-kickoff.md", "# Kickoff meeting\n\nStaged\n")
+        self.git(self.acme, "add", "-A")
+        self.write(self.acme, f"{self.NOTES}/2026-10-01-kickoff.md", "# Kickoff meeting\n\nStaged, then edited\n")
+        self.git(self.acme, "mv", f"{self.NOTES}/2026-10-02-budget.md", f"{self.NOTES}/2026-10-02-budget-v2.md")
+        shutil.rmtree(self.acme / "projects/internal/setup")
+        card = self.card()
+        by_path = {item["path"]: (item["title"], item["project"], item["change"]) for item in card["changes"]}
+        self.assertEqual(by_path[f"{self.NOTES}/2026-10-01-kickoff.md"], ("Kickoff meeting", "acme / rollout", "Edited"))
+        self.assertEqual(by_path[f"{self.NOTES}/2026-10-02-budget-v2.md"], ("Budget", "acme / rollout", "Renamed"))
+        # The project folder and its register are gone: the name still comes from the path.
+        self.assertEqual(by_path[f"{self.SETUP}/state/actions.md"], ("Actions — setup", "setup", "Deleted"))
+        self.assertEqual(by_path[f"{self.SETUP}/notes/no-heading.md"], ("no-heading", "setup", "Deleted"))
 
-    def request_post(self, path):
-        request = Request(self.base + path, data=b"{}", method="POST", headers={"Content-Type": "application/json", "Origin": self.base, "X-Tasks-Token": self.server.token})
-        try:
-            with urlopen(request, timeout=3) as response:
-                return response.status, json.loads(response.read())
-        except HTTPError as error:
-            with error:
-                return error.code, json.loads(error.read())
+    def test_the_list_is_capped_but_the_count_stays_exact(self):
+        for number in range(tasks_web.GIT_CHANGE_LIMIT + 5):
+            self.write(self.acme, f"inbox/2026-10-07-note-{number:03d}.md", f"# Note {number}\n")
+        card = self.card()
+        self.assertEqual((card["count"], len(card["changes"]), card["more"]), (tasks_web.GIT_CHANGE_LIMIT + 5, tasks_web.GIT_CHANGE_LIMIT, 5))
+        self.assertEqual(card["message"], f"{tasks_web.GIT_CHANGE_LIMIT + 5} notes changed since the last save.")
 
-    def test_git_failure_is_reported_without_traceback(self):
-        with patch.object(tasks_web.subprocess, "run", side_effect=tasks_web.subprocess.TimeoutExpired("git", 10)):
-            status, data = self.get("/api/git")
-            self.assertEqual(status, 200)
-            self.assertIn("10 seconds", data["repos"][0]["error"])
-            status, data = self.get("/api/git/diff?repo=work&path=a.txt&staged=0")
-            self.assertEqual(status, 502)
-            self.assertIn("error", data)
-
-    def test_git_commands_are_fixed_argv_without_network(self):
-        self.change()
+    def test_listing_never_uses_the_network_nor_writes(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-01-kickoff.md", "# Kickoff meeting\n\nChanged\n")
         calls = []
         real = tasks_web.subprocess.run
 
@@ -1303,27 +1465,1098 @@ class GitViewTest(unittest.TestCase):
             calls.append((command, kwargs))
             return real(command, **kwargs)
 
-        with patch.object(tasks_web.subprocess, "run", side_effect=spy):
-            self.get("/api/git")
-            self.get("/api/git/diff?repo=work&path=a.txt&staged=0")
+        before = self.snapshot(self.acme)
+        with patch.object(tasks_web.subprocess, "run", side_effect=spy), patch.object(tasks_web, "run_git_write", side_effect=AssertionError("no write")):
+            self.card()
+            self.request("GET", f"/api/git/changes?brain=brain-acme&path={self.NOTES}/2026-10-01-kickoff.md")
         self.assertTrue(calls)
-        forbidden = {"fetch", "pull", "push", "ls-remote", "remote", "clone", "commit", "add", "reset", "checkout"}
+        forbidden = {"fetch", "pull", "push", "ls-remote", "clone", "commit", "add", "reset", "checkout", "merge", "rebase"}
         for command, kwargs in calls:
             self.assertIsInstance(command, list)
-            self.assertEqual(command[1:5], ["--no-pager", "-c", "core.quotepath=false", "-c"])
-            self.assertFalse(forbidden & set(command[:8]), command)
+            self.assertFalse(forbidden & set(command[:10]), command)
+            if "remote" in command[:10]:
+                self.assertEqual(command[command.index("remote") + 1:command.index("remote") + 3], ["get-url", "--push"], command)  # only reads a configured URL
             self.assertNotIn("shell", kwargs)
-            self.assertEqual(kwargs["timeout"], 10)
-            for key in ("GIT_TERMINAL_PROMPT", "GIT_OPTIONAL_LOCKS"):
-                self.assertEqual(kwargs["env"][key], "0")
-            self.assertEqual(kwargs["env"]["LC_ALL"], "C")
-            if "diff" in command:
-                self.assertIn("--no-ext-diff", command)
-                self.assertIn("--no-textconv", command)
+            self.assertEqual(kwargs["timeout"], tasks_web.GIT_READ_TIMEOUT)
+            self.assertEqual((kwargs["env"]["GIT_TERMINAL_PROMPT"], kwargs["env"]["GIT_OPTIONAL_LOCKS"]), ("0", "0"))
+            self.assertEqual(kwargs["stdin"], tasks_web.subprocess.DEVNULL)
+        self.assertEqual(self.snapshot(self.acme), before)
 
-    def test_default_repos_are_work_and_brain(self):
-        store = tasks_web.Store(self.brain)
-        self.assertEqual(tasks_web.default_git_repos(store.brain), [("work", "Work", tasks_web.WORK), ("brain", "brain", store.brain)])
+    # --- See changes
+
+    def changes(self, relative, name="brain-acme"):
+        status, data = self.request("GET", f"/api/git/changes?brain={name}&path={quote(relative, safe='/')}")
+        self.assertEqual(status, 200, data)
+        return data
+
+    def test_see_changes_shows_before_and_after_with_the_unchanged_part_collapsed(self):
+        long = self.acme / f"{self.NOTES}/2026-10-03-long.md"
+        long.write_text(self.LONG.replace("line 15\n", "line 15 edited\n").replace("line 25\n", "line 25 edited\n"), encoding="utf-8")
+        data = self.changes(f"{self.NOTES}/2026-10-03-long.md")
+        self.assertEqual((data["title"], data["project"], data["change"]), ("Long note", "acme / rollout", "Edited"))
+        self.assertEqual(data["blocks"], [
+            ["gap", 14], ["ctx", "line 13"], ["ctx", "line 14"], ["del", "line 15"], ["add", "line 15 edited"], ["ctx", "line 16"], ["ctx", "line 17"],
+            ["gap", 5], ["ctx", "line 23"], ["ctx", "line 24"], ["del", "line 25"], ["add", "line 25 edited"], ["ctx", "line 26"], ["ctx", "line 27"],
+            ["gap", 3],
+        ])
+        kinds = [block[0] for block in data["blocks"]]
+        self.assertEqual(kinds.count("del"), 2)
+        self.assertEqual(kinds.count("add"), 2)
+        self.assertEqual(kinds[0], "gap")
+        self.assertEqual(kinds[-1], "gap")
+        # The unchanged lines far from a change are not sent at all, only their number.
+        sent = [block[1] for block in data["blocks"] if block[0] != "gap"]
+        self.assertNotIn("line 1", sent)
+        self.assertNotIn("line 30", sent)
+        self.assertEqual(sum(block[1] for block in data["blocks"] if block[0] == "gap") + len(sent) - kinds.count("add"), len(tasks_web.to_lines(self.LONG.encode())))
+        # No diff header, no hunk marker, no hash.
+        text = json.dumps(data)
+        for marker in ("diff --git", "@@", "index ", "--- a/", "+++ b/"):
+            self.assertNotIn(marker, text)
+        self.assertEqual(set(data), {"path", "title", "project", "change", "hidden", "binary", "too_large", "unchanged", "truncated", "blocks"})
+
+    def test_see_changes_of_a_new_a_deleted_and_a_moved_note(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n\nNone yet.\n")
+        self.assertEqual(self.changes(f"{self.NOTES}/2026-10-04-risks.md")["blocks"], [["add", "# Risks"], ["add", ""], ["add", "None yet."]])
+        (self.acme / f"{self.NOTES}/2026-10-02-budget.md").unlink()
+        deleted = self.changes(f"{self.NOTES}/2026-10-02-budget.md")
+        self.assertEqual((deleted["change"], deleted["title"], deleted["blocks"]), ("Deleted", "Budget", [["del", "# Budget"], ["del", ""], ["del", "First line"]]))
+        (self.acme / f"{self.SETUP}/notes/no-heading.md").rename(self.acme / f"{self.SETUP}/notes/moved.md")
+        moved = self.changes(f"{self.SETUP}/notes/moved.md")
+        self.assertEqual((moved["change"], moved["unchanged"], moved["blocks"]), ("Renamed", True, []))
+        self.write(self.acme, f"{self.SETUP}/notes/empty.md", "")
+        self.assertEqual(self.changes(f"{self.SETUP}/notes/empty.md")["unchanged"], True)
+
+    def test_see_changes_of_a_secret_a_binary_and_a_huge_file(self):
+        self.write(self.acme, "me/id_rsa", "TOKEN=abc123\n")
+        self.write(self.acme, "me/server.pem", "KEY-MATERIAL\n")
+        hidden = self.changes("me/id_rsa")
+        self.assertEqual((hidden["hidden"], hidden["blocks"]), (True, []))
+        self.assertNotIn("abc123", json.dumps(hidden))
+        self.assertNotIn("KEY-MATERIAL", json.dumps(self.changes("me/server.pem")))
+        (self.acme / "me/picture.bin").write_bytes(b"\x00\x01\x02")
+        binary = self.changes("me/picture.bin")
+        self.assertEqual((binary["binary"], binary["blocks"]), (True, []))
+        self.write(self.acme, "me/huge.md", "x" * (tasks_web.GIT_COMPARE_LIMIT + 10))
+        huge = self.changes("me/huge.md")
+        self.assertEqual((huge["too_large"], huge["blocks"]), (True, []))
+        self.write(self.acme, "me/many.md", "".join(f"row {number}\n" for number in range(tasks_web.GIT_COMPARE_LINES + 50)))
+        many = self.changes("me/many.md")
+        self.assertEqual((many["truncated"], len(many["blocks"])), (True, tasks_web.GIT_COMPARE_LINES))
+
+    def test_see_changes_only_answers_for_a_note_that_has_a_change(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        for value in ("../x", "..%2Fbrain-globex%2FAGENTS.md", "%2Fetc%2Fpasswd", "AGENTS.md", "projects", "nothing.md", f"{self.NOTES}/../notes/2026-10-04-risks.md"):
+            status, data = self.request("GET", f"/api/git/changes?brain=brain-acme&path={value}")
+            self.assertEqual(status, 404, value)
+            self.assertIn("error", data)
+        self.assertEqual(self.request("GET", "/api/git/changes?brain=brain-acme")[0], 400)
+        self.assertEqual(self.request("GET", "/api/git/changes?brain=brain-acme&path=a&path=b")[0], 400)
+        # A note of another brain is not a note of this one.
+        self.write(self.globex, "projects/internal/ops/notes/ops-note.md", "# Ops\n")
+        self.assertEqual(self.request("GET", "/api/git/changes?brain=brain-acme&path=projects/internal/ops/notes/ops-note.md")[0], 404)
+        self.assertEqual(self.request("GET", "/api/git/changes?brain=brain-globex&path=projects/internal/ops/notes/ops-note.md")[0], 200)
+
+    def test_a_symbolic_link_is_never_followed(self):
+        outside = self.root / "outside.md"
+        outside.write_text("# Private\n\nnot for the page\n", encoding="utf-8")
+        (self.acme / "me").mkdir(exist_ok=True)
+        (self.acme / "me/link.md").symlink_to(outside)
+        card = self.card()
+        self.assertEqual({item["path"]: item["title"] for item in card["changes"]}, {"me/link.md": "link"})
+        status, data = self.request("GET", "/api/git/changes?brain=brain-acme&path=me/link.md")
+        self.assertEqual(status, 404)
+        self.assertNotIn("Private", json.dumps(data))
+
+    # --- Save and send
+
+    def test_save_and_send_end_to_end(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-01-kickoff.md", "# Kickoff meeting\n\nAgenda changed\n")
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n\nNone yet.\n")
+        (self.acme / f"{self.NOTES}/2026-10-02-budget.md").unlink()
+        old_head = self.head(self.acme)
+        status, result = self.save()
+        self.assertEqual(status, 200, result)
+        self.assertEqual((result["ok"], result["stage"], result["saved"], result["message"]), (True, "done", True, "Saved and sent."))
+        self.assertEqual((result["brain"]["state"], result["brain"]["message"], result["brain"]["count"], result["brain"]["unsent"]), ("clean", "Everything is saved and sent.", 0, 0))
+        # The commit exists, was accepted by the hooks, and the online copy has it.
+        self.assertNotEqual(self.head(self.acme), old_head)
+        self.assertEqual(self.remote_head(), self.head(self.acme))
+        message = self.git(self.acme, "log", "-1", "--format=%B")
+        subject, _, body = message.strip().partition("\n\n")
+        self.assertEqual(subject, "docs: save 3 notes from tasks-web")
+        self.assertEqual(body.splitlines(), [f"- edited: {self.NOTES}/2026-10-01-kickoff.md", f"- deleted: {self.NOTES}/2026-10-02-budget.md", f"- new: {self.NOTES}/2026-10-04-risks.md"])
+        self.assertNotRegex(message, r"(?i)claude|anthropic|co-authored|generated|noreply")
+        self.assertEqual(self.git(self.acme, "log", "-1", "--format=%an <%ae>").strip(), "Acme Person <ada@acme.example>")
+        # Every hook ran: the pre-push checks print what they verified, and the commit-msg check would have refused another subject.
+        self.assertIn("OK: user.email = ada@acme.example", result["details"])
+        self.assertIn("fast-forward (1 commit(s))", result["details"])
+        self.assertEqual(self.card()["state"], "clean")
+        self.assertEqual(self.card("brain-globex")["state"], "clean")
+
+    def test_one_note_is_saved_with_a_singular_subject(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        status, result = self.save()
+        self.assertEqual((status, result["ok"]), (200, True), result)
+        self.assertEqual(self.git(self.acme, "log", "-1", "--format=%s").strip(), "docs: save 1 note from tasks-web")
+
+    def test_the_commit_subject_follows_the_conventional_commits_check(self):
+        check = load_script("tools/machine/hooks/check-commit-msg.py", self.work)
+        for count in (1, 2, 17, 205):
+            card = {"count": count, "changes": [{"path": f"inbox/n{n}.md", "from": "", "change": "New"} for n in range(min(count, 60))]}
+            subject, body = tasks_web.git_commit_message(card)
+            self.assertRegex(subject, check.SUBJECT.pattern)
+            self.assertLessEqual(len(subject), 72)
+            self.assertFalse(subject.endswith("."))
+            self.assertFalse(check.AI_MARKS.search(f"{subject}\n{body}"))
+            self.assertLessEqual(len(body.splitlines()), tasks_web.GIT_BODY_LIMIT + 1)
+        self.assertTrue(subject.startswith("docs: save 205 notes"))
+        self.assertEqual(body.splitlines()[-1], f"- and {205 - tasks_web.GIT_BODY_LIMIT} more")
+        _, moved = tasks_web.git_commit_message({"count": 1, "changes": [{"path": "b.md", "from": "a.md", "change": "Renamed"}]})
+        self.assertEqual(moved, "- renamed: a.md -> b.md")
+
+    def assertRefusedBeforeCommit(self, result, before, reason):
+        self.assertEqual(result["ok"], False)
+        self.assertEqual((result["stage"], result["saved"]), ("commit", False))
+        self.assertTrue(result["message"].startswith("Not saved: "), result["message"])
+        self.assertTrue(result["message"].endswith(". Nothing was changed."), result["message"])
+        self.assertIn(reason, result["message"])
+        self.assertNotIn("--no-verify", result["message"])
+        self.assertTrue(result["details"])  # the raw output stays available, behind "Details"
+        self.assertEqual(self.snapshot(self.acme), before)  # HEAD, the index (byte for byte) and every file as they were
+        self.assertFalse((self.acme / ".git/index.lock").exists())
+        self.assertEqual(self.remote_head(), before["head"])
+        self.assertEqual(result["brain"]["state"], "changes")
+
+    def refuse(self, files, reason, staged=None):
+        for relative, text in files.items():
+            self.write(self.acme, relative, text)
+        if staged:
+            self.git(self.acme, "add", staged)
+        before = self.snapshot(self.acme)
+        status, result = self.save()
+        self.assertEqual(status, 200, result)
+        self.assertRefusedBeforeCommit(result, before, reason)
+        if staged:
+            self.assertEqual(before["staged"].split(), [staged])
+        return result
+
+    def test_a_link_to_a_missing_note_refuses_the_save_and_changes_nothing(self):
+        result = self.refuse({f"{self.NOTES}/2026-10-01-kickoff.md": "# Kickoff meeting\n\nSee [the plan](missing-plan.md).\n", f"{self.NOTES}/2026-10-04-risks.md": "# Risks\n"},
+                             "a link in “Kickoff meeting” points to a note that does not exist (missing-plan.md)", staged=f"{self.NOTES}/2026-10-04-risks.md")
+        self.assertIn("DEAD MD LINK", result["details"])
+
+    def test_a_secret_refuses_the_save_without_showing_it(self):
+        token = "ghp_" + "x" * 36
+        result = self.refuse({f"{self.NOTES}/2026-10-04-access.md": f"# Access\n\ntoken: {token}\n"}, "“Access” seems to contain a password, a key or a token")
+        self.assertNotIn(token, json.dumps(result))
+
+    def test_a_credentials_file_refuses_the_save(self):
+        self.refuse({"me/server.pem": "KEY=1\n"}, "“server” looks like a file of credentials")
+
+    def test_a_name_from_another_brain_refuses_the_save(self):
+        self.refuse({f"{self.NOTES}/2026-10-04-call.md": "# Call\n\nWe spoke about Initech today.\n"},
+                    "“Call” mentions a name that belongs to another brain (initech)")
+
+    def test_a_misfiled_action_refuses_the_save(self):
+        misfiled = self.OPEN.replace("- [ ] **ACM-001** — Jane Doe — Prepare the kickoff", "- [x] **ACM-001** — Jane Doe — Prepare the kickoff ✅ 2026-10-20")
+        self.refuse({self.REGISTER: misfiled}, "action ACM-001 is not under the section of its status (Done)")
+
+    def test_a_malformed_action_refuses_the_save(self):
+        self.refuse({self.REGISTER: self.OPEN.replace("## Done", "- [ ] **ACM-002** no owner and no dash\n\n## Done")},
+                    "an action line in “Actions — rollout” is not written the way registers expect")
+
+    def test_a_check_that_takes_too_long_is_stopped_and_changes_nothing(self):
+        hook = self.acme / ".git/hooks/pre-commit"
+        hook.write_text("#!/bin/sh\nsleep 60\n", encoding="utf-8")
+        hook.chmod(0o755)
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        before = self.snapshot(self.acme)
+        with patch.object(tasks_web, "GIT_COMMIT_TIMEOUT", 1):
+            status, result = self.save()
+        self.assertEqual(status, 200, result)
+        self.assertEqual(result["message"], "Not saved: the checks did not finish in time. Nothing was changed.")
+        self.assertEqual(self.snapshot(self.acme), before)
+
+    def test_a_failed_push_keeps_the_commit_and_send_retries_the_push_only(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        bare = self.remotes / "brain-acme.git"
+        away = self.remotes / "away.git"
+        bare.rename(away)
+        status, result = self.save()
+        self.assertEqual(status, 200, result)
+        self.assertEqual((result["ok"], result["stage"], result["saved"]), (False, "send", True))
+        self.assertEqual(result["message"], "Saved on this computer, but not sent: the online copy could not be reached (check the network).")
+        self.assertIn("Could not read from remote repository", result["details"])
+        self.assertEqual(self.git(self.acme, "log", "-1", "--format=%s").strip(), "docs: save 1 note from tasks-web")
+        retry = result["brain"]
+        self.assertEqual((retry["state"], retry["message"], retry["action"], retry["count"], retry["unsent"]), ("unsent", "Saved on this computer, not sent yet.", "send", 0, 1))
+        # Sending again while the online copy is away fails the same way and commits nothing more.
+        head = self.head(self.acme)
+        status, again = self.save(route="send")
+        self.assertEqual((status, again["ok"], again["stage"]), (200, False, "send"))
+        self.assertEqual(self.head(self.acme), head)
+        away.rename(bare)
+        status, sent = self.request("POST", "/api/git/send?brain=brain-acme", {"version": self.card()["version"]})
+        self.assertEqual(status, 200, sent)
+        self.assertEqual((sent["ok"], sent["message"], sent["brain"]["state"]), (True, "Saved and sent.", "clean"))
+        self.assertEqual(self.remote_head(), head)
+        self.assertEqual(self.head(self.acme), head)
+
+    def test_a_push_refused_by_the_identity_checks_is_explained(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        with patch.dict(os.environ, {"GIT_SSH_COMMAND": "ssh -o IdentitiesOnly=yes"}):
+            status, result = self.save()
+        self.assertEqual(status, 200, result)
+        self.assertEqual((result["ok"], result["stage"], result["saved"]), (False, "send", True))
+        self.assertEqual(result["message"], "Saved on this computer, but not sent: this computer overrides the connection settings of Git (GIT_SSH_COMMAND): ask your agent to check it.")
+        self.assertIn("Push refused", result["details"])
+        self.assertNotEqual(self.remote_head(), self.head(self.acme))
+        # The brain's own hook did the refusing: nothing was bypassed, and the server never set the variable.
+        self.assertEqual(self.card()["state"], "unsent")
+
+    def test_a_brain_that_is_behind_is_refused_and_nothing_is_committed(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        version = self.card()["version"]
+        self.other_clone_pushes()
+        self.git(self.acme, "fetch", "-q", "origin")
+        head = self.head(self.acme)
+        for route in ("save", "send"):
+            status, data = self.request("POST", f"/api/git/{route}?brain=brain-acme", {"version": self.card()["version"]})
+            self.assertEqual(status, 409, route)
+            self.assertEqual(data["error"], "This brain was changed on another computer. Ask your agent to bring those changes here before saving.")
+        self.assertEqual(self.head(self.acme), head)
+        self.assertEqual(self.git(self.acme, "diff", "--cached", "--name-only"), "")
+        self.assertNotEqual(version, self.card()["version"])
+
+    def test_the_notes_must_be_the_ones_the_person_confirmed(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        version = self.card()["version"]
+        self.write(self.acme, f"{self.NOTES}/2026-10-05-plan.md", "# Plan\n")  # one more note appears after the confirmation was shown
+        head = self.head(self.acme)
+        status, data = self.save(version=version)
+        self.assertEqual((status, data), (409, {"error": tasks_web.GIT_STALE}))
+        self.assertEqual(self.head(self.acme), head)
+        self.assertEqual(self.git(self.acme, "diff", "--cached", "--name-only"), "")
+        # The same note edited again is a change as well.
+        version = self.card()["version"]
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n\nA second line\n")
+        self.assertEqual(self.save(version=version)[0], 409)
+        self.assertNotEqual(self.card()["version"], version)
+
+    def test_nothing_to_do_is_refused(self):
+        status, data = self.save()
+        self.assertEqual((status, data), (409, {"error": "Everything is already saved and sent."}))
+        status, data = self.save(route="send")
+        self.assertEqual((status, data), (409, {"error": "Nothing is waiting to be sent."}))
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        self.assertEqual(self.save(route="send"), (409, {"error": "Nothing is waiting to be sent."}))
+
+    def test_a_save_in_progress_blocks_a_second_one(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        version = self.card()["version"]
+        self.assertTrue(tasks_web.GIT_LOCK.acquire(blocking=False))
+        try:
+            status, data = self.save(version=version)
+        finally:
+            tasks_web.GIT_LOCK.release()
+        self.assertEqual((status, data), (409, {"error": "Another save is already running."}))
+        self.assertEqual(self.card()["state"], "changes")
+
+    def test_send_pushes_what_is_saved_even_with_notes_still_to_save(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        self.commit(self.acme)
+        self.write(self.acme, f"{self.NOTES}/2026-10-05-plan.md", "# Plan\n")
+        card = self.card()
+        self.assertEqual((card["state"], card["action"], card["unsent"], card["count"]), ("changes", "save", 1, 1))
+        head = self.head(self.acme)
+        status, sent = self.request("POST", "/api/git/send?brain=brain-acme", {"version": card["version"]})
+        self.assertEqual((status, sent["ok"]), (200, True), sent)
+        self.assertEqual(self.remote_head(), head)
+        self.assertEqual((sent["brain"]["state"], sent["brain"]["count"]), ("changes", 1))  # the new note is still waiting
+
+    def test_save_acts_on_the_named_brain_only(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        self.write(self.globex, "projects/internal/ops/notes/ops-note.md", "# Ops note\n")
+        acme_head = self.head(self.acme)
+        status, result = self.save("brain-globex")
+        self.assertEqual((status, result["ok"], result["brain"]["name"]), (200, True, "brain-globex"), result)
+        self.assertEqual(self.remote_head("brain-globex"), self.head(self.globex))
+        self.assertEqual(self.head(self.acme), acme_head)
+        self.assertEqual(self.card()["state"], "changes")
+        self.assertEqual(self.git(self.globex, "log", "-1", "--format=%ae").strip(), "ada@globex.example")
+
+    def test_git_is_run_without_terminal_prompt_ssh_override_or_bypass(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        calls = []
+        real = tasks_web.subprocess.Popen
+
+        def spy(command, **kwargs):
+            calls.append((command, kwargs))
+            return real(command, **kwargs)
+
+        with patch.object(tasks_web.subprocess, "Popen", side_effect=spy):
+            status, result = self.save()
+        self.assertEqual((status, result["ok"]), (200, True), result)
+        git_calls = [(command, kwargs) for command, kwargs in calls if kwargs.get("start_new_session")]  # the writes (the reads have no session of their own)
+        arguments = [[part for part in command[1:] if part not in ("--no-pager", "-c", "core.quotepath=false", "color.ui=false")] for command, _ in git_calls]
+        self.assertEqual(arguments, [["add", "-A"],
+                                     ["commit", "-m", "docs: save 1 note from tasks-web", "-m", f"- new: {self.NOTES}/2026-10-04-risks.md"],
+                                     ["push", "--", "origin", "HEAD:refs/heads/main"]])
+        for command, kwargs in git_calls:
+            self.assertEqual(kwargs["stdin"], tasks_web.subprocess.DEVNULL)
+            self.assertTrue(kwargs["start_new_session"])  # no controlling terminal: SSH can never wait for a passphrase
+            self.assertEqual(kwargs["cwd"], self.acme)
+            environment = kwargs["env"]
+            self.assertEqual((environment["GIT_TERMINAL_PROMPT"], environment["GIT_EDITOR"]), ("0", "true"))
+            for name in ("GIT_SSH_COMMAND", "GIT_SSH", "SSH_ASKPASS", "GIT_ASKPASS", "DISPLAY"):
+                self.assertNotIn(name, environment)
+            for option in ("--no-verify", "-n", "--force", "-f", "--force-with-lease", "--amend", "--no-gpg-sign"):
+                self.assertNotIn(option, command)
+        for limit in (tasks_web.GIT_ADD_TIMEOUT, tasks_web.GIT_COMMIT_TIMEOUT, tasks_web.GIT_PUSH_TIMEOUT):
+            self.assertTrue(0 < limit <= 300)
+
+    def test_a_server_environment_with_askpass_or_a_display_is_cleaned_for_git_writes(self):
+        calls = []
+        real = tasks_web.subprocess.Popen
+
+        def spy(command, **kwargs):
+            calls.append(kwargs)
+            return real(command, **kwargs)
+
+        with patch.dict(os.environ, {"SSH_ASKPASS": "/usr/bin/x", "SSH_ASKPASS_REQUIRE": "force", "GIT_ASKPASS": "/usr/bin/y", "DISPLAY": ":0"}), \
+                patch.object(tasks_web.subprocess, "Popen", side_effect=spy):
+            code, output = tasks_web.run_git_write(self.acme, ["status", "--short"], 20)
+        self.assertEqual(code, 0, output)
+        for name in ("SSH_ASKPASS", "SSH_ASKPASS_REQUIRE", "GIT_ASKPASS", "DISPLAY"):
+            self.assertNotIn(name, calls[0]["env"])
+
+    def test_a_command_with_no_end_is_killed_with_its_children(self):
+        started = self.root / "started"
+        script = self.root / "slow.sh"
+        script.write_text(f"#!/bin/sh\ntouch {started}\nsleep 60 &\nwait\n", encoding="utf-8")
+        script.chmod(0o755)
+        self.git(self.acme, "config", "--local", "alias.slow", f"!{script}")
+        begin = datetime.now()
+        code, _ = tasks_web.run_git_write(self.acme, ["slow"], 1)
+        self.assertEqual(code, 124)
+        self.assertTrue(started.exists())
+        self.assertLess((datetime.now() - begin).total_seconds(), 15)
+
+    # --- who may ask
+
+    def test_the_write_routes_keep_the_token_the_origin_and_the_localhost_rules(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        version = self.card()["version"]
+        head = self.head(self.acme)
+        url = "/api/git/save?brain=brain-acme"
+        self.assertEqual(self.request("POST", url, {"version": version}, token=False)[0], 403)
+        self.assertEqual(self.request("POST", url, {"version": version}, origin=False)[0], 403)
+        self.assertEqual(self.request("POST", url, {"version": version}, token=False, headers={"X-Tasks-Token": "wrong"})[0], 403)
+        self.assertEqual(self.request("POST", url, {"version": version}, headers={"Origin": "http://evil.example"}, origin=False)[0], 403)
+        self.assertEqual(self.request("POST", url, {"version": version}, headers={"Host": "evil.example"})[0], 403)
+        request = Request(self.base + url, data=b'{"version": "x"}', method="POST", headers={"Content-Type": "text/plain", "Origin": self.base, "X-Tasks-Token": self.server.token})
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=5)
+        self.assertEqual(caught.exception.code, 415)
+        caught.exception.close()
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(Request(self.base + "/api/git", headers={"Host": "evil.example"}), timeout=5)
+        self.assertEqual(caught.exception.code, 403)
+        caught.exception.close()
+        self.assertEqual(self.head(self.acme), head)
+        self.assertEqual(self.git(self.acme, "diff", "--cached", "--name-only"), "")
+
+    def test_the_write_routes_validate_the_request(self):
+        self.write(self.acme, f"{self.NOTES}/2026-10-04-risks.md", "# Risks\n")
+        version = self.card()["version"]
+        for payload in (None, [], {}, {"version": 1}, {"version": "short"}, {"version": version[:-1] + "G"}, {"version": version, "files": ["x"]}, {"version": version, "brain": "brain-globex"},
+                        {"version": "z" * 32}):
+            status, _ = self.request("POST", "/api/git/save?brain=brain-acme", payload if payload is not None else {})
+            self.assertEqual(status, 400, payload)
+        self.assertEqual(self.request("POST", "/api/git/save", {"version": version}), (400, {"error": "Unknown brain."}))  # the brain is never implied
+        self.assertEqual(self.request("POST", "/api/git/save?brain=brain-acme&brain=brain-globex", {"version": version}), (400, {"error": "Invalid brain parameter."}))
+        request = Request(self.base + "/api/git/save?brain=brain-acme", data=b"{not json", method="POST", headers={"Content-Type": "application/json", "Origin": self.base, "X-Tasks-Token": self.server.token})
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=5)
+        self.assertEqual(caught.exception.code, 400)
+        caught.exception.close()
+        self.assertEqual(self.request("POST", "/api/git/push?brain=brain-acme", {"version": version})[0], 404)
+        self.assertEqual(self.git(self.acme, "diff", "--cached", "--name-only"), "")
+        self.assertEqual(self.card()["state"], "changes")
+
+    # --- what a refusal says
+
+    def test_hook_refusals_are_rewritten_in_plain_words(self):
+        titles = {"notes/a.md": "Kickoff meeting"}
+        reason = tasks_web.git_commit_reason
+        links = "files         : 12\nmd links      : 3\ndead (md)     : 1\n\n  ⛔ DEAD MD LINK (missing.md) — 1×\n       notes/a.md\nCommit refused: fix the problems and stage again (or use --no-verify to bypass).\n"
+        self.assertEqual(reason(links, 1, titles), "a link in “Kickoff meeting” points to a note that does not exist (missing.md)")
+        wiki = "  ⛔ DEAD WIKILINK [[Missing page]] — 2×\n       notes/a.md\n       notes/b.md\n"
+        self.assertEqual(reason(wiki, 1, titles), "a link in “Kickoff meeting” points to a note that does not exist (Missing page)")
+        cross = "  ⛔ CROSS-BRAIN LINK (../brain-globex/x.md) — 1× (a brain never links to another brain)\n       notes/b.md\n"
+        self.assertEqual(reason(cross, 1, titles), "a link in “b” points into another brain")
+        secret = "Possible secrets in the index (values not shown):\n  - notes/a.md:7: GitHub token\nRemove the value.\n"
+        self.assertEqual(reason(secret, 1, titles), "“Kickoff meeting” seems to contain a password, a key or a token")
+        keyfile = "Possible secrets in the index (values not shown):\n  - me/server.pem: credentials file (forbidden name)\n"
+        self.assertEqual(reason(keyfile, 1, titles), "“server” looks like a file of credentials")
+        other = "Blocked client name of another brain (brain-globex) in notes/a.md: initech\n"
+        self.assertEqual(reason(other, 1, titles), "“Kickoff meeting” mentions a name that belongs to another brain (initech)")
+        sweep = "projects/x/state/actions.md: sweep ACM-004 Open → Cancelled\nTotal sweep: 1 action(s) to move in 1 register(s)\nMisfiled actions: run `uv run tools/brain/action.py sweep --write` (then stage again).\n"
+        self.assertEqual(reason(sweep, 1, titles), "action ACM-004 is not under the section of its status (Cancelled)")
+        twice = "ERROR projects/x/state/actions.md:9: ACM-001 already present (projects/x/state/actions.md:3)\nAction check: 1 error(s), 0 warning(s)\n"
+        self.assertEqual(reason(twice, 1, titles), "an action number is used twice in “actions”")
+        self.assertEqual(reason("ERROR a/state/actions.md:2: ACM-001 invalid ✅ date '2026-13-40'\n", 1, titles), "an action register has a problem (a/state/actions.md:2: ACM-001 invalid ✅ date '2026-13-40')")
+        self.assertEqual(reason("", 124, titles), "the checks did not finish in time")
+        self.assertEqual(reason("On branch main\nnothing to commit, working tree clean\n", 1, titles), "there was nothing new to save")
+        self.assertEqual(reason("Commit refused:\n  - subject does not follow the convention\n", 1, titles), "subject does not follow the convention")
+        # Whatever else a hook prints, the person is not told to bypass it, and gets a sentence even from silence.
+        self.assertEqual(reason("Commit refused: fix the problems and stage again (or use --no-verify to bypass).\n", 1, titles), "a check of the brain refused it")
+        self.assertEqual(reason("", 1, titles), "a check of the brain refused it")
+        self.assertEqual(reason("error: something odd happened here.\n", 1, titles), "something odd happened here")
+
+    def test_push_failures_are_rewritten_in_plain_words(self):
+        reason = tasks_web.git_push_reason
+        self.assertEqual(reason("", 124), "the online copy did not answer in time")
+        self.assertEqual(reason("ERROR: GIT_SSH_COMMAND is set in the environment: it overrides core.sshCommand\nSummary: 1 error(s), 0 warning(s).\n", 1),
+                         "this computer overrides the connection settings of Git (GIT_SSH_COMMAND): ask your agent to check it")
+        self.assertEqual(reason("ERROR: user.email = me@elsewhere.example (from .git/config): local override forbidden\n", 1),
+                         "the Git identity of this computer does not match this brain: ask your agent to check it")
+        self.assertEqual(reason("ERROR: push URL git@github.com:x/y.git does not match the \"remote\" pattern of brain.json (trust boundary)\n", 1),
+                         "the online copy is not the one this brain is declared to use: ask your agent to check it")
+        self.assertEqual(reason("ERROR: SSH authentication to github.com failed: permission denied: the key is not accepted\n", 1),
+                         "the online copy refused the connection (the SSH key is locked or not accepted)")
+        self.assertEqual(reason("git@github.com: Permission denied (publickey).\nfatal: Could not read from remote repository.\n", 128),
+                         "the online copy refused the connection (the SSH key is locked or not accepted)")
+        self.assertEqual(reason("ERROR: SSH authentication to github.com failed: host name not resolved\n", 1), "the online copy could not be reached (check the network)")
+        self.assertEqual(reason("ERROR: SSH authentication to github.com failed: host key not verified\n", 1), "the identity of the online copy could not be verified: ask your agent to check it")
+        self.assertEqual(reason("ERROR: refs/heads/main: the remote is ahead by 2 commit(s): fetch and integrate first\n", 1),
+                         "the online copy has newer changes: ask your agent to bring them here before sending")
+        self.assertEqual(reason(" ! [rejected]        HEAD -> main (fetch first)\nerror: failed to push some refs\n", 1),
+                         "the online copy has newer changes: ask your agent to bring them here before sending")
+        self.assertEqual(reason("fatal: unable to access 'https://x.example/y.git/': Could not resolve host: x.example\n", 128), "the online copy could not be reached (check the network)")
+        self.assertEqual(reason("remote: Something unusual happened.\nfatal: the remote hung up.\n", 128), "the remote hung up")
+        self.assertEqual(reason("", 1), "the online copy did not accept the changes")
+
+
+class GitWebUrlTest(unittest.TestCase):
+    """`git_web_url`: the web page of a repository from its Git URL, https only and built from checked parts."""
+
+    def test_each_form_gives_the_https_page_without_user_port_credentials_or_dot_git(self):
+        cases = {
+            "git@git.example.test:acme/brain.git": "https://git.example.test/acme/brain",
+            "git@git.example.test:acme/brain": "https://git.example.test/acme/brain",
+            "git.example.test:acme/brain.git": "https://git.example.test/acme/brain",
+            "git@git.example.test:group/sub/brain.git": "https://git.example.test/group/sub/brain",
+            "ssh://git@git.example.test/acme/brain.git": "https://git.example.test/acme/brain",
+            "ssh://git.example.test/acme/brain.git": "https://git.example.test/acme/brain",
+            "ssh://git@git.example.test:2222/acme/brain.git": "https://git.example.test/acme/brain",
+            "ssh+git://git@git.example.test/acme/brain.git": "https://git.example.test/acme/brain",
+            "git+ssh://git@git.example.test/acme/brain.git": "https://git.example.test/acme/brain",
+            "ssh://git@git.example.test:2222/group/sub/brain.git/": "https://git.example.test/group/sub/brain",
+            "https://git.example.test/acme/brain.git": "https://git.example.test/acme/brain",
+            "https://git.example.test/acme/brain": "https://git.example.test/acme/brain",
+            "https://git.example.test/acme/brain/": "https://git.example.test/acme/brain",
+            "https://***@git.example.test/acme/brain.git": "https://git.example.test/acme/brain",
+            "https://jane:secret-token@git.example.test/acme/brain.git": "https://git.example.test/acme/brain",  # secret-scan: ignore (fictitious URL: tests redaction)
+            "HTTPS://GIT.EXAMPLE.TEST/acme/Brain.git": "https://git.example.test/acme/Brain",
+            "https://git.example.test:8443/acme/brain.git": "https://git.example.test:8443/acme/brain",
+            "http://git.example.test/acme/brain.git": "http://git.example.test/acme/brain",
+            "https://git.example.test/acme/brain-v2.0_x~y+z.git": "https://git.example.test/acme/brain-v2.0_x~y+z",
+            "https://git.example.test/acme/caf%C3%A9.git": "https://git.example.test/acme/caf%C3%A9",
+            "https://192.0.2.10/acme/brain.git": "https://192.0.2.10/acme/brain",
+            "  https://git.example.test/acme/brain.git  ": "https://git.example.test/acme/brain",
+        }
+        for url, page in cases.items():
+            self.assertEqual(tasks_web.git_web_url(url), page, url)
+
+    def test_local_paths_and_every_other_form_give_nothing(self):
+        for url in ("", "   ", "/Users/jane/Work/brain.git", "./brain.git", "../remotes/brain.git", "remotes/brain.git", "C:\\repos\\brain.git", "file:///srv/git/brain.git",
+                    "file://git.example.test/acme/brain.git", "git://git.example.test/acme/brain.git", "ftp://git.example.test/acme/brain.git",
+                    "ssh://git.example.test", "https://git.example.test", "https://git.example.test/", "https://git.example.test/acme", "https://git.example.test/.git",
+                    "https://git.example.test/acme/.git", "git@git.example.test:brain.git", "git@alias:acme/brain.git", "https://localhost/acme/brain.git"):
+            self.assertIsNone(tasks_web.git_web_url(url), url)
+
+    def test_hostile_inputs_never_give_a_script_a_query_or_a_foreign_host(self):
+        for url in ("javascript:alert(1)", "javascript:alert(1)//acme/brain", "javascript://git.example.test/acme/brain%0aalert(1)", "JaVaScRiPt://git.example.test/acme/brain",
+                    "data:text/html,<script>alert(1)</script>", "vbscript:msgbox(1)", "blob:https://git.example.test/acme/brain",
+                    "https://git.example.test/acme/brain?x=1", "https://git.example.test/acme/brain#frag", "https://git.example.test/acme/brain.git?service=git-upload-pack",
+                    "https://git.example.test/../brain", "https://git.example.test/acme/..", "https://git.example.test/./acme/brain", "https://git.example.test/acme//brain",
+                    "https://git.example.test//acme/brain", "https://git.example.test/acme/brain name", "https://git.example.test/acme/<script>", "https://git.example.test/acme/\"onmouseover=x",
+                    "https://git.example.test/acme/brain'", "https://git.example.test/acme/brain\\x", "https://git.example.test/acme/brain\x00",
+                    "https://git.example.test/acme/brain%0d%0aSet-Cookie:x", "https://git.example.test/acme/brain%00", "https://git.example.test/acme/brain%2f..%2fx",
+                    "https://git.example.test/acme/brain%5cx", "https://git.example.test/acme/brain%zz", "https://git.example.test/acme/brain%", "https://git.example.test/acme/%7f",
+                    "https://git.example.test\\@evil.example/acme/brain", "https://git.example.test@/acme/brain", "https://[::1]/acme/brain", "https://exa mple.test/acme/brain",
+                    "https://git.example.test:abc/acme/brain", "https://git.example.test:0/acme/brain", "https://git.example.test:99999/acme/brain", "ssh://git@git.example.test:abc/acme/brain.git",
+                    "https://.example.test/acme/brain", "https://example..test/acme/brain", "https://-example.test/acme/brain", "https://example.test-/acme/brain",
+                    "evil.example:../../brain", "git.example.test:acme/../brain", "git@git.example.test:acme/brain?x", "@git.example.test:acme/brain", "git@:acme/brain.git",
+                    "https://git.example.test/" + "a/" * 200 + "brain", "https://" + "a" * 300 + ".test/acme/brain", None, 5, b"https://git.example.test/acme/brain"):
+            self.assertIsNone(tasks_web.git_web_url(url), url)
+        # An address that survives is always http(s), with nothing but a host, an optional port and plain path segments.
+        for url in ("https://evil.example@git.example.test/acme/brain.git", "ssh://git@evil.example@git.example.test/acme/brain.git", "https://a:b@c@git.example.test/acme/brain"):
+            page = tasks_web.git_web_url(url)
+            self.assertRegex(page, r"^https://git\.example\.test/acme/brain$", url)
+        # Whitespace around the address is not part of it; the result carries none.
+        self.assertEqual(tasks_web.git_web_url("https://git.example.test/acme/brain\n"), "https://git.example.test/acme/brain")
+
+
+class GitViewPageTest(unittest.TestCase):
+    """The Sync view in the page: its markup, its wiring and its style (the behaviour is checked by GitViewTest and in the browser)."""
+    STATIC = TOOL.parent / "static"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        brain = Path(self.temp.name) / "brain"
+        (brain / "projects").mkdir(parents=True)
+        server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(brain), work=Path(self.temp.name))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join(timeout=2)))
+        with urlopen(f"http://127.0.0.1:{server.server_port}/", timeout=3) as response:
+            self.page = response.read().decode("utf-8")
+        self.script = (self.STATIC / "app.js").read_text(encoding="utf-8")
+        self.styles = (self.STATIC / "app.css").read_text(encoding="utf-8")
+
+    @unittest.skipUnless(shutil.which("node"), "node is not installed")
+    def test_the_script_parses(self):
+        done = subprocess.run(["node", "--check", str(self.STATIC / "app.js")], capture_output=True, text=True, timeout=30)
+        self.assertEqual(done.returncode, 0, done.stderr)
+
+    def test_the_page_has_cards_and_two_dialogs_and_nothing_of_the_old_view(self):
+        view = self.page[self.page.index('<div id="gitView"'):self.page.index("</main>")]
+        self.assertIn('<div id="gitCards" class="git-cards"></div>', view)
+        for old in ("gitRepos", "gitDetail", "gitDiff", "Diff", "commit"):
+            self.assertNotIn(old, view)
+        for old in ("gitRepos", "gitDetail", "gitDiff", "gitSelected", "GIT_GROUPS", "/api/git/diff", "/api/git/commit", "git-loading", "git-error"):
+            self.assertNotIn(old, self.script)
+        confirm = self.page[self.page.index('<dialog id="gitConfirmDialog"'):self.page.index('<dialog id="gitChangesDialog"')]
+        self.assertIn('aria-labelledby="gitConfirmHeading" aria-describedby="gitConfirmText"', confirm)
+        self.assertIn('<ul id="gitConfirmList" class="git-confirm-list"></ul>', confirm)
+        self.assertIn('<button class="button" type="submit" value="cancel" autofocus>Cancel</button>', confirm)  # Cancel is the default
+        self.assertIn('<button id="gitConfirmGo" class="button button-primary" type="button">Save and send</button>', confirm)
+        changes = self.page[self.page.index('<dialog id="gitChangesDialog"'):self.page.index('<dialog id="quitDialog"')]
+        for fragment in ('class="dialog dialog-wide"', 'aria-labelledby="gitChangesTitle"', 'id="gitChangesBody"', 'id="gitChangesClose"', 'aria-label="Close"'):
+            self.assertIn(fragment, changes)
+        self.assertIn('data-view="git"', self.page)
+        self.assertIn("Nothing is saved or sent until you click.", self.page)
+        self.assertNotIn("Read only", self.page)
+
+    def test_the_view_lists_the_brains_and_never_work(self):
+        self.assertIn("await request('/api/git')", self.script)
+        self.assertIn("orderedGitCards()", self.script)
+        self.assertIn("Number(b.name === currentBrain) - Number(a.name === currentBrain)", self.script)  # the current brain first
+        self.assertNotIn("'Work'", self.script)
+        self.assertNotIn("Repository", self.script)
+        git = re.sub(r"\s//.*", "", self.script[self.script.index("// ---------- Git: save and send"):self.script.index("// ---------- Undo ----------")])  # the code, not its comments
+        for word in ("branch", "ahead", "hash", "upstream", "commit", "staged", "diff"):
+            self.assertNotIn(word, git)
+
+    def test_the_view_is_called_sync_and_explains_itself_with_an_info_tip(self):
+        # The visible name is Sync; the ids and routes keep `git`.
+        self.assertIn('<span class="nav-label">Sync</span><span id="gitCount" class="nav-count"></span>', self.page)
+        self.assertNotIn('<span class="nav-label">Git</span>', self.page)
+        self.assertIn("git: 'Sync'}", self.script)
+        self.assertIn("`Sync, ${plural(pending, 'brain')} to save or send` : 'Sync'", self.script)
+        self.assertIn("showToast(`Sync: ${error.message}`)", self.script)
+        self.assertNotIn("Git: ${", self.script)
+        title = self.page[self.page.index('<span id="syncInfo"'):self.page.index('<span id="resultCount"')]
+        self.assertIn('class="info info-title" hidden>', title)
+        self.assertIn('<button id="syncInfoButton" class="info-button" type="button" aria-label="About Sync" aria-describedby="syncInfoTip">', title)
+        self.assertIn('<span id="syncInfoTip" class="info-tip" role="tooltip">', title)
+        self.assertIn("Each brain is a Git repository. Save and send records the changed notes and sends them to the brain's online copy.", title)
+        self.assertLess(self.page.index('<h1 id="viewTitle">'), self.page.index('<span id="syncInfo"'))
+        self.assertIn("ids.syncInfo.hidden = next !== 'git';", self.script)  # only on this view
+
+    def test_each_card_has_an_online_copy_popover_that_is_a_disclosure_with_a_real_link(self):
+        info = self.script[self.script.index("function onlineCopyPopover(card)"):self.script.index("// ---------- Git: save and send")]
+        # A button that discloses a panel (not a tooltip: a link inside a tooltip cannot be reached).
+        for fragment in ("const info = element('span', 'info info-pop');", "const button = element('button', 'info-button');", "button.type = 'button';",
+                         "button.setAttribute('aria-label', label);", "button.setAttribute('aria-expanded', 'false');", "button.setAttribute('aria-controls', `${id}Panel`);",
+                         "panel.setAttribute('role', 'group');", "button.append(svgIcon(ICONS.info));"):
+            self.assertIn(fragment, info)
+        self.assertNotIn("tooltip", info)
+        self.assertNotIn(".title", info)
+        # "Git", then the URL as a link to the page of the repository (new tab, no opener), or plain text, or why there is nothing.
+        for fragment in ("element('span', 'info-tip-line info-tip-head', 'Git')", "link.href = card.web_url;", "link.target = '_blank';", "link.rel = 'noopener noreferrer';",
+                         "svgIcon(ICONS.open)", "' (opens in a new tab)'", "/^https?:\\/\\//i.test(card.web_url)",
+                         "line.textContent = known ? 'No online copy' : 'Restart tasks-web to see the online copy';", "breakableUrl(line, card.url)"):
+            self.assertIn(fragment, info)
+        self.assertIn("const label = !known ? 'Restart tasks-web to see the online copy' : card.url ? `Online copy: ${card.url}` : 'No online copy';", info)
+        self.assertIn("const known = 'url' in card;", info)  # an older server sends no `url` at all
+        self.assertIn("head.append(onlineCopyPopover(card));", self.script)
+        self.assertNotIn("infoTip(", self.script)
+        self.assertIn("if (!Array.isArray(data.brains)) throw new Error('Restart tasks-web: this page is newer than the server that is running.');", self.script)
+        self.assertRegex(self.styles, r"\.info-link:hover \.info-link-text, \.info-link:focus-visible \.info-link-text \{ text-decoration: underline;")
+        self.assertRegex(self.styles, r"\.info-link:focus-visible \{ outline: 2px solid")
+        self.assertRegex(self.styles, r"\.info-link svg \{ flex: none; width: 12px; height: 12px;")
+
+    def test_the_popover_opens_on_hover_click_enter_and_space_and_closes_on_esc_outside_click_and_focus_loss(self):
+        behaviour = self.script[self.script.index("// ---------- Info tips and popovers"):self.script.index("function onlineCopyPopover(card)")]
+        for fragment in (
+                "document.addEventListener('pointerover'",  # hover opens it, and the pointer may move from the button into the panel
+                "!info.contains(event.relatedTarget) && !info.dataset.pinned && !info.matches(':focus-within')",
+                "document.addEventListener('click'", "event.target.closest('.info-pop .info-button')", "togglePopover(infoOf(button))",  # click, Enter and Space are a button's click
+                "setAttribute('aria-expanded', 'true')", "setAttribute('aria-expanded', 'false')",
+                "document.addEventListener('pointerdown'", "if (!info.contains(event.target)) closeInfo(info);",  # a click outside
+                "document.addEventListener('focusout'", "if (!info || info.contains(event.relatedTarget)) return;",  # the focus leaving both the button and the panel
+                "if (info && !isPopover(info)) openInfo(info);",  # a popover does not open on focus alone; Tab then reaches the link
+                "if (isPopover(info)) infoButton(info).focus();"):  # Esc gives the focus back to the button
+            self.assertIn(fragment, behaviour)
+        escape = self.script[self.script.index("function handleEscape(event)"):]
+        self.assertLess(escape.index("document.querySelector('dialog[open]')"), escape.index("dismissInfoTip()"))
+        self.assertLess(escape.index("dismissInfoTip()"), escape.index("closePopover()"))
+        self.assertIn("if (dismissInfoTip()) { event.preventDefault(); return; }", escape)
+        # The panel is real content that follows the button in the page, so Tab goes from the button to the link; it is not displayed while closed.
+        self.assertRegex(self.styles, r"\.info-tip \{ display: none;")
+        self.assertIn(".info.is-open .info-tip { display: block; }", self.styles)
+        self.assertIn('.info-button[aria-expanded="true"]', self.styles)
+        # The title of the view keeps a plain tooltip: no link there.
+        title = self.page[self.page.index('<span id="syncInfo"'):self.page.index('<span id="resultCount"')]
+        self.assertIn('role="tooltip"', title)
+        self.assertNotIn("<a ", title)
+        self.assertNotIn("aria-expanded", title)
+
+    def test_one_primary_button_per_card_and_a_confirmation_before_saving(self):
+        self.assertIn("const label = card.action === 'save' ? 'Save and send' : 'Send';", self.script)
+        self.assertIn("card.action === 'save' ? askGitSave(card) : runGit(card, 'send')", self.script)
+        self.assertIn("Save ${plural(count, 'changed note')} of ${card.label} and send ${count === 1 ? 'it' : 'them'} to its online copy?", self.script)
+        self.assertIn("runGit(card, 'save');", self.script)
+        # The write names its brain explicitly and carries the token and the version of the card the person confirmed.
+        self.assertIn("request(`/api/git/${action}`, {", self.script)
+        self.assertIn("'X-Tasks-Token': token", self.script)
+        self.assertIn("body: JSON.stringify({version: card.version})", self.script)
+        self.assertIn("}, card.name);", self.script)
+        self.assertIn("async function request(url, options = {}, brain = currentBrain)", self.script)
+
+    def test_results_are_plain_with_the_raw_output_behind_details(self):
+        for fragment in ("element('summary', '', 'Details')", "element('pre', '', result.details)", "result.ok ? 'status' : 'alert'", "'Dismiss this message'",
+                         "button.setAttribute('aria-busy', String(busy));", "`${verb}…`"):
+            self.assertIn(fragment, self.script)
+        # Nothing the server sends is ever parsed as markup.
+        self.assertNotIn("innerHTML = result", self.script)
+        git = self.script[self.script.index("// ---------- Git: save and send"):self.script.index("// ---------- Undo ----------")]
+        self.assertNotIn("innerHTML", git)
+        self.assertNotIn("insertAdjacentHTML", git)
+
+    def test_the_sidebar_count_is_the_number_of_brains_with_something_to_save_or_send(self):
+        self.assertIn("function gitPendingCount() { return gitCards.filter(card => card.pending).length; }", self.script)
+        self.assertIn("ids.gitCount.textContent = gitLoaded && pending ? String(pending) : '';", self.script)
+        # It follows the writes made from the page and Refresh, without a network call (the server only reads local Git state).
+        self.assertIn("loadGit({quiet: view !== 'git'});", self.script)
+        self.assertIn("loadGit({quiet: true});", self.script)
+
+    def test_a_change_of_brain_closes_the_dialogs_and_keeps_the_cards(self):
+        reset = self.script[self.script.index("function resetBrainState()"):self.script.index("function enterBrain(")]
+        self.assertIn("closeGitDialogs();", reset)
+        self.assertIn("gitLoadId += 1;", reset)
+
+    def test_the_style_has_the_cards_the_comparison_and_both_colour_schemes(self):
+        for selector in (".git-card", ".git-notes", ".git-note", ".git-result", ".git-details", ".git-changes-body", ".git-line-add", ".git-line-del", ".git-gap", ".dialog-wide"):
+            self.assertIn(selector, self.styles)
+        self.assertRegex(self.styles, r"\.git-line-del \{[^}]*text-decoration: line-through")
+        for state in ("clean", "changes", "unsent", "behind"):
+            self.assertIn(f'.git-card[data-state="{state}"]', self.styles)
+        # The state colours exist for the light and for the dark scheme, like every other token.
+        light, dark = self.styles.split("@media (prefers-color-scheme: dark)", 1)
+        for token in ("--git-ok:", "--git-warn:", "--git-info:", "--git-ok-tint:", "--git-warn-tint:", "--git-info-tint:"):
+            self.assertIn(token, light.split("/* Brain accents")[0])
+            self.assertIn(token, dark)
+        for old in (".git-repos", ".git-diff", ".git-badge-", ".git-commit"):
+            self.assertNotIn(old, self.styles)
+        # Narrow screens: one column, a full-width button.
+        self.assertRegex(self.styles, r"@container main \(max-width: 640px\) \{[^@]*\.git-actions \.button \{ width: 100%")
+        self.assertIn("@media (prefers-reduced-motion: reduce)", self.styles)
+
+
+class NoteDeleteTest(unittest.TestCase):
+    """Deleting a note from the interface: which files, the pages that link to it, the version, the undo."""
+    CLIENT = "projects/clients/acme/missions/rollout"
+    SETUP = "projects/internal/setup"
+    NOTE = f"{CLIENT}/notes/2026-10-01-kickoff.md"
+    OTHER = f"{CLIENT}/notes/2026-10-02-budget.md"
+    INBOX = "inbox/2026-10-03-loose-thought.md"
+    SETUP_NOTE = f"{SETUP}/notes/plain.md"
+    KICKOFF = "# Kickoff meeting\n\nAgenda one\n"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        root = Path(self.temp.name)
+        self.brain = root / "brain"
+        self.outside = root / "outside"
+        self.outside.mkdir()
+        (self.outside / "secret.md").write_text("# Secret\n\nnot in the brain\n", encoding="utf-8")
+        files = {
+            f"{self.CLIENT}/state/actions.md": "# Actions — rollout\n\n## Open\n- [ ] **ACM-001** — Jane Doe — Prepare the kickoff\n    - source: kickoff\n",
+            f"{self.SETUP}/state/actions.md": "# Actions — setup\n\n## Open\n",
+            f"{self.CLIENT}/rollout.md": "# Rollout\n\nThe project page.\n",
+            self.NOTE: self.KICKOFF,
+            self.OTHER: "# Budget\n\nFirst line\n",
+            self.SETUP_NOTE: "Just text, no heading.\n",
+            f"{self.CLIENT}/notes/README.md": "# Notes index\n",
+            f"{self.CLIENT}/notes/archive/2026-01-01-old.md": "# Old\n",
+            f"{self.CLIENT}/sources/2026-10-01-call.md": "# Call transcript\n\nWhat was said.\n",
+            self.INBOX: "# Loose thought\n\nTo triage.\n",
+            "inbox/inbox.md": "- a line to triage\n",
+            "inbox/README.md": "# Inbox\n",
+            "docs/guide.md": "# Guide\n",
+            "me/profile.md": "# Profile\n",
+            "people/jane-doe.md": "# Jane Doe\n",
+            "tasks.md": "# Tasks\n",
+            ".data/hidden.md": "# Hidden\n",
+        }
+        for relative, text in files.items():
+            path = self.brain / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        (self.brain / f"{self.CLIENT}/notes/link.md").symlink_to(self.outside / "secret.md")
+        self.server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(self.brain), work=root)
+        thread = threading.Thread(target=self.server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (self.server.shutdown(), self.server.server_close(), thread.join(timeout=2)))
+        self.base = f"http://127.0.0.1:{self.server.server_port}"
+
+    request = TasksWebTest.request
+
+    def version(self, note_id):
+        status, data = self.request("GET", f"/api/notes/content?id={quote(note_id, safe='')}")
+        self.assertEqual(status, 200, data)
+        return data["version"]
+
+    def delete(self, note_id, version=None, **options):
+        return self.request("DELETE", "/api/notes", {"id": note_id, "version": version or self.version(note_id)}, **options)
+
+    def undo(self):
+        state = self.request("GET", "/api/undo")[1]
+        return self.request("POST", "/api/undo", {"label": state["label"]})
+
+    def write(self, relative, text):
+        path = self.brain / relative
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(text, encoding="utf-8")
+
+    # --- which files
+
+    def test_only_working_notes_are_deletable(self):
+        for note_id in (self.NOTE, self.OTHER, self.SETUP_NOTE, self.INBOX):
+            status, data = self.request("GET", f"/api/docs/render?id={quote(note_id, safe='')}")
+            self.assertEqual((status, data["note"], data["deletable"]), (200, True, True), note_id)
+            self.assertTrue(self.request("GET", f"/api/notes/content?id={quote(note_id, safe='')}")[1]["deletable"], note_id)
+        for doc_id in (f"{self.CLIENT}/rollout.md", f"{self.CLIENT}/state/actions.md", f"{self.CLIENT}/sources/2026-10-01-call.md", f"{self.CLIENT}/notes/README.md",
+                       f"{self.CLIENT}/notes/archive/2026-01-01-old.md", "inbox/inbox.md", "inbox/README.md", "docs/guide.md", "me/profile.md", "people/jane-doe.md", "tasks.md"):
+            status, data = self.request("GET", f"/api/docs/render?id={quote(doc_id, safe='')}")
+            self.assertEqual((status, data["note"], data["deletable"]), (200, False, False), doc_id)
+
+    def test_every_other_kind_of_file_is_refused_and_left_alone(self):
+        before = {path: path.read_bytes() for path in sorted(self.brain.rglob("*.md")) if not path.is_symlink()}
+        forbidden = (f"{self.CLIENT}/rollout.md", f"{self.CLIENT}/state/actions.md", f"{self.CLIENT}/sources/2026-10-01-call.md", f"{self.CLIENT}/notes/README.md",
+                     f"{self.CLIENT}/notes/archive/2026-01-01-old.md", "inbox/inbox.md", "inbox/README.md", "docs/guide.md", "me/profile.md", "people/jane-doe.md", "tasks.md")
+        for doc_id in forbidden:
+            status, data = self.request("DELETE", "/api/notes", {"id": doc_id, "version": "0" * 16})
+            self.assertEqual((status, data), (400, {"error": "Only a working note can be deleted from here."}), doc_id)
+        # Not documents of the catalogue at all: a dot folder, a missing file, a symbolic link, the ids a path traversal would use.
+        for doc_id in (".data/hidden.md", "nothing.md", f"{self.CLIENT}/notes/link.md", "../outside/secret.md", "../brain/tasks.md", f"{self.CLIENT}/notes/../rollout.md",
+                       f"{self.CLIENT}/notes/./2026-10-01-kickoff.md", f"/{self.NOTE}", str(self.outside / "secret.md"), "..", ".", "", f"{self.CLIENT}/notes/%2e%2e/rollout.md",
+                       f"{self.CLIENT}\\notes\\2026-10-01-kickoff.md", "inbox\x00/inbox.md", self.NOTE + "\x00"):
+            status, data = self.request("DELETE", "/api/notes", {"id": doc_id, "version": "0" * 16})
+            self.assertEqual((status, data), (404, {"error": "Note not found."}), repr(doc_id))
+        for value in (None, 7, ["x"], {"id": self.NOTE}):
+            self.assertEqual(self.request("DELETE", "/api/notes", {"id": value, "version": "0" * 16})[0], 400, value)
+        after = {path: path.read_bytes() for path in sorted(self.brain.rglob("*.md")) if not path.is_symlink()}
+        self.assertEqual(after, before)
+        self.assertEqual((self.outside / "secret.md").read_text(encoding="utf-8"), "# Secret\n\nnot in the brain\n")
+        self.assertEqual(self.request("GET", "/api/undo")[1]["available"], False)
+
+    def test_a_symbolic_link_or_a_linked_folder_is_never_followed(self):
+        link = self.brain / f"{self.CLIENT}/notes/link.md"
+        self.assertTrue(link.is_symlink())
+        for note_id in (f"{self.CLIENT}/notes/link.md",):
+            self.assertEqual(self.request("DELETE", "/api/notes", {"id": note_id, "version": "0" * 16})[0], 404)
+            self.assertEqual(self.request("GET", f"/api/notes/backlinks?id={quote(note_id, safe='')}")[0], 404)
+        self.assertTrue(link.is_symlink())
+        # A notes folder that is a link to somewhere else holds no note of the brain.
+        shutil.rmtree(self.brain / f"{self.SETUP}/notes")
+        (self.outside / "notes").mkdir()
+        (self.outside / "notes/plain.md").write_text("# Plain\n", encoding="utf-8")
+        (self.brain / f"{self.SETUP}/notes").symlink_to(self.outside / "notes")
+        status, data = self.request("DELETE", "/api/notes", {"id": self.SETUP_NOTE, "version": "0" * 16})
+        self.assertEqual(status, 404)
+        self.assertTrue((self.outside / "notes/plain.md").exists())
+        # A note that became a link after it was shown is not deleted either, and what it pointed to stays.
+        version = self.version(self.NOTE)
+        (self.brain / self.NOTE).unlink()
+        (self.brain / self.NOTE).symlink_to(self.outside / "secret.md")
+        self.assertEqual(self.request("DELETE", "/api/notes", {"id": self.NOTE, "version": version})[0], 404)
+        self.assertTrue((self.outside / "secret.md").exists())
+
+    # --- the deletion
+
+    def test_a_note_is_deleted_with_its_version_and_leaves_the_lists(self):
+        before_other = (self.brain / self.OTHER).read_bytes()
+        version = self.version(self.NOTE)
+        status, data = self.request("DELETE", "/api/notes", {"id": self.NOTE, "version": version})
+        self.assertEqual(status, 200, data)
+        self.assertEqual((data["deleted"], data["title"]), (self.NOTE, "Kickoff meeting"))
+        self.assertEqual((data["undo"]["available"], data["undo"]["label"]), (True, 'note "Kickoff meeting" deleted'))
+        self.assertFalse((self.brain / self.NOTE).exists())
+        self.assertTrue((self.brain / f"{self.CLIENT}/notes").is_dir())  # the folder stays
+        self.assertNotIn(self.NOTE, [item["id"] for item in self.request("GET", "/api/notes")[1]["notes"]])
+        self.assertEqual(self.request("GET", f"/api/notes/content?id={quote(self.NOTE, safe='')}")[0], 404)
+        self.assertEqual(self.request("GET", f"/api/docs/render?id={quote(self.NOTE, safe='')}")[0], 404)
+        self.assertEqual(self.request("GET", "/api/search?q=agenda")[1]["results"], [])
+        self.assertEqual((self.brain / self.OTHER).read_bytes(), before_other)
+        # Deleted once: a second request finds nothing.
+        self.assertEqual(self.request("DELETE", "/api/notes", {"id": self.NOTE, "version": version})[0], 404)
+
+    def test_an_inbox_note_and_a_note_without_heading_can_be_deleted(self):
+        status, data = self.delete(self.INBOX)
+        self.assertEqual((status, data["title"]), (200, "Loose thought"))
+        self.assertFalse((self.brain / self.INBOX).exists())
+        self.assertTrue((self.brain / "inbox/inbox.md").exists())  # the scratchpad and the README are not the note
+        status, data = self.delete(self.SETUP_NOTE)
+        self.assertEqual((status, data["title"]), (200, "plain"))
+        self.assertFalse((self.brain / self.SETUP_NOTE).exists())
+
+    def test_a_note_that_changed_since_it_was_shown_is_not_deleted(self):
+        version = self.version(self.NOTE)
+        self.write(self.NOTE, self.KICKOFF + "Edited elsewhere\n")
+        status, data = self.request("DELETE", "/api/notes", {"id": self.NOTE, "version": version})
+        self.assertEqual((status, data), (409, {"error": "The note changed on disk. Reload it before deleting it."}))
+        self.assertEqual((self.brain / self.NOTE).read_text(encoding="utf-8"), self.KICKOFF + "Edited elsewhere\n")
+        self.assertEqual(self.request("GET", "/api/undo")[1]["available"], False)
+
+    def test_the_write_keeps_the_token_the_origin_the_host_and_the_json_rules(self):
+        version = self.version(self.NOTE)
+        payload = {"id": self.NOTE, "version": version}
+        self.assertEqual(self.request("DELETE", "/api/notes", payload, token=False)[0], 403)
+        self.assertEqual(self.request("DELETE", "/api/notes", payload, origin=False)[0], 403)
+        for headers in ({"X-Tasks-Token": "wrong"}, {"Origin": "http://evil.example"}, {"Host": "evil.example"}):
+            request = Request(self.base + "/api/notes", data=json.dumps(payload).encode(), method="DELETE",
+                              headers={"Content-Type": "application/json", "Origin": self.base, "X-Tasks-Token": self.server.token, **headers})
+            with self.assertRaises(HTTPError) as caught:
+                urlopen(request, timeout=3)
+            self.assertEqual(caught.exception.code, 403, headers)
+            caught.exception.close()
+        request = Request(self.base + "/api/notes", data=json.dumps(payload).encode(), method="DELETE",
+                          headers={"Content-Type": "text/plain", "Origin": self.base, "X-Tasks-Token": self.server.token})
+        with self.assertRaises(HTTPError) as caught:
+            urlopen(request, timeout=3)
+        self.assertEqual(caught.exception.code, 415)
+        caught.exception.close()
+        for bad in ({"id": self.NOTE}, {"version": version}, {"id": self.NOTE, "version": version, "force": True}, {"id": self.NOTE, "version": 5}, {"id": [self.NOTE], "version": version}):
+            self.assertEqual(self.request("DELETE", "/api/notes", bad)[0], 400, bad)
+        self.assertEqual(self.request("DELETE", "/api/notes?brain=nope", payload), (400, {"error": "Unknown brain."}))
+        self.assertTrue((self.brain / self.NOTE).exists())
+        self.assertEqual(self.request("DELETE", "/api/notes", payload)[0], 200)
+
+    # --- the pages that link to the note
+
+    def link_pages(self):
+        """Pages that link to NOTE in the forms a brain uses, and pages that only look as if they did."""
+        self.write(f"{self.CLIENT}/rollout.md", "# Rollout\n\nSee [the kickoff](notes/2026-10-01-kickoff.md) and [its agenda](notes/2026-10-01-kickoff.md#agenda-one).\n")
+        self.write(self.OTHER, "# Budget\n\nFrom [the kickoff](2026-10-01-kickoff.md#agenda-one).\n")
+        self.write(f"{self.CLIENT}/state/actions.md", "# Actions — rollout\n\n## Open\n- [ ] **ACM-001** — Jane Doe — Prepare the kickoff\n    - source: [kickoff](../notes/2026-10-01-kickoff.md)\n")
+        self.write("me/profile.md", "# Profile\n\nSee [[2026-10-01-kickoff]] and [[2026-10-01-kickoff|the kickoff]].\n")
+        self.write(f"{self.SETUP_NOTE}", "# Plain\n\n[kickoff](../../../clients/acme/missions/rollout/notes/2026-10-01-kickoff.md)\n")
+        # Not links to the note: code, another file, another place, an external address, an anchor, a missing note with the same ending.
+        self.write("docs/guide.md", "# Guide\n\n```\n[x](../projects/clients/acme/missions/rollout/notes/2026-10-01-kickoff.md)\n```\nand `[y](../projects/clients/acme/missions/rollout/notes/2026-10-01-kickoff.md)`.\n")
+        self.write("people/jane-doe.md", "# Jane Doe\n\n[budget](../projects/clients/acme/missions/rollout/notes/2026-10-02-budget.md) [web](https://example.test/2026-10-01-kickoff.md) [top](#top) "
+                                           "[mail](mailto:jane@example.test)\n")
+        self.write(self.INBOX, "# Loose thought\n\n[the kickoff](../" + self.NOTE + ") and [itself](2026-10-03-loose-thought.md)\n")
+
+    def test_a_note_that_is_linked_is_not_deleted_and_the_pages_are_listed(self):
+        self.link_pages()
+        expected = [
+            {"id": f"{self.CLIENT}/rollout.md", "title": "Rollout", "project": "acme / rollout"},
+            {"id": f"{self.CLIENT}/notes/2026-10-02-budget.md", "title": "Budget", "project": "acme / rollout"},
+            {"id": f"{self.CLIENT}/state/actions.md", "title": "Actions — rollout", "project": "acme / rollout"},
+            {"id": f"{self.SETUP_NOTE}", "title": "Plain", "project": "setup"},
+            {"id": "me/profile.md", "title": "Profile", "project": None},
+            {"id": self.INBOX, "title": "Loose thought", "project": "Inbox"},
+        ]
+        expected.sort(key=lambda page: page["id"])
+        status, data = self.request("GET", f"/api/notes/backlinks?id={quote(self.NOTE, safe='')}")
+        self.assertEqual(status, 200, data)
+        self.assertEqual((data["id"], data["title"], data["count"], data["pages"]), (self.NOTE, "Kickoff meeting", len(expected), expected))
+        self.assertEqual(data["version"], self.version(self.NOTE))
+        before = (self.brain / self.NOTE).read_bytes()
+        status, data = self.request("DELETE", "/api/notes", {"id": self.NOTE, "version": data["version"]})
+        self.assertEqual(status, 409)
+        self.assertEqual(data["error"], f"This note is linked from {len(expected)} pages. Remove those links first, or ask your agent.")
+        self.assertEqual((data["count"], data["backlinks"]), (len(expected), expected))
+        self.assertEqual((self.brain / self.NOTE).read_bytes(), before)
+        self.assertEqual(self.request("GET", "/api/undo")[1]["available"], False)
+
+    def test_one_link_is_one_page_and_the_message_is_singular(self):
+        self.write(self.OTHER, "# Budget\n\n[the kickoff](2026-10-01-kickoff.md)\n[again](2026-10-01-kickoff.md#agenda-one)\n")
+        status, data = self.delete(self.NOTE)
+        self.assertEqual((status, data["error"], data["count"], [page["id"] for page in data["backlinks"]]),
+                         (409, "This note is linked from 1 page. Remove those links first, or ask your agent.", 1, [self.OTHER]))
+        # Once the link is gone, the note can go.
+        self.write(self.OTHER, "# Budget\n\nNo link left.\n")
+        self.assertEqual(self.delete(self.NOTE)[0], 200)
+
+    def test_a_wikilink_blocks_only_when_no_other_note_has_that_name(self):
+        self.write("me/profile.md", "# Profile\n\nSee [[2026-10-01-kickoff]].\n")
+        self.assertEqual(self.request("GET", f"/api/notes/backlinks?id={quote(self.NOTE, safe='')}")[1]["count"], 1)
+        self.write(f"{self.SETUP}/notes/2026-10-01-kickoff.md", "# Another kickoff\n")  # the link still finds a file with that name
+        self.assertEqual(self.request("GET", f"/api/notes/backlinks?id={quote(self.NOTE, safe='')}")[1]["count"], 0)
+        self.assertEqual(self.delete(self.NOTE)[0], 200)
+
+    def test_a_long_list_is_cut_but_counted(self):
+        for number in range(tasks_web.NOTE_BACKLINK_LIMIT + 7):
+            self.write(f"{self.SETUP}/notes/ref-{number:03d}.md", f"# Ref {number}\n\n[kickoff](../../../clients/acme/missions/rollout/notes/2026-10-01-kickoff.md)\n")
+        data = self.request("GET", f"/api/notes/backlinks?id={quote(self.NOTE, safe='')}")[1]
+        self.assertEqual((data["count"], len(data["pages"])), (tasks_web.NOTE_BACKLINK_LIMIT + 7, tasks_web.NOTE_BACKLINK_LIMIT))
+        status, refused = self.delete(self.NOTE)
+        self.assertEqual((status, refused["count"], len(refused["backlinks"])), (409, tasks_web.NOTE_BACKLINK_LIMIT + 7, tasks_web.NOTE_BACKLINK_LIMIT))
+
+    def test_backlinks_are_what_the_link_check_would_report_once_the_note_is_gone(self):
+        """The rules are those of tools/brain/check-links.py: delete the file behind the server's back and let that tool judge."""
+        self.link_pages()
+        data = self.request("GET", f"/api/notes/backlinks?id={quote(self.NOTE, safe='')}")[1]
+        (self.brain / self.NOTE).unlink()
+        done = subprocess.run([sys.executable, str(REPO / "tools/brain/check-links.py")], capture_output=True, text=True, timeout=60,
+                              env={**os.environ, "BRAIN_DIR": str(self.brain), "WORK_DIR": str(self.brain.parent)})
+        self.assertEqual(done.returncode, 1, done.stdout + done.stderr)
+        reported = set(re.findall(r"^ {7}(\S.*)$", done.stdout, re.MULTILINE))
+        self.assertEqual(reported, {page["id"] for page in data["pages"]}, done.stdout)
+
+    def test_unknown_notes_have_no_backlinks_to_ask_for(self):
+        for note_id in ("nothing.md", f"{self.CLIENT}/rollout.md", "../outside/secret.md", ""):
+            self.assertEqual(self.request("GET", f"/api/notes/backlinks?id={quote(note_id, safe='')}")[0], 404, note_id)
+        self.assertEqual(self.request("GET", "/api/notes/backlinks")[0], 400)
+        self.assertEqual(self.request("GET", "/api/notes/backlinks?brain=nope&id=x")[0], 400)
+
+    # --- undo
+
+    def test_undo_brings_back_the_exact_bytes_the_path_and_the_mode(self):
+        raw = b"\xef\xbb\xbf# Kickoff meeting\r\n\r\nCaf\xc3\xa9 \xe2\x80\x94 no final newline"
+        path = self.brain / self.NOTE
+        path.write_bytes(raw)
+        path.chmod(0o640)
+        self.assertEqual(self.delete(self.NOTE)[0], 200)
+        shutil.rmtree(self.brain / f"{self.CLIENT}/notes")  # even the folder may be gone by then
+        status, data = self.undo()
+        self.assertEqual(status, 200, data)
+        self.assertEqual((data["undone"], data["action_id"], data["restored"], data["undo"]["available"]), ('note "2026-10-01-kickoff" deleted', self.NOTE, True, False))  # the first line carries a BOM: no title
+        self.assertEqual(path.read_bytes(), raw)
+        self.assertEqual(path.stat().st_mode & 0o777, 0o640)
+        self.assertIn(self.NOTE, [item["id"] for item in self.request("GET", "/api/notes")[1]["notes"]])
+        self.assertEqual(self.request("GET", f"/api/docs/render?id={quote(self.NOTE, safe='')}")[0], 200)
+
+    def test_undo_is_refused_when_the_path_is_taken(self):
+        self.assertEqual(self.delete(self.NOTE)[0], 200)
+        path = self.brain / self.NOTE
+        path.write_text("# A new note with the same name\n", encoding="utf-8")
+        status, data = self.undo()
+        self.assertEqual((status, data), (409, {"error": "A file now exists where this note was: it cannot be restored."}))
+        self.assertEqual(path.read_text(encoding="utf-8"), "# A new note with the same name\n")  # what is there is never overwritten
+        self.assertEqual(self.request("GET", "/api/undo")[1]["available"], False)  # an undo that cannot happen is no longer offered
+        for taken in ("directory", "link", "dangling link"):
+            self.write(self.OTHER, "# Budget\n\nFirst line\n")
+            self.assertEqual(self.delete(self.OTHER)[0], 200)
+            target = self.brain / self.OTHER
+            if taken == "directory":
+                target.mkdir()
+            elif taken == "link":
+                target.symlink_to(self.outside / "secret.md")
+            else:
+                target.symlink_to(self.outside / "missing.md")
+            self.assertEqual(self.undo()[0], 409, taken)
+            self.assertTrue(target.is_dir() or target.is_symlink(), taken)
+            if target.is_dir():
+                target.rmdir()
+            else:
+                target.unlink()
+        self.assertEqual((self.outside / "secret.md").read_text(encoding="utf-8"), "# Secret\n\nnot in the brain\n")
+
+    def test_undo_never_writes_through_a_folder_that_became_a_link(self):
+        self.assertEqual(self.delete(self.NOTE)[0], 200)
+        shutil.rmtree(self.brain / f"{self.CLIENT}/notes")
+        (self.brain / f"{self.CLIENT}/notes").symlink_to(self.outside)
+        status, data = self.undo()
+        self.assertEqual(status, 409, data)
+        self.assertEqual(sorted(path.name for path in self.outside.iterdir()), ["secret.md"])
+
+    def test_undo_follows_the_order_of_the_changes(self):
+        status, created = self.request("POST", "/api/notes", {"title": "Fresh", "register": f"{self.CLIENT}/state/actions.md", "content": "x"})
+        self.assertEqual(status, 201)
+        self.assertEqual(self.delete(self.NOTE)[0], 200)
+        self.assertEqual(self.undo()[1]["undone"], 'note "Kickoff meeting" deleted')  # the deletion first,
+        self.assertTrue((self.brain / self.NOTE).exists())
+        self.assertEqual(self.undo()[1]["undone"], 'note "Fresh" created')  # then the creation before it
+        self.assertFalse((self.brain / created["id"]).exists())
+
+
+class NoteDeletePageTest(unittest.TestCase):
+    """Deleting a note in the page: the button, the confirmation, the pages that still link to the note, the toast and the undo."""
+    STATIC = TOOL.parent / "static"
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        brain = Path(self.temp.name) / "brain"
+        (brain / "projects").mkdir(parents=True)
+        server = tasks_web.TaskServer(("127.0.0.1", 0), tasks_web.Store(brain), work=Path(self.temp.name))
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        self.addCleanup(lambda: (server.shutdown(), server.server_close(), thread.join(timeout=2)))
+        with urlopen(f"http://127.0.0.1:{server.server_port}/", timeout=3) as response:
+            self.page = response.read().decode("utf-8")
+        self.script = (self.STATIC / "app.js").read_text(encoding="utf-8")
+        self.styles = (self.STATIC / "app.css").read_text(encoding="utf-8")
+
+    def test_the_delete_button_sits_next_to_edit_and_only_shows_for_a_deletable_note(self):
+        actions = self.page[self.page.index('<div class="doc-pane-actions">'):self.page.index('<p id="docPaneEmpty"')]
+        self.assertLess(actions.index('id="docEdit"'), actions.index('id="docDelete"'))
+        self.assertIn('<button id="docDelete" class="button button-danger" type="button" hidden title="Delete this note">', actions)
+        self.assertIn("ids.docDelete.hidden = !doc || !doc.deletable || docEditing;", self.script)  # not while editing, not for a page or a source
+        self.assertIn("ids.docDelete.addEventListener('click', askDeleteNote);", self.script)
+        self.assertIn("if (!doc || !doc.deletable || docEditing || docSaving || ids.docDelete.getAttribute('aria-busy') === 'true') return;", self.script)
+        self.assertNotIn("ids.docDelete.disabled", self.script)  # a disabled button loses the focus the dialog gives back to it
+
+    def test_the_confirmation_asks_first_with_cancel_as_the_default(self):
+        dialog = self.page[self.page.index('<dialog id="deleteNoteDialog"'):self.page.index('<dialog id="gitConfirmDialog"')]
+        self.assertIn('aria-labelledby="deleteNoteHeading" aria-describedby="deleteNoteText"', dialog)
+        self.assertIn('<button id="deleteNoteCancel" class="button" type="submit" value="cancel" autofocus>Cancel</button>', dialog)
+        self.assertIn('<button id="deleteNoteConfirm" class="button button-danger-solid" type="button">Delete</button>', dialog)
+        self.assertIn('<ul id="deleteNoteLinks" class="delete-note-links" hidden></ul>', dialog)
+        self.assertIn('<p id="deleteNoteError" class="form-error" role="alert" hidden></p>', dialog)
+        delete = self.script[self.script.index("// ---------- Deleting a note ----------"):self.script.index("function refreshDocsView()")]
+        self.assertIn("ids.deleteNoteHeading.textContent = `Delete the note \u201c${title}\u201d?`;", delete)
+        self.assertIn("'The note is removed from this brain. You can undo it right after.'", delete)
+        self.assertIn("ids.deleteNoteDialog.showModal();", delete)
+
+    def test_a_linked_note_lists_its_pages_and_offers_no_delete(self):
+        delete = self.script[self.script.index("// ---------- Deleting a note ----------"):self.script.index("function refreshDocsView()")]
+        self.assertIn("`This note is linked from ${plural(count, 'page')}. Remove those links first, or ask your agent.`", delete)
+        self.assertIn("ids.deleteNoteConfirm.hidden = linked;", delete)
+        self.assertIn("ids.deleteNoteCancel.textContent = linked ? 'Close' : 'Cancel';", delete)
+        # Each page opens in the reader; the list comes from the server before the dialog opens, and again when the server refuses the deletion.
+        self.assertIn("open.addEventListener('click', () => openLinkingPage(page.id));", delete)
+        self.assertIn("openDoc(id, {nav: 'root'});", delete)
+        self.assertIn("request(`/api/notes/backlinks?id=${encodeURIComponent(doc.id)}`)", delete)
+        self.assertIn("if (error.status === 409 && Array.isArray(data.backlinks)) showDeleteNoteDialog(target.title, data.count, data.backlinks);", delete)
+        self.assertIn("error.data = payload;", self.script)
+
+    def test_a_deletion_is_one_request_with_the_version_then_a_toast_with_undo_and_fresh_lists(self):
+        delete = self.script[self.script.index("// ---------- Deleting a note ----------"):self.script.index("function refreshDocsView()")]
+        for fragment in ("method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},", "body: JSON.stringify({id: target.id, version: target.version})",
+                         "noteToDelete = {id: doc.id, version: doc.version, title: info.title};",  # the version of the note the person was reading
+                         "setUndo(result.undo);", "clearDocPane();", "showToast('Note deleted', {undo: true});", "await refresh();", "await loadNotes();"):  # refresh: the lists, and the number next to Sync
+            self.assertIn(fragment, delete)
+        self.assertLess(delete.index("clearDocPane();"), delete.index("showToast('Note deleted'"))
+        pane = delete[delete.index("function clearDocPane()"):delete.index("async function confirmDeleteNote()")]
+        for fragment in ("docSelectedId = null;", "docCurrent = null;", "docRenderRequest += 1;", "Choose a document to read it."):
+            self.assertIn(fragment, pane)
+        # Undo gives the note back and shows it again.
+        self.assertIn("if (result.restored && isDocsView()) openDoc(result.action_id, {nav: 'root'});", self.script)
+        # A note that is not what the person saw is reloaded, with the reason in the pane.
+        self.assertIn("await openDoc(target.id, {nav: 'keep'});", delete)
+        self.assertIn("setDocError(error.message);", delete)
+        self.assertRegex(self.styles, r"\.delete-note-links \{[^}]*overflow: auto")
 
 
 class DocsTest(unittest.TestCase):
@@ -1899,8 +3132,7 @@ class BrainSwitchTest(unittest.TestCase):
 
     def test_unknown_brain_is_a_400_on_every_route(self):
         gets = ["/api/actions", "/api/actions/ALP-001/details", "/api/tools", "/api/notes", "/api/notes/content?id=x.md",
-                "/api/search?q=alpha", "/api/docs/render?id=x.md", "/api/docs/recent", "/api/git", "/api/git/diff?repo=work&path=a",
-                "/api/git/commit?repo=work&hash=" + "0" * 40, "/api/undo"]
+                "/api/search?q=alpha", "/api/docs/render?id=x.md", "/api/docs/recent", "/api/git", "/api/git/changes?path=a.md", "/api/undo"]
         for path in gets:
             joiner = "&" if "?" in path else "?"
             status, data = self.request("GET", f"{path}{joiner}brain=brain-inconnu")
@@ -1917,6 +3149,8 @@ class BrainSwitchTest(unittest.TestCase):
                 ("DELETE", "/api/actions/ALP-001?brain=brain-inconnu", {"version": "x", "details_version": "y"}),
                 ("POST", "/api/undo?brain=brain-inconnu", {"label": "x"}),
                 ("POST", "/api/tools/run?brain=brain-inconnu", {"id": "links"}),
+                ("POST", "/api/git/save?brain=brain-inconnu", {"version": "0" * 32}),
+                ("POST", "/api/git/send?brain=brain-inconnu", {"version": "0" * 32}),
             ):
                 status, data = self.request(method, path, payload)
                 self.assertEqual((method, path, status), (method, path, 400))
@@ -2052,15 +3286,17 @@ class BrainSwitchTest(unittest.TestCase):
             self.assertEqual(runner.call_args.kwargs["env"]["BRAIN_DIR"], str(self.other.resolve()))
             self.assertEqual(runner.call_args.kwargs["cwd"], tasks_web.WORK)
 
-    def test_git_repositories_follow_the_selected_brain(self):
-        store = self.server.store_for("brain-perso")
-        self.assertEqual(self.server.git_repos_for(store), [("work", "Work", self.root.resolve()), ("brain", "brain-perso", self.other.resolve())])
-        self.assertEqual(self.server.git_repos_for(self.server.store), [("work", "Work", self.root.resolve()), ("brain", "brain", self.default.resolve())])
+    def test_git_cards_follow_the_selected_brain_and_never_list_work(self):
         status, data = self.request("GET", "/api/git?brain=brain-perso")
         self.assertEqual(status, 200)
-        self.assertEqual([(repo["id"], repo["label"]) for repo in data["repos"]], [("work", "Work"), ("brain", "brain-perso")])
+        self.assertEqual([(card["name"], card["label"]) for card in data["brains"]], [("brain-perso", "Perso"), ("brain", "Brain"), ("brain-acme", "Acme")])
         data = self.request("GET", "/api/git")[1]
-        self.assertEqual([(repo["id"], repo["label"]) for repo in data["repos"]], [("work", "Work"), ("brain", "brain")])
+        self.assertEqual([card["name"] for card in data["brains"]], ["brain", "brain-acme", "brain-perso"])
+        # These brains are plain folders: saving is unavailable, said in one sentence, and the folders are left alone.
+        self.assertEqual({card["state"] for card in data["brains"]}, {"unavailable"})
+        self.assertNotIn("Work", [card["label"] for card in data["brains"]])
+        self.assertEqual(self.request("POST", "/api/git/save?brain=brain-perso", {"version": "0" * 32})[0], 409)
+        self.assertFalse((self.other / ".git").exists())
 
     def test_default_brain_can_be_another_discovered_brain(self):
         server = self.start(tasks_web.Store(self.other))

@@ -507,9 +507,9 @@ class ActionGroupTest(unittest.TestCase):
 
     def test_update_without_group_leaves_an_ungrouped_line_byte_for_byte(self) -> None:
         before = self.line("GAM-001")
-        self.act("update", "GAM-001", "--owner", "Jane")  # same value: only the stamp changes
+        self.act("update", "GAM-001", "--owner", "Jane")  # same value: nothing changes, not even the stamp
         self.assertEqual(self.line("GAM-001"), before)
-        self.assertEqual(self.text(), REGISTER.replace("    - source: s\n", "    - source: s\n    - updated: 2026-10-13 14:32\n", 1))
+        self.assertEqual(self.text(), REGISTER)
         self.create(priority="low", due="2026-10-14")
         created = self.line("GAM-008")
         self.act("update", "GAM-008", "--state", "in-progress")
@@ -563,6 +563,226 @@ class ActionGroupTest(unittest.TestCase):
         self.assertEqual(self.act("show", "GAM-008")["group"], "lot-deux")
         self.act("delete", "GAM-008")
         self.assertNotIn("GAM-008", (other / "actions.md").read_text(encoding="utf-8"))
+
+
+STAMPED_REGISTER = """# Actions — Gamma
+
+## Open
+- [ ] **GAM-001** — Jane — Existing action 📅 2026-10-20
+    - source: s
+    - created: 2026-10-01 09:00
+    - updated: 2026-10-20 16:24
+    - 02/10: first note
+- [ ] **GAM-002** — Jane — Second action
+    - source: s
+    - created: 2026-10-02 10:00
+    - updated: 2026-10-05 11:00
+- [ ] **GAM-004** — Jane — Legacy action without stamps
+    - source: s
+
+## Done
+- [x] **GAM-003** — Jane — Finished action ✅ 2026-10-10
+    - source: s
+    - created: 2026-10-03 10:00
+    - updated: 2026-10-10 08:00
+
+## Cancelled
+"""
+
+GIT_ENV = {"GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1"}
+
+
+@unittest.skipUnless(shutil.which("git"), "git is required")
+class ActionUpdatedStampTest(unittest.TestCase):
+    """`updated:` reflects semantic changes against the task's last Git synchronization point."""
+
+    act = ActionCommandTest.act
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        root = Path(self._tmp.name).resolve()
+        self.brain = root / "brain"
+        self.register = self.brain / "projects/clients/acme/missions/gamma/state/actions.md"
+        self.register.parent.mkdir(parents=True)
+        self.register.write_text(STAMPED_REGISTER, encoding="utf-8")
+        # The ceiling keeps Git from finding a repository above the temporary folder.
+        self.env = {**os.environ, **GIT_ENV, "GIT_CEILING_DIRECTORIES": str(root), "ACTION_NOW": "2026-10-26 11:17"}
+
+    def text(self) -> str:
+        return self.register.read_text(encoding="utf-8")
+
+    def git(self, *args: str) -> str:
+        result = subprocess.run(["git", "-c", "user.name=Test", "-c", "user.email=test@example.invalid", *args],
+                                cwd=self.brain, env=self.env, capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        return result.stdout
+
+    def commit(self) -> None:
+        self.git("init", "-q")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "test: register")
+
+    def stamp(self, action_id: str) -> str | None:
+        lines = self.text().splitlines()
+        start = next(number for number, line in enumerate(lines) if f"**{action_id}**" in line)
+        for line in lines[start + 1:]:
+            if not line.startswith("    "):
+                break
+            if line.startswith("    - updated: "):
+                return line[len("    - updated: "):]
+        return None
+
+    def test_a_write_that_changes_nothing_keeps_updated_and_does_not_rewrite_the_file(self) -> None:
+        before = self.register.stat()
+        for args in (("update", "GAM-001", "--state", "todo", "--owner", "Jane", "--due", "2026-10-20"),
+                     ("update", "GAM-001", "--title", "Existing action"),
+                     ("update", "GAM-004", "--state", "todo"),
+                     ("history", "edit", "GAM-001", "--index", "3", "--text", "first note")):
+            self.assertIs(self.act(*args)["updated_changed"], False, args)
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+        after = self.register.stat()
+        self.assertEqual((after.st_ino, after.st_mtime_ns), (before.st_ino, before.st_mtime_ns))
+        self.commit()
+        self.act("update", "GAM-002", "--owner", "Jane")
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_a_noop_repairs_an_updated_stamp_left_dirty_by_an_earlier_edit(self) -> None:
+        self.commit()
+        self.register.write_text(STAMPED_REGISTER.replace("    - updated: 2026-10-20 16:24\n",
+                                                          "    - updated: 2026-10-26 11:17\n", 1), encoding="utf-8")
+        result = self.act("update", "GAM-001", "--state", "todo", "--owner", "Jane", "--due", "2026-10-20")
+        self.assertIs(result["updated_changed"], True)
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_trailing_whitespace_is_not_a_change(self) -> None:
+        self.register.write_text(STAMPED_REGISTER.replace("Second action", "Second action   ").replace("    - source: s\n    - created: 2026-10-02", "    - source: s  \n    - created: 2026-10-02"), encoding="utf-8")
+        result = self.act("update", "GAM-002", "--owner", "Jane")
+        self.assertIs(result["updated_changed"], False)
+        self.assertEqual(self.stamp("GAM-002"), "2026-10-05 11:00")
+
+    def test_a_real_change_stamps_the_current_time(self) -> None:
+        self.commit()
+        result = self.act("update", "GAM-001", "--owner", "Marie")
+        self.assertIs(result["updated_changed"], True)
+        self.assertIn("- [ ] **GAM-001** — Marie — Existing action 📅 2026-10-20\n    - source: s\n    - created: 2026-10-01 09:00\n"
+                      "    - updated: 2026-10-26 11:17\n", self.text())
+        self.act("update", "GAM-001", "--owner", "Paul", now="2026-10-26 11:45")  # neither the previous nor the committed state
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:45")
+        self.act("history", "add", "GAM-002", "--text", "called back", "--date", "2026-10-26", now="2026-10-26 12:00")
+        self.assertEqual((self.stamp("GAM-002"), self.stamp("GAM-003")), ("2026-10-26 12:00", "2026-10-10 08:00"))
+        self.assertIn("    - created: 2026-10-01 09:00\n", self.text())  # never touched
+
+    def test_a_status_changed_then_changed_back_regains_the_synced_stamp(self) -> None:
+        self.commit()
+        self.assertIs(self.act("update", "GAM-001", "--state", "in-progress")["updated_changed"], True)
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:17")
+        self.assertIs(self.act("update", "GAM-001", "--state", "todo", now="2026-10-26 11:30")["updated_changed"], True)
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-20 16:24")
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+        self.assertEqual(self.git("status", "--porcelain"), "")
+
+    def test_the_reference_is_the_last_sync_not_an_unsent_local_commit(self) -> None:
+        self.commit()
+        branch = self.git("branch", "--show-current").strip()
+        self.git("branch", "sync-point")
+        self.git("config", f"branch.{branch}.remote", ".")
+        self.git("config", f"branch.{branch}.merge", "refs/heads/sync-point")
+        self.act("update", "GAM-001", "--owner", "Marie")
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "test: unsent local change")
+
+        self.act("update", "GAM-001", "--owner", "Jane", now="2026-10-26 11:30")
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-20 16:24")
+
+    def test_a_due_date_set_then_cleared_regains_the_committed_stamp(self) -> None:
+        self.commit()
+        self.act("update", "GAM-002", "--due", "2026-11-02")
+        self.assertIn("- [ ] **GAM-002** — Jane — Second action 📅 2026-11-02\n", self.text())
+        self.assertEqual(self.stamp("GAM-002"), "2026-10-26 11:17")
+        self.act("update", "GAM-002", "--due", "", now="2026-10-26 11:30")
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+
+    def test_a_note_added_then_deleted_regains_the_committed_stamp(self) -> None:
+        self.commit()
+        self.act("history", "add", "GAM-001", "--text", "sent the slides", "--date", "2026-10-26")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:17")
+        index = len(self.act("show", "GAM-001")["notes"]) - 1
+        self.act("history", "remove", "GAM-001", "--index", str(index), now="2026-10-26 11:30")
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+
+    def test_a_note_edited_then_restored_regains_the_committed_stamp(self) -> None:
+        self.commit()
+        self.act("history", "edit", "GAM-001", "--index", "3", "--text", "first note, reworded")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:17")
+        self.act("history", "edit", "GAM-001", "--index", "3", "--text", "first note", now="2026-10-26 11:30")
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+
+    def test_a_title_edited_then_restored_regains_the_committed_stamp(self) -> None:
+        self.commit()
+        self.act("update", "GAM-001", "--title", "Renamed action")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:17")
+        self.act("update", "GAM-001", "--title", "Existing action", now="2026-10-26 11:30")
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+
+    def test_an_action_that_moved_section_and_came_back_regains_the_committed_stamp(self) -> None:
+        self.commit()
+        self.act("update", "GAM-003", "--state", "todo")  # reopened: moves to Open
+        self.assertLess(self.text().index("**GAM-003**"), self.text().index("## Done"))
+        self.assertEqual(self.stamp("GAM-003"), "2026-10-26 11:17")
+        self.act("update", "GAM-003", "--state", "done", "--closed-on", "2026-10-10", now="2026-10-26 11:30")  # same closure again
+        self.assertGreater(self.text().index("**GAM-003**"), self.text().index("## Done"))
+        self.assertEqual(self.stamp("GAM-003"), "2026-10-10 08:00")
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+        self.act("update", "GAM-003", "--state", "x", "--closed-on", "2026-10-11", now="2026-10-26 11:40")  # another closure date: a change
+        self.assertEqual(self.stamp("GAM-003"), "2026-10-26 11:40")
+
+    def test_without_a_git_repository_only_the_comparison_with_the_previous_state_applies(self) -> None:
+        self.act("update", "GAM-001", "--state", "in-progress")
+        self.act("update", "GAM-001", "--state", "todo", now="2026-10-26 11:30")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:30")  # nothing to restore: a change, stamped
+        self.act("update", "GAM-001", "--state", "todo", now="2026-10-26 12:00")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:30")  # no change: kept
+
+    def test_git_that_cannot_tell_is_ignored_quietly(self) -> None:
+        self.git("init", "-q")  # a repository without any commit: HEAD does not exist
+        self.act("update", "GAM-001", "--state", "in-progress")
+        self.act("update", "GAM-001", "--state", "todo", now="2026-10-26 11:30")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:30")
+        (self.brain / "other.md").write_text("x\n", encoding="utf-8")  # a commit that does not contain the register
+        self.git("add", "other.md")
+        self.git("commit", "-q", "-m", "test: other")
+        self.act("update", "GAM-001", "--state", "in-progress", now="2026-10-26 11:40")
+        self.act("update", "GAM-001", "--state", "todo", now="2026-10-26 11:50")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-26 11:50")
+
+    def test_an_action_created_after_the_last_commit_is_stamped_now(self) -> None:
+        self.commit()
+        action_id = self.act("create", "--project", "acme/gamma", "--title", "New action", "--owner", "Jane", "--source", "s")["id"]
+        self.assertEqual(action_id, "GAM-005")
+        self.act("update", action_id, "--state", "in-progress", now="2026-10-26 11:30")
+        self.act("update", action_id, "--state", "todo", now="2026-10-26 11:40")
+        self.assertEqual(self.stamp(action_id), "2026-10-26 11:40")
+        self.assertEqual(self.stamp("GAM-001"), "2026-10-20 16:24")
+
+    def test_a_committed_action_without_updated_loses_the_line_it_was_given(self) -> None:
+        self.commit()
+        self.act("history", "add", "GAM-004", "--text", "asked for news", "--date", "2026-10-26")
+        self.assertEqual(self.stamp("GAM-004"), "2026-10-26 11:17")
+        index = len(self.act("show", "GAM-004")["notes"]) - 1
+        self.act("history", "remove", "GAM-004", "--index", str(index), now="2026-10-26 11:30")
+        self.assertIsNone(self.stamp("GAM-004"))
+        self.assertEqual(self.text(), STAMPED_REGISTER)
+
+    def test_move_keeps_stamping_because_it_adds_a_history_entry(self) -> None:
+        other = self.brain / "projects/clients/acme/missions/delta/state"
+        other.mkdir(parents=True)
+        (other / "actions.md").write_text("# Actions — Delta\n\n## Open\n\n## Done\n\n## Cancelled\n", encoding="utf-8")
+        self.commit()
+        self.act("move", "GAM-001", "--to", "acme/delta")
+        self.assertIn("    - updated: 2026-10-26 11:17\n", (other / "actions.md").read_text(encoding="utf-8"))
 
 
 FRENCH_REGISTER = """# Actions — Gamma

@@ -16,8 +16,12 @@ every write), so that an action is always written the same way:
 
 `➕` carries the creation date for the Obsidian Tasks plugin, which reads dates only; the
 `created:` sub-bullet keeps the creation date and time (Europe/Paris, to the minute). Both are
-written once, at creation. `updated:` is rewritten by every change made through this tool
-(fields, status, history). The due date stays `📅` on the line.
+written once, at creation. `updated:` moves only when a change made through this tool really
+changes the action (fields, status, history): a write that leaves the action as it was (the same
+status set again, a note added then deleted...) keeps the previous value, and an action brought
+back to the state of the register's last Git synchronization point gets back the `updated:` of that version
+(also repairing a stale stamp left by an earlier edit);
+any other change stamps the current time. The due date stays `📅` on the line.
 
 A group of tasks is a label, not a parent task: at most one `#group/<slug>` tag at the end
 of the title, just before the Tasks emojis (`… Title #group/ingestion-workshop ➕ 2026-10-13`).
@@ -62,6 +66,7 @@ import importlib.util
 import json
 import os
 import re
+import subprocess
 import sys
 import tempfile
 import time
@@ -765,18 +770,101 @@ def with_stamps(action: dict, lines: list[str], index: int) -> dict:
     return action
 
 
-def stamp_updated(lines: list[str], index: int, moment: str) -> None:
-    """Set the `updated:` sub-bullet of the action at ``index`` (after `created:` when it is added)."""
-    stamp = f"    - updated: {moment}"
-    found = items(lines, index, last_detail(lines, index))
-    for start, end in found:
+def updated_item(lines: list[str], index: int) -> tuple[int, int] | None:
+    """Line range (start, end excluded) of the `updated:` sub-bullet of the action at ``index``, None when it has none."""
+    for start, end in items(lines, index, last_detail(lines, index)):
         if UPDATED_AT_RE.match(item_text(lines, start, end)):
-            lines[start:end] = [stamp]
-            return
+            return start, end
+    return None
+
+
+def stamp_updated(lines: list[str], index: int, moment: str) -> None:
+    """Set the `updated:` sub-bullet of the action at ``index`` (after `created:` when it is added).
+
+    Low level: `refresh_updated` decides whether a change deserves a new stamp."""
+    stamp = f"    - updated: {moment}"
+    current = updated_item(lines, index)
+    if current:
+        lines[current[0]:current[1]] = [stamp]
+        return
+    found = items(lines, index, last_detail(lines, index))
     after = next((end for start, end in found if CREATED_AT_RE.match(item_text(lines, start, end))), None)
     if after is None:
         after = next((end for start, end in found if SOURCE_RE.match(item_text(lines, start, end))), last_detail(lines, index) + 1)
     lines.insert(after, stamp)
+
+
+def block_signature(lines: list[str], index: int) -> list[str]:
+    """The action line and its sub-bullets without the `updated:` one and without trailing whitespace.
+
+    Two versions of an action with the same signature are the same action: only `updated:` may differ."""
+    skip = updated_item(lines, index)
+    last = last_detail(lines, index)
+    return [line.rstrip() for position, line in enumerate(lines[index:last + 1], index)
+            if not (skip and skip[0] <= position < skip[1])]
+
+
+def synced_block(register: Path, action_id: str) -> list[str] | None:
+    """The block of ``action_id`` at the last Git synchronization point, wherever it sits in ``register``.
+
+    The synchronization point is the merge base of HEAD and its upstream: it stays behind unsent local commits and is
+    still the last common state when the upstream moved after a fetch. HEAD is the fallback when no upstream is known.
+    None is returned quietly when Git cannot read the reference, the file or exactly one matching action."""
+    try:
+        common = subprocess.run(["git", "-C", str(register.parent), "merge-base", "HEAD", "@{upstream}"],
+                                capture_output=True, stdin=subprocess.DEVNULL, timeout=10)
+        reference = common.stdout.decode("ascii").strip() if common.returncode == 0 else "HEAD"
+        if not re.fullmatch(r"[0-9a-fA-F]{40}|[0-9a-fA-F]{64}", reference):
+            reference = "HEAD"
+        shown = subprocess.run(["git", "-C", str(register.parent), "show", f"{reference}:./{register.name}"],
+                               capture_output=True, stdin=subprocess.DEVNULL, timeout=10)
+        if shown.returncode != 0:
+            return None
+        snapshot = shown.stdout.decode("utf-8").splitlines()
+    except (OSError, subprocess.SubprocessError, UnicodeDecodeError):
+        return None
+    found = [number for number, line in enumerate(snapshot) if (match := ACTION.match(line)) and match.group(2) == action_id]
+    if len(found) != 1:
+        return None
+    return snapshot[found[0]:last_detail(snapshot, found[0]) + 1]
+
+
+def updated_lines(lines: list[str], index: int) -> list[str]:
+    current = updated_item(lines, index)
+    return lines[current[0]:current[1]] if current else []
+
+
+def restore_updated(lines: list[str], index: int, synced: list[str]) -> None:
+    """Give the action at ``index`` the `updated:` sub-bullet of ``synced``, its block at the synchronization point.
+
+    Both blocks are the same but for `updated:`, so that sub-bullet goes back to the same place; no line when it had none."""
+    current = updated_item(lines, index)
+    if current:
+        del lines[current[0]:current[1]]
+    earlier = updated_item(synced, 0)
+    if earlier:
+        lines[index + earlier[0]:index + earlier[0]] = synced[earlier[0]:earlier[1]]
+
+
+def refresh_updated(lines: list[str], index: int, before: list[str], register: Path) -> bool:
+    """Settle the `updated:` sub-bullet of the action at ``index`` once a change has been applied to ``lines``.
+
+    ``before`` is `block_signature(lines, index)` taken before the change; ``register`` is the file the action is
+    written to. The stamp moves only when the action really changed:
+    1. the block is the one at the last Git synchronization point: it gets back the `updated:` of that version
+       (and loses the line if that version had none), including when this repairs a stamp left dirty by an earlier edit;
+    2. otherwise, when the block is as it was before the change, `updated:` stays as it was;
+    3. every other change gets the current time.
+    Returns whether the `updated:` sub-bullet differs afterwards."""
+    previous = updated_lines(lines, index)
+    after = block_signature(lines, index)
+    match = ACTION.match(lines[index])
+    synced = synced_block(register, match.group(2)) if match else None
+    if synced is not None and block_signature(synced, 0) == after:
+        restore_updated(lines, index, synced)
+    elif after != before:
+        stamp_updated(lines, index, f"{now():%Y-%m-%d %H:%M}")
+    return updated_lines(lines, index) != previous
 
 
 def load(register: Path, brain: Path) -> list[dict]:
@@ -866,7 +954,7 @@ def write(path: Path, existing: str, lines: list[str], dry_run: bool) -> str:
     text = "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
     if path.read_text(encoding="utf-8") != existing:
         raise ActionError("conflict", "The register changed. Refresh before retrying.")
-    if not dry_run:
+    if not dry_run and text != existing:  # a write that changes nothing leaves the file alone
         atomic_write(path, text.encode("utf-8"))
     return text
 
@@ -965,9 +1053,10 @@ def update(brain: Path, action_id: str, *, title: str | None = None, owner: str 
         closure = closed_on or current["done"]
     else:
         closure = closed_on or today()
+    before = block_signature(lines, index)
     lines[index] = action_line(action_id, new["title"], new["owner"], new["state"], new["priority"], current["created"],
                                new["due"], new["scheduled"], closure, new["group"])
-    stamp_updated(lines, index, f"{now():%Y-%m-%d %H:%M}")
+    updated_changed = refresh_updated(lines, index, before, path)
     text = "\n".join(lines) + ("\n" if existing.endswith("\n") else "")
     swept = sweep_text(text, now().date(), path, only={action_id}).output
     if swept is not None:
@@ -979,7 +1068,8 @@ def update(brain: Path, action_id: str, *, title: str | None = None, owner: str 
     label = f"status of {action_id} → {STATE_LABELS[new['state']]}" if only_state else f"edit of {action_id}"
     write(path, existing, lines, dry_run)
     return {"id": action_id, "register": path.relative_to(brain).as_posix(), "label": label,
-            "line": next(line for line in lines if f"**{action_id}**" in line and ACTION_RE.match(line)), "dry_run": dry_run}
+            "line": next(line for line in lines if f"**{action_id}**" in line and ACTION_RE.match(line)),
+            "updated_changed": updated_changed, "dry_run": dry_run}
 
 
 def add_history(brain: Path, action_id: str, text: str, when: str | None = None, expect_details_version: str | None = None,
@@ -989,10 +1079,12 @@ def add_history(brain: Path, action_id: str, text: str, when: str | None = None,
     check_versions(brain, action_id, None, expect_details_version)
     path, lines, index, _ = find(brain, action_id)
     existing = path.read_text(encoding="utf-8")
+    before = block_signature(lines, index)
     lines.insert(last_detail(lines, index) + 1, f"    - {history_prefix(day)}{note}")
-    stamp_updated(lines, index, f"{now():%Y-%m-%d %H:%M}")
+    updated_changed = refresh_updated(lines, index, before, path)
     write(path, existing, lines, dry_run)
-    return {"id": action_id, "register": path.relative_to(brain).as_posix(), "label": f"note added to {action_id}", "dry_run": dry_run}
+    return {"id": action_id, "register": path.relative_to(brain).as_posix(), "label": f"note added to {action_id}",
+            "updated_changed": updated_changed, "dry_run": dry_run}
 
 
 def remove_history(brain: Path, action_id: str, number: int, expect_text: str | None = None,
@@ -1009,13 +1101,14 @@ def remove_history(brain: Path, action_id: str, number: int, expect_text: str | 
         raise ActionError("conflict", "The note changed in the register. Reopen the action before retrying.")
     if PROTECTED_RE.match(text):
         raise ActionError("bad_request", "The source, created and updated lines cannot be deleted.")
+    before = block_signature(lines, index)
     del lines[start:end]
     while start < len(lines) and not lines[start].strip() and not lines[start - 1].strip():
         del lines[start]
-    stamp_updated(lines, index, f"{now():%Y-%m-%d %H:%M}")
+    updated_changed = refresh_updated(lines, index, before, path)
     write(path, existing, lines, dry_run)
     return {"id": action_id, "register": path.relative_to(brain).as_posix(), "label": f"note deleted from {action_id}",
-            "removed": text, "dry_run": dry_run}
+            "removed": text, "updated_changed": updated_changed, "dry_run": dry_run}
 
 
 def edit_history(brain: Path, action_id: str, number: int, text: str, when: str | None = None, expect_text: str | None = None,
@@ -1039,11 +1132,12 @@ def edit_history(brain: Path, action_id: str, number: int, text: str, when: str 
         prefix = history_prefix(parse_date(when, "Date"))
     else:
         prefix = dated.group(1) if dated else ""
+    before = block_signature(lines, index)
     lines[start] = f"    - {prefix}{note}"
-    stamp_updated(lines, index, f"{now():%Y-%m-%d %H:%M}")
+    updated_changed = refresh_updated(lines, index, before, path)
     write(path, existing, lines, dry_run)
     return {"id": action_id, "register": path.relative_to(brain).as_posix(), "label": f"note edited on {action_id}",
-            "before": current, "dry_run": dry_run}
+            "before": current, "updated_changed": updated_changed, "dry_run": dry_run}
 
 
 def relink(text: str, old_dir: Path, new_dir: Path) -> str:
@@ -1075,7 +1169,7 @@ def move(brain: Path, action_id: str, project: str, dry_run: bool = False) -> di
     day = now()
     target_lines = target_existing.splitlines()
     block.insert(last_detail(block, 0) + 1, f"    - {history_prefix(day.date().isoformat())}moved from {project_label(source, brain)}")
-    stamp_updated(block, 0, f"{day:%Y-%m-%d %H:%M}")
+    stamp_updated(block, 0, f"{day:%Y-%m-%d %H:%M}")  # always a real change (the history entry above): no need to compare
     del lines[index:end]
     if index and not lines[index - 1].strip():
         while index < len(lines) and not lines[index].strip():

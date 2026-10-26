@@ -13,15 +13,16 @@ const ids = Object.fromEntries([
   'todayView', 'listView', 'boardView', 'timelineView', 'timelineBack', 'timelineToday', 'timelineForward', 'timelineLate', 'timelineDone', 'timelineScale', 'timelineSummary',
   'timelineScroll', 'timelineTray', 'timelineTrayToggle', 'timelineTrayCount', 'timelineTrayMore', 'timelineTrayHint', 'timelineTraySearch',
   'timelineTrayBody', 'timelineTrayList', 'docsView', 'docStatus', 'docList', 'docPane', 'docBack', 'docPaneTitle', 'docPaneMeta',
-  'docPanePath', 'docEdit', 'docCancel', 'docSave', 'docPaneEmpty', 'docPaneError', 'docArticle', 'docEditorToolbar', 'docEditor',
+  'docPanePath', 'docEdit', 'docDelete', 'docCancel', 'docSave', 'docPaneEmpty', 'docPaneError', 'docArticle', 'docEditorToolbar', 'docEditor',
   'toolsView', 'toolsCatalog', 'toolResult', 'toolResultTitle', 'toolResultCommand', 'toolResultStatus', 'toolResultEmpty', 'toolResultOutput',
-  'gitView', 'gitRepos', 'gitDetail', 'gitDetailTitle', 'gitDetailStatus', 'gitDetailEmpty', 'gitDetailNote', 'gitDiff',
+  'gitView', 'gitCards', 'syncInfo', 'gitConfirmDialog', 'gitConfirmText', 'gitConfirmList', 'gitConfirmGo',
+  'gitChangesDialog', 'gitChangesTitle', 'gitChangesMeta', 'gitChangesBody', 'gitChangesClose',
   'editor', 'editorForm', 'editorTitle', 'editorHint', 'closeEditor', 'editorProjectField', 'editorProject', 'editorActionTitle',
   'editorState', 'editorOwner', 'editorDue', 'editorScheduled', 'editorPriority', 'editorGroup', 'editorGroupNewLabel',
   'editorGroupNew', 'editorGroupHint', 'editorHistory', 'editorHistoryCount', 'addNoteButton', 'editorHistoryList', 'noteForm',
   'noteInput', 'submitNote', 'closeNoteForm', 'noteError', 'editorStamps', 'editorError', 'deleteEditor', 'cancelEditor', 'saveEditor',
   'popover', 'newNoteDialog', 'newNoteForm', 'closeNewNote', 'newNoteTitle', 'newNoteProject', 'newNoteWhere', 'newNoteToolbar', 'newNoteContent',
-  'newNoteError', 'cancelNewNote', 'saveNewNote', 'quitDialog', 'quitConfirm', 'shortcutsDialog', 'toast', 'toastText', 'toastAction'
+  'newNoteError', 'cancelNewNote', 'saveNewNote', 'deleteNoteDialog', 'deleteNoteHeading', 'deleteNoteText', 'deleteNoteLinks', 'deleteNoteError', 'deleteNoteCancel', 'deleteNoteConfirm', 'quitDialog', 'quitConfirm', 'shortcutsDialog', 'toast', 'toastText', 'toastAction'
 ].map(id => [id, document.getElementById(id)]));
 
 // The interface text is English; dates, relative times, case changes and sorting follow the browser's locale.
@@ -38,7 +39,7 @@ function readUIState() {
 const savedUI = readUIState();
 const VIEWS = ['today', 'list', 'board', 'timeline', 'notes', 'search', 'tools', 'git'];
 const ACTION_VIEWS = ['today', 'list', 'board', 'timeline'];
-const VIEW_TITLES = {today: 'Today', list: 'Actions', board: 'Board', timeline: 'Timeline', notes: 'Notes', search: 'Search', tools: 'Tools', git: 'Git'};
+const VIEW_TITLES = {today: 'Today', list: 'Actions', board: 'Board', timeline: 'Timeline', notes: 'Notes', search: 'Search', tools: 'Tools', git: 'Sync'};
 const NAV_BUTTONS = {today: 'todayButton', list: 'listButton', board: 'boardButton', timeline: 'timelineButton', notes: 'notesButton', search: 'searchButton', tools: 'toolsButton', git: 'gitButton'};
 let view = VIEWS.includes(savedUI.view) ? savedUI.view : 'today';
 // The project filter of the sidebar: '' (all), a register path, or a folder prefix ending with '/' (a client and its missions).
@@ -146,7 +147,14 @@ const ICONS = {
   arrow: '<path d="M2.5 8h11M9.5 4l4 4-4 4"/>',
   // Timeline
   late: '<circle cx="8" cy="8" r="5.75"/><path d="M8 4.9v3.6M8 10.9h.01"/>',
-  hourglass: '<path d="M4.75 2.75h6.5M4.75 13.25h6.5M5.5 2.75v1.6c0 1.7 2.5 2.4 2.5 3.65s-2.5 1.95-2.5 3.65v1.6M10.5 2.75v1.6c0 1.7-2.5 2.4-2.5 3.65s2.5 1.95 2.5 3.65v1.6"/>'
+  hourglass: '<path d="M4.75 2.75h6.5M4.75 13.25h6.5M5.5 2.75v1.6c0 1.7 2.5 2.4 2.5 3.65s-2.5 1.95-2.5 3.65v1.6M10.5 2.75v1.6c0 1.7-2.5 2.4-2.5 3.65s2.5 1.95 2.5 3.65v1.6"/>',
+  info: '<circle cx="8" cy="8" r="5.75"/><path d="M8 7.2v3.6M8 5.2h.01"/>',
+  // Git: save and send
+  gitSaved: '<circle cx="8" cy="8" r="5.75"/><path d="M5.4 8.3l1.9 1.9 3.5-3.9"/>',
+  gitEdited: '<path d="M3 13l.8-3.2L10.6 3a1.5 1.5 0 0 1 2.1 0l.3.3a1.5 1.5 0 0 1 0 2.1L6.2 12.2z"/><path d="M9.2 4.4l2.4 2.4"/>',
+  gitSend: '<path d="M8 10.5V3M4.9 5.9 8 2.8l3.1 3.1M3 10.5v1.8c0 .5.4.9.9.9h8.2c.5 0 .9-.4.9-.9v-1.8"/>',
+  gitBehind: '<path d="M8 2.8v7.7M4.9 7.4 8 10.5l3.1-3.1M3 10.5v1.8c0 .5.4.9.9.9h8.2c.5 0 .9-.4.9-.9v-1.8"/>',
+  gitOff: '<circle cx="8" cy="8" r="5.75"/><path d="M4 12 12 4"/>'
 };
 function plural(count, word, words = `${word}s`) { return `${count} ${count === 1 ? word : words}`; }
 const TIME_FORMAT = new Intl.DateTimeFormat(LOCALE, {hour: '2-digit', minute: '2-digit'});
@@ -1593,6 +1601,7 @@ function setView(next, persist = true) {
   ids.docsView.hidden = !isDocsView();
   ids.toolsView.hidden = next !== 'tools';
   ids.gitView.hidden = next !== 'git';
+  ids.syncInfo.hidden = next !== 'git';
   for (const [name, id] of Object.entries(NAV_BUTTONS)) {
     if (name === next) ids[id].setAttribute('aria-current', 'page'); else ids[id].removeAttribute('aria-current');
   }
@@ -2023,18 +2032,19 @@ let currentBrain = '';
 let brainEpoch = 0;
 let brainMenuIndex = -1;
 let pendingWrites = 0;
-function brainUrl(url) {
-  if (!currentBrain || !url.startsWith('/api/')) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}brain=${encodeURIComponent(currentBrain)}`;
+function brainUrl(url, brain = currentBrain) {
+  if (!brain || !url.startsWith('/api/')) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}brain=${encodeURIComponent(brain)}`;
 }
 // A read that answers after a brain change belongs to the previous brain: it is dropped (error.stale) instead of overwriting the new views.
 // Writes are never dropped: the brain switch waits for them (switchBrain).
-async function request(url, options = {}) {
+// `brain` names another brain than the current one (the Git cards act on the brain they are about).
+async function request(url, options = {}, brain = currentBrain) {
   const epoch = brainEpoch;
   const write = (options.method || 'GET').toUpperCase() !== 'GET';
   if (write) pendingWrites += 1;
   try {
-    const response = await fetch(brainUrl(url), options);
+    const response = await fetch(brainUrl(url, brain), options);
     if (!write && epoch !== brainEpoch && !BRAIN_NEUTRAL.has(url.split('?')[0])) {
       const stale = new Error('Response from another brain ignored.');
       stale.stale = true;
@@ -2045,6 +2055,7 @@ async function request(url, options = {}) {
     if (!response.ok) {
       const error = new Error(payload.error || 'Operation failed.');
       error.status = response.status;
+      error.data = payload; // the rest of the answer (the pages that link to a note that cannot be deleted)
       throw error;
     }
     return payload;
@@ -2177,15 +2188,10 @@ function resetBrainState() {
   ids.timelineTraySearch.value = '';
   closePopover(false);
   closeEditor({force: true, refocus: false});
+  // The Git cards are the same for every brain (only their order follows the current one): kept, drawn again by the render below.
   gitLoadId += 1;
-  gitDiffRequest += 1;
   gitLoading = null;
-  gitLoaded = false;
-  gitRepos = [];
-  gitSelected = null;
-  ids.gitCount.textContent = '';
-  ids.gitRepos.replaceChildren();
-  showGitDetail({message: 'Choose a changed file or a commit to see its diff here.'});
+  closeGitDialogs();
   clearTimeout(docTimer);
   notesRequest += 1;
   docSearchRequest += 1;
@@ -2278,7 +2284,7 @@ async function loadBrains({initial = false} = {}) {
 
 // ---------- Tools ----------
 async function loadTools() {
-  ids.toolsCatalog.replaceChildren(element('p', 'git-loading', 'Loading tools…'));
+  ids.toolsCatalog.replaceChildren(element('p', 'loading-note', 'Loading tools…'));
   try {
     tools = (await request('/api/tools')).tools;
     const groups = [...new Set(tools.map(tool => tool.group))];
@@ -2312,7 +2318,7 @@ async function loadTools() {
     ids.toolsCatalog.replaceChildren(...sections);
     render();
   } catch (error) {
-    ids.toolsCatalog.replaceChildren(element('p', 'git-error', error.message));
+    ids.toolsCatalog.replaceChildren(element('p', 'error-note', error.message));
   }
 }
 function filterTools() {
@@ -2366,277 +2372,404 @@ async function runTool(tool, button) {
   }
 }
 
-// ---------- Git (read only) ----------
-const GIT_LABELS = {M: 'Modified', A: 'Added', D: 'Deleted', R: 'Renamed', C: 'Copied', U: 'Conflict', '?': 'Untracked'};
-const GIT_GROUPS = [
-  {key: 'staged', title: 'Staged', test: file => file.staged},
-  {key: 'unstaged', title: 'Unstaged', test: file => file.unstaged},
-  {key: 'untracked', title: 'Untracked', test: file => file.untracked}
-];
-let gitRepos = [];
+// ---------- Info tips and popovers ----------
+// A small ⓘ button with something to read. Two kinds, both closed by Esc:
+// - a tooltip (the title of the view): opens on hover and on keyboard focus, linked to its button by aria-describedby, no interaction inside;
+// - a popover (the online copy of a brain), for a panel that holds a link: a disclosure. The button has aria-expanded and aria-controls and
+//   toggles the panel (click, Enter, Space); the pointer opens it too and may move from the button into the panel; Tab from the button
+//   reaches the link; Esc, a click outside, or the focus leaving the button and the panel closes it.
+function infoOf(node) { return node instanceof Element ? node.closest('.info') : null; }
+function isPopover(info) { return info.classList.contains('info-pop'); }
+function infoButton(info) { return info.querySelector('.info-button'); }
+// Open the panel under its button, kept inside the window (above the button when there is no room below).
+function openInfo(info) {
+  if (info.classList.contains('is-dismissed')) return;
+  info.classList.add('is-open');
+  if (isPopover(info)) infoButton(info).setAttribute('aria-expanded', 'true');
+  const tip = info.querySelector('.info-tip');
+  info.classList.remove('is-above');
+  tip.style.left = '0px';
+  const rect = tip.getBoundingClientRect();
+  const over = rect.right - (document.documentElement.clientWidth - 12);
+  if (over > 0) tip.style.left = `${-over}px`;
+  if (rect.bottom > document.documentElement.clientHeight - 8 && info.getBoundingClientRect().top > rect.height) info.classList.add('is-above');
+}
+function closeInfo(info) {
+  info.classList.remove('is-open', 'is-dismissed', 'is-above');
+  delete info.dataset.pinned;
+  if (isPopover(info)) infoButton(info).setAttribute('aria-expanded', 'false');
+}
+// Closed on purpose (Esc, a second click): it stays closed until the pointer and the focus have left and returned.
+function dismissInfo(info) {
+  closeInfo(info);
+  info.classList.add('is-dismissed');
+}
+// Esc closes the panel that is open, and nothing else that time. A popover gives the focus back to its button.
+function dismissInfoTip() {
+  const info = document.querySelector('.info.is-open');
+  if (!info) return false;
+  dismissInfo(info);
+  if (isPopover(info)) infoButton(info).focus();
+  return true;
+}
+function togglePopover(info) {
+  if (info.classList.contains('is-open') && info.dataset.pinned) { dismissInfo(info); return; }
+  info.classList.remove('is-dismissed');
+  openInfo(info);
+  info.dataset.pinned = '1';
+}
+document.addEventListener('pointerover', event => { const info = infoOf(event.target); if (info) openInfo(info); });
+document.addEventListener('focusin', event => { const info = infoOf(event.target); if (info && !isPopover(info)) openInfo(info); });
+document.addEventListener('pointerout', event => {
+  const info = infoOf(event.target);
+  if (info && !info.contains(event.relatedTarget) && !info.dataset.pinned && !info.matches(':focus-within')) closeInfo(info);
+});
+document.addEventListener('focusout', event => {
+  const info = infoOf(event.target);
+  if (!info || info.contains(event.relatedTarget)) return;
+  delete info.dataset.pinned;
+  if (!info.matches(':hover')) closeInfo(info);
+});
+document.addEventListener('click', event => {
+  const button = event.target instanceof Element ? event.target.closest('.info-pop .info-button') : null;
+  if (button) togglePopover(infoOf(button));
+});
+document.addEventListener('pointerdown', event => {
+  for (const info of document.querySelectorAll('.info-pop[data-pinned]')) if (!info.contains(event.target)) closeInfo(info);
+});
+// The online copy of a brain: "Git", then its URL as a link to the repository's page (plain text when there is no safe page), or why there is none.
+// A page served by an older server sends no `url` at all: it is asked to restart rather than told there is no online copy.
+// A URL may wrap after a slash (not in the middle of a word when it can be avoided).
+function breakableUrl(node, text) {
+  for (const part of text.split(/(?<=\/)/)) node.append(part, document.createElement('wbr'));
+  return node;
+}
+function onlineCopyPopover(card) {
+  const id = `gitInfo-${card.name}`;
+  const known = 'url' in card;
+  const label = !known ? 'Restart tasks-web to see the online copy' : card.url ? `Online copy: ${card.url}` : 'No online copy';
+  const info = element('span', 'info info-pop');
+  const button = element('button', 'info-button');
+  button.type = 'button';
+  button.id = id;
+  button.dataset.focusKey = `info:${card.name}`;
+  button.setAttribute('aria-label', label);
+  button.setAttribute('aria-expanded', 'false');
+  button.setAttribute('aria-controls', `${id}Panel`);
+  button.append(svgIcon(ICONS.info));
+  const panel = element('span', 'info-tip');
+  panel.id = `${id}Panel`;
+  panel.setAttribute('role', 'group');
+  panel.setAttribute('aria-label', 'Online copy');
+  const box = element('span', 'info-tip-box');
+  box.append(element('span', 'info-tip-line info-tip-head', 'Git'));
+  if (known && card.url && typeof card.web_url === 'string' && /^https?:\/\//i.test(card.web_url)) {
+    const link = element('a', 'info-tip-line info-link');
+    link.href = card.web_url;
+    link.target = '_blank';
+    link.rel = 'noopener noreferrer';
+    link.append(breakableUrl(element('span', 'info-link-text'), card.url), element('span', 'sr-only', ' (opens in a new tab)'), svgIcon(ICONS.open));
+    box.append(link);
+  } else {
+    const line = element('span', 'info-tip-line');
+    if (known && card.url) breakableUrl(line, card.url); else line.textContent = known ? 'No online copy' : 'Restart tasks-web to see the online copy';
+    box.append(line);
+  }
+  panel.append(box);
+  info.append(button, panel);
+  return info;
+}
+
+// ---------- Git: save and send ----------
+// One card per brain of the Work, the chosen one first (never Work itself). The server says what is possible (`state`, `action`)
+// and writes the sentences; this draws them, with the changed notes in plain words (title, project, New / Edited / Deleted / Renamed),
+// and runs the one button of a card after a confirmation. No path, branch, hash or line count is shown.
+const GIT_STATE_ICONS = {clean: 'gitSaved', changes: 'gitEdited', unsent: 'gitSend', behind: 'gitBehind', unavailable: 'gitOff'};
+const GIT_VISIBLE_NOTES = 8;
+const GIT_VISIBLE_LINES = 3000; // the server cuts a comparison there
+const GIT_CHANGE_TEXT = {New: 'New', Edited: 'Edited', Deleted: 'Deleted', Renamed: 'Renamed'};
+let gitCards = [];
 let gitLoaded = false;
 let gitLoading = null;
 let gitLoadId = 0; // bumped when the brain changes: a load started before it no longer owns `gitLoading`
-let gitSelected = null;
-let gitDiffRequest = 0;
-const gitRowSelections = new WeakMap();
-function gitPlural(count, word) { return `${count} ${word}${count === 1 ? '' : 's'}`; }
-function gitBadgeClass(letter) {
-  return {A: 'add', M: 'mod', D: 'del', R: 'ren', C: 'ren', U: 'del', '?': 'new'}[letter] || 'mod';
-}
-function gitLetter(file, group) {
-  return group === 'staged' ? file.index : group === 'untracked' ? '?' : file.worktree;
-}
-function gitPathNode(file) {
-  const path = element('span', 'git-path');
-  if (file.orig_path) path.append(element('span', 'git-orig', file.orig_path), ' to ');
-  const slash = file.path.lastIndexOf('/');
-  if (slash >= 0) path.append(element('span', 'git-dir', file.path.slice(0, slash + 1)));
-  path.append(element('span', 'git-name', file.path.slice(slash + 1)));
-  return path;
-}
-function gitCountsNode(file, group) {
-  const counts = element('span', 'git-counts');
-  let added = file.added;
-  let deleted = file.deleted;
-  if (group === 'staged' && file.staged_added !== null) [added, deleted] = [file.staged_added, file.staged_deleted];
-  if (group === 'unstaged' && file.unstaged_added !== null) [added, deleted] = [file.unstaged_added, file.unstaged_deleted];
-  if (file.sensitive) counts.textContent = 'hidden';
-  else if (file.binary) counts.textContent = 'binary';
-  else if (added !== null && deleted !== null) counts.append(element('span', 'git-plus', `+${added}`), ' ', element('span', 'git-minus', `−${deleted}`));
-  return counts;
-}
-function gitRelativeDate(value) {
+let gitChangesRequest = 0;
+let gitConfirmCard = null; // the card the open confirmation is about, as the person saw it
+const gitResults = new Map(); // brain name -> what the last save or send said (shown in its card)
+const gitBusy = new Set(); // brain names being saved or sent
+const gitExpanded = new Set(); // brain names whose whole list of notes is shown
+// "2 hours ago", "yesterday", "3 days ago"; a date after a month.
+function relativeTime(value) {
   const date = new Date(value);
   if (Number.isNaN(date.getTime())) return '';
   const seconds = (date.getTime() - Date.now()) / 1000;
   const formatter = new Intl.RelativeTimeFormat(LOCALE, {numeric: 'auto'});
-  const steps = [[60, 'second', 1], [3600, 'minute', 60], [86400, 'hour', 3600], [2592000, 'day', 86400]];
-  for (const [limit, unit, size] of steps) {
+  for (const [limit, unit, size] of [[60, 'second', 1], [3600, 'minute', 60], [86400, 'hour', 3600], [2592000, 'day', 86400]]) {
     if (Math.abs(seconds) < limit) return formatter.format(Math.round(seconds / size), unit);
   }
   return DAY_YEAR_FORMAT.format(date);
 }
-function gitSameSelection(a, b) {
-  return Boolean(a && b) && a.repo === b.repo && a.kind === b.kind &&
-    (a.kind === 'commit' ? a.hash === b.hash : a.path === b.path && a.group === b.group);
+function orderedGitCards() {
+  return [...gitCards].sort((a, b) => Number(b.name === currentBrain) - Number(a.name === currentBrain));
 }
-function gitRow(className) {
-  const row = element('button', `git-row ${className}`);
+function gitPendingCount() { return gitCards.filter(card => card.pending).length; }
+function gitNoteRow(card, note) {
+  const row = element('button', 'git-note');
   row.type = 'button';
+  row.dataset.focusKey = `note:${card.name}:${note.path}`;
+  const change = element('span', `git-change git-change-${note.change.toLowerCase()}`, GIT_CHANGE_TEXT[note.change] || note.change);
+  const main = element('span', 'git-note-main');
+  main.append(element('span', 'git-note-title', note.title));
+  if (note.project) main.append(element('span', 'git-note-project', note.project));
+  const see = element('span', 'git-note-see', 'See changes');
+  see.append(svgIcon(ICONS.chevron));
+  row.append(change, main, see);
+  row.title = note.from ? `${note.from} → ${note.path}` : note.path;
+  row.setAttribute('aria-label', `${GIT_CHANGE_TEXT[note.change] || note.change}: ${note.title}${note.project ? `, ${note.project}` : ''}. See changes`);
+  row.addEventListener('click', () => openGitChanges(card, note));
   return row;
 }
-function gitFileRow(repo, file, group) {
-  const row = gitRow('git-file');
-  const letter = gitLetter(file, group);
-  const badge = element('span', `git-badge git-badge-${gitBadgeClass(letter)}`, letter);
-  badge.title = GIT_LABELS[letter] || letter;
-  row.append(badge, gitPathNode(file), gitCountsNode(file, group));
-  row.setAttribute('aria-label', `${GIT_LABELS[letter] || letter}: ${file.orig_path ? `${file.orig_path} to ` : ''}${file.path}`);
-  const selection = {repo: repo.id, kind: 'file', path: file.path, group};
-  gitRowSelections.set(row, selection);
-  row.setAttribute('aria-pressed', String(gitSameSelection(selection, gitSelected)));
-  row.addEventListener('click', () => selectGit(selection));
-  return row;
-}
-function gitCommitRow(repo, commit) {
-  const row = gitRow('git-commit');
-  const subject = element('span', 'git-subject', commit.subject || '(no message)');
-  if (commit.unpushed) subject.append(element('span', 'git-pill', 'unpushed'));
-  const meta = element('span', 'git-commit-meta', `${commit.author}, ${gitRelativeDate(commit.date)}`);
-  meta.title = commit.date;
-  const main = element('span', 'git-commit-main');
-  main.append(subject, meta);
-  row.append(element('span', 'git-hash', commit.short), main);
-  const selection = {repo: repo.id, kind: 'commit', hash: commit.hash, short: commit.short, subject: commit.subject};
-  gitRowSelections.set(row, selection);
-  row.setAttribute('aria-pressed', String(gitSameSelection(selection, gitSelected)));
-  row.addEventListener('click', () => selectGit(selection));
-  return row;
-}
-function gitSyncNode(repo) {
-  const sync = element('span', 'git-sync');
-  if (repo.upstream && repo.ahead !== null && repo.behind !== null) {
-    sync.textContent = `↑${repo.ahead} ↓${repo.behind}`;
-    sync.title = `${gitPlural(repo.ahead, 'commit')} to push, ${gitPlural(repo.behind, 'commit')} to pull, compared with ${repo.upstream} (last local sync, no fetch from this page)`;
-  } else if (repo.upstream) {
-    sync.textContent = 'remote branch not found';
-    sync.title = repo.upstream;
-  } else sync.textContent = 'no remote branch';
-  return sync;
-}
-function gitRepoCard(repo) {
-  const card = element('section', 'git-card');
-  card.setAttribute('aria-label', `Repository ${repo.label}`);
-  const head = element('div', 'git-card-head');
-  head.append(element('h2', '', repo.label));
-  if (!repo.available) {
-    card.append(head, element('p', 'git-unavailable', 'Git repository not found on this machine.'));
-    return card;
+function gitResultBox(card, result) {
+  const tone = result.ok ? 'ok' : result.saved ? 'partial' : 'failed';
+  const box = element('div', `git-result git-result-${tone}`);
+  box.setAttribute('role', result.ok ? 'status' : 'alert');
+  const body = element('div', 'git-result-body');
+  body.append(element('p', 'git-result-message', result.message));
+  if (result.details) {
+    const details = element('details', 'git-details');
+    details.append(element('summary', '', 'Details'), element('pre', '', result.details));
+    body.append(details);
   }
-  if (repo.error) {
-    card.append(head, element('p', 'git-error', repo.error));
-    return card;
+  const dismiss = iconButton('icon-button', 'Dismiss this message', '<path d="M4.5 4.5l7 7M11.5 4.5l-7 7"/>');
+  dismiss.dataset.focusKey = `dismiss:${card.name}`;
+  dismiss.addEventListener('click', () => { gitResults.delete(card.name); renderGit(`card:${card.name}`); });
+  box.append(body, dismiss);
+  return box;
+}
+function gitCardNode(card) {
+  const section = element('section', 'git-card');
+  section.dataset.state = card.state;
+  section.dataset.accent = accentFor(card.name);
+  section.dataset.focusKey = `card:${card.name}`;
+  section.tabIndex = -1;
+  section.setAttribute('aria-labelledby', `gitTitle-${card.name}`);
+  const head = element('div', 'git-head');
+  const title = element('h2', '', card.label);
+  title.id = `gitTitle-${card.name}`;
+  head.append(title);
+  head.append(onlineCopyPopover(card));
+  if (card.name === currentBrain && gitCards.length > 1) head.append(element('span', 'git-current', 'Current brain'));
+  const status = element('div', 'git-status');
+  const badge = element('span', 'git-badge');
+  badge.append(svgIcon(ICONS[GIT_STATE_ICONS[card.state] || 'gitOff']));
+  const text = element('div', 'git-status-text');
+  text.append(element('p', 'git-sentence', card.message));
+  if (card.last_saved) {
+    const last = element('p', 'git-last', `Last saved: ${relativeTime(card.last_saved)}`);
+    last.title = formatStamp(card.last_saved.slice(0, 16).replace('T', ' '));
+    text.append(last);
   }
-  head.append(element('span', 'git-branch', repo.detached ? `Detached HEAD (${repo.branch})` : repo.branch || '(no branch)'), gitSyncNode(repo),
-    element('span', 'git-count', repo.files.length ? gitPlural(repo.files.length, 'change') : 'clean'));
-  card.append(head);
-  const populated = GIT_GROUPS.map(group => [group, repo.files.filter(group.test)]).filter(([, files]) => files.length);
-  if (!populated.length) card.append(element('p', 'git-empty', 'No local changes.'));
-  for (const [group, files] of populated) {
-    const section = element('div', 'git-group');
-    const list = element('ul', 'git-list');
-    for (const file of files) {
+  status.append(badge, text);
+  section.append(head, status);
+  const result = gitResults.get(card.name);
+  if (result) section.append(gitResultBox(card, result));
+  if (card.changes.length) {
+    const total = card.count;
+    const heading = element('div', 'git-notes-head');
+    heading.append(element('h3', '', plural(total, 'changed note')));
+    section.append(heading);
+    const expanded = gitExpanded.has(card.name);
+    const shown = expanded ? card.changes : card.changes.slice(0, GIT_VISIBLE_NOTES);
+    const list = element('ul', 'git-notes');
+    for (const note of shown) {
       const item = element('li');
-      item.append(gitFileRow(repo, file, group.key));
+      item.append(gitNoteRow(card, note));
       list.append(item);
     }
-    section.append(element('h3', '', `${group.title} (${files.length})`), list);
-    card.append(section);
+    section.append(list);
+    if (card.changes.length > GIT_VISIBLE_NOTES) {
+      const toggle = element('button', 'link-button git-more', expanded ? 'Show fewer' : `Show all ${plural(card.changes.length, 'note')}`);
+      toggle.type = 'button';
+      toggle.dataset.focusKey = `more:${card.name}`;
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.addEventListener('click', () => {
+        if (gitExpanded.has(card.name)) gitExpanded.delete(card.name); else gitExpanded.add(card.name);
+        renderGit(`more:${card.name}`);
+      });
+      section.append(toggle);
+    }
+    if (card.more) section.append(element('p', 'git-last', `and ${plural(card.more, 'more note')}`));
   }
-  const commits = element('div', 'git-group git-commits');
-  const list = element('ul', 'git-list');
-  for (const commit of repo.commits) {
-    const item = element('li');
-    item.append(gitCommitRow(repo, commit));
-    list.append(item);
+  if (card.action) {
+    const busy = gitBusy.has(card.name);
+    const actions = element('div', 'git-actions');
+    const label = card.action === 'save' ? 'Save and send' : 'Send';
+    const verb = card.action === 'save' ? 'Saving and sending' : 'Sending';
+    const button = element('button', 'button button-primary', busy ? `${verb}…` : label);
+    button.type = 'button';
+    button.dataset.focusKey = `go:${card.name}`;
+    button.disabled = busy;
+    button.setAttribute('aria-busy', String(busy));
+    button.setAttribute('aria-label', busy ? `${verb} ${card.label}` : `${label} for ${card.label}`);
+    button.addEventListener('click', () => card.action === 'save' ? askGitSave(card) : runGit(card, 'send'));
+    actions.append(button);
+    section.append(actions);
   }
-  commits.append(element('h3', '', 'Latest commits'), list.children.length ? list : element('p', 'git-empty', 'No commits.'));
-  card.append(commits);
-  return card;
+  return section;
 }
-function renderGit() {
-  const files = gitRepos.reduce((total, repo) => total + (repo.files ? repo.files.length : 0), 0);
-  ids.gitCount.textContent = gitLoaded && files ? String(files) : '';
-  if (view === 'git') ids.resultCount.textContent = gitLoaded ? gitPlural(files, 'local change') : '';
+// Draws the cards again, keeping the scroll position and the focus (`fallbackKey`: where the focus goes when its control is gone).
+function renderGit(fallbackKey = '') {
+  const pending = gitPendingCount();
+  ids.gitCount.textContent = gitLoaded && pending ? String(pending) : '';
+  ids.gitButton.setAttribute('aria-label', gitLoaded && pending ? `Sync, ${plural(pending, 'brain')} to save or send` : 'Sync');
+  if (view !== 'git') return;
+  ids.resultCount.textContent = !gitLoaded ? '' : pending ? `${plural(pending, 'brain')} to save or send` : 'Everything is saved';
   if (!gitLoaded) return;
-  const focused = ids.gitRepos.contains(document.activeElement) ? gitRowSelections.get(document.activeElement) : null;
-  const scroll = ids.gitRepos.scrollTop;
-  ids.gitRepos.replaceChildren(...gitRepos.map(gitRepoCard));
-  ids.gitRepos.scrollTop = scroll;
-  if (focused) {
-    const row = [...ids.gitRepos.querySelectorAll('.git-row')].find(item => gitSameSelection(gitRowSelections.get(item), focused));
-    if (row) row.focus();
+  const focused = ids.gitCards.contains(document.activeElement) ? document.activeElement.dataset.focusKey || '' : '';
+  const scroll = ids.gitView.scrollTop;
+  ids.gitCards.replaceChildren(...orderedGitCards().map(gitCardNode));
+  ids.gitView.scrollTop = scroll;
+  const find = key => key ? [...ids.gitCards.querySelectorAll('[data-focus-key]')].find(node => node.dataset.focusKey === key) : null;
+  const target = find(focused) || find(fallbackKey);
+  if (target && (focused || fallbackKey)) target.focus({preventScroll: true});
+}
+// A message tied to a state of the brain goes when that state does; the others stay for one more look.
+function dropStaleGitResults() {
+  for (const [name, result] of [...gitResults]) {
+    const card = gitCards.find(item => item.name === name);
+    if (!card) gitResults.delete(name);
+    else if (result.version) { if (card.version !== result.version) gitResults.delete(name); }
+    else if (result.seen) gitResults.delete(name);
+    else result.seen = true;
   }
 }
-function markGitSelection() {
-  for (const row of ids.gitRepos.querySelectorAll('.git-row')) {
-    row.setAttribute('aria-pressed', String(gitSameSelection(gitRowSelections.get(row), gitSelected)));
-  }
-}
-function gitStillListed() {
-  if (!gitSelected) return false;
-  const repo = gitRepos.find(item => item.id === gitSelected.repo);
-  if (!repo || !repo.available || repo.error) return false;
-  if (gitSelected.kind === 'commit') return repo.commits.some(commit => commit.hash === gitSelected.hash);
-  const group = GIT_GROUPS.find(item => item.key === gitSelected.group);
-  return repo.files.some(file => file.path === gitSelected.path && group.test(file));
-}
-function loadGit() {
+function loadGit({quiet = false} = {}) {
   if (gitLoading) return gitLoading;
-  ids.gitStatus.textContent = gitLoaded ? 'Refreshing…' : 'Loading…';
-  ids.gitStatus.classList.remove('git-status-error');
-  if (!gitLoaded) ids.gitRepos.replaceChildren(element('p', 'git-loading', 'Loading repositories…'));
+  if (!quiet) {
+    ids.gitStatus.textContent = gitLoaded ? 'Refreshing…' : 'Loading…';
+    ids.gitStatus.classList.remove('git-status-error');
+    if (!gitLoaded && view === 'git') ids.gitCards.replaceChildren(element('p', 'loading-note', 'Loading…'));
+  }
   const loadId = gitLoadId;
   gitLoading = (async () => {
     try {
-      gitRepos = (await request('/api/git')).repos;
+      const data = await request('/api/git');
+      if (!Array.isArray(data.brains)) throw new Error('Restart tasks-web: this page is newer than the server that is running.');
+      gitCards = data.brains;
       gitLoaded = true;
+      dropStaleGitResults();
       ids.gitStatus.textContent = `Refreshed at ${TIME_FORMAT.format(new Date())}`;
       renderGit();
-      if (gitSelected && !gitStillListed()) {
-        gitSelected = null;
-        showGitDetail({message: 'This change is no longer present. Choose another file or commit.'});
-      } else if (gitSelected) loadGitDiff();
     } catch (error) {
-      if (error.stale || loadId !== gitLoadId) return;
+      if (error.stale || loadId !== gitLoadId || (quiet && gitLoaded)) return;
       ids.gitStatus.textContent = 'Failed';
       ids.gitStatus.classList.add('git-status-error');
-      if (!gitLoaded) {
-        const message = element('p', 'git-error', error.message);
+      if (!gitLoaded && view === 'git') {
+        const message = element('p', 'error-note', error.message);
         message.setAttribute('role', 'alert');
-        ids.gitRepos.replaceChildren(message);
-      } else showToast(`Git: ${error.message}`);
+        ids.gitCards.replaceChildren(message);
+      } else if (view === 'git') showToast(`Sync: ${error.message}`);
     } finally {
       if (loadId === gitLoadId) gitLoading = null;
     }
   })();
   return gitLoading;
 }
-function selectGit(selection) {
-  gitSelected = selection;
-  markGitSelection();
-  loadGitDiff();
+function replaceGitCard(card) {
+  const index = gitCards.findIndex(item => item.name === card.name);
+  if (index >= 0) gitCards[index] = card; else gitCards.push(card);
 }
-function showGitDetail({title = 'Diff', status = 'Ready', failed = false, message = '', note = '', lines = null}) {
-  ids.gitDetailTitle.textContent = title;
-  ids.gitDetailStatus.textContent = status;
-  ids.gitDetailStatus.className = failed ? 'git-status-error' : '';
-  ids.gitDetailEmpty.hidden = !message;
-  ids.gitDetailEmpty.textContent = message;
-  ids.gitDetailNote.hidden = !note;
-  ids.gitDetailNote.textContent = note;
-  ids.gitDiff.hidden = lines === null;
-  if (lines === null) { ids.gitDiff.replaceChildren(); return; }
-  const container = element('div', 'git-lines');
-  let inDiff = false;
-  let inHunk = false;
-  const fragment = document.createDocumentFragment();
-  for (const text of lines) {
-    let kind = '';
-    if (text.startsWith('diff --git')) { inDiff = true; inHunk = false; kind = 'head'; }
-    else if (inDiff && text.startsWith('@@')) { inHunk = true; kind = 'hunk'; }
-    else if (inHunk) kind = text.startsWith('+') ? 'add' : text.startsWith('-') ? 'del' : '';
-    else if (inDiff) kind = 'head';
-    const line = element('span', kind ? `git-line git-line-${kind}` : 'git-line');
-    line.textContent = text;
-    fragment.append(line);
-  }
-  container.append(fragment);
-  ids.gitDiff.replaceChildren(container);
-  ids.gitDiff.scrollTop = 0;
-  ids.gitDiff.scrollLeft = 0;
+// The confirmation says what will happen, in the person's words, and lists the notes (the server refuses if they have changed since).
+function askGitSave(card) {
+  const count = card.count;
+  ids.gitConfirmText.textContent = `Save ${plural(count, 'changed note')} of ${card.label} and send ${count === 1 ? 'it' : 'them'} to its online copy?`
+    + (card.unsent ? ' What was saved earlier and not sent yet goes with it.' : '');
+  const shown = card.changes.slice(0, GIT_VISIBLE_NOTES);
+  ids.gitConfirmList.replaceChildren(...shown.map(note => element('li', '', note.title)));
+  const rest = count - shown.length;
+  if (rest > 0) ids.gitConfirmList.append(element('li', 'git-confirm-more', `and ${plural(rest, 'more note')}`));
+  ids.gitConfirmDialog.dataset.accent = accentFor(card.name);
+  gitConfirmCard = card;
+  ids.gitConfirmDialog.showModal();
 }
-async function loadGitDiff() {
-  const selection = gitSelected;
-  if (!selection) return;
-  const repo = gitRepos.find(item => item.id === selection.repo);
-  const label = repo ? repo.label : selection.repo;
-  const groupTitle = selection.kind === 'file' ? GIT_GROUPS.find(group => group.key === selection.group).title.toLowerCase() : '';
-  const title = selection.kind === 'commit' ? `${label}: ${selection.short} ${selection.subject || ''}`.trim() : `${label}: ${selection.path} (${groupTitle})`;
-  const requestId = ++gitDiffRequest;
-  showGitDetail({title, status: 'Loading…', message: 'Loading the diff…'});
+async function runGit(card, action) {
+  if (gitBusy.has(card.name)) return;
+  gitBusy.add(card.name);
+  gitResults.delete(card.name);
+  renderGit(`go:${card.name}`);
   try {
-    const params = new URLSearchParams({repo: selection.repo});
-    let url;
-    if (selection.kind === 'commit') {
-      params.set('hash', selection.hash);
-      url = `/api/git/commit?${params}`;
-    } else {
-      params.set('path', selection.path);
-      params.set('staged', selection.group === 'staged' ? '1' : '0');
-      url = `/api/git/diff?${params}`;
-    }
-    const result = await request(url);
-    if (requestId !== gitDiffRequest) return;
-    if (selection.kind === 'commit') {
-      showGitDetail({title, note: result.truncated ? 'Preview truncated at 300 KB.' : '', lines: result.show.replace(/\n$/, '').split('\n')});
-    } else if (result.hidden) {
-      showGitDetail({title, message: 'Content hidden: this file is treated as sensitive (key, secret, .env…). Nothing is shown.'});
-    } else if (result.binary && !result.diff.trim()) {
-      showGitDetail({title, message: 'Binary file: no diff preview.'});
-    } else {
-      const notes = [];
-      if (result.binary) notes.push('Binary file: no line-by-line detail.');
-      if (result.staged && selection.group !== 'staged') notes.push('No unstaged change: showing the staged diff.');
-      if (result.truncated) notes.push('Preview truncated at 300 KB.');
-      showGitDetail({title, note: notes.join(' '), message: result.diff ? '' : 'No difference to show.', lines: result.diff ? result.diff.replace(/\n$/, '').split('\n') : null});
-    }
+    const result = await request(`/api/git/${action}`, {
+      method: 'POST', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+      body: JSON.stringify({version: card.version})
+    }, card.name);
+    replaceGitCard(result.brain);
+    gitResults.set(card.name, {ok: result.ok, saved: result.saved, message: result.message, details: result.details, version: result.ok ? '' : result.brain.version});
   } catch (error) {
-    if (requestId !== gitDiffRequest) return;
-    showGitDetail({title, status: 'Failed', failed: true, message: error.message});
+    // Refused before anything ran (the notes changed, the brain is behind, another save is running…): say so, and show the brain as it is now.
+    gitResults.set(card.name, {ok: false, saved: false, message: error.message, details: '', version: ''});
+    await loadGit({quiet: true});
+  } finally {
+    gitBusy.delete(card.name);
+    renderGit(`card:${card.name}`);
   }
 }
+async function openGitChanges(card, note) {
+  const requestId = ++gitChangesRequest;
+  ids.gitChangesTitle.textContent = note.title;
+  ids.gitChangesMeta.textContent = [GIT_CHANGE_TEXT[note.change] || note.change, note.project, card.label].filter(Boolean).join(' · ');
+  ids.gitChangesBody.replaceChildren(element('p', 'git-changes-message', 'Loading…'));
+  ids.gitChangesDialog.dataset.accent = accentFor(card.name);
+  if (!ids.gitChangesDialog.open) ids.gitChangesDialog.showModal();
+  ids.gitChangesBody.scrollTop = 0;
+  try {
+    const data = await request(`/api/git/changes?${new URLSearchParams({path: note.path})}`, {}, card.name);
+    if (requestId === gitChangesRequest) renderGitChanges(data);
+  } catch (error) {
+    if (requestId !== gitChangesRequest || error.stale) return;
+    ids.gitChangesBody.replaceChildren(element('p', 'git-changes-message', error.status === 404 ? 'This note has no change to save any more. Refresh the list.' : error.message));
+  }
+}
+function gitChangesMessage(data) {
+  if (data.hidden) return 'This file may hold a secret, so its content is not shown.';
+  if (data.binary) return 'This file is not text, so there is nothing to compare here.';
+  if (data.too_large) return 'This note is too large to compare here.';
+  if (data.unchanged) {
+    return {New: 'This note is empty.', Deleted: 'This note was empty.', Renamed: 'This note was moved or renamed. Its text did not change.'}[data.change]
+      || 'Nothing to show: the text of this note did not change.';
+  }
+  return '';
+}
+function renderGitChanges(data) {
+  const message = gitChangesMessage(data);
+  if (message) { ids.gitChangesBody.replaceChildren(element('p', 'git-changes-message', message)); return; }
+  const lines = element('div', 'git-lines');
+  for (const [kind, value] of data.blocks) {
+    if (kind === 'gap') {
+      lines.append(element('span', 'git-gap', `${plural(value, 'unchanged line')} not shown`));
+      continue;
+    }
+    const line = element('span', `git-line git-line-${kind}`);
+    if (kind !== 'ctx') line.append(element('span', 'sr-only', kind === 'add' ? 'Added: ' : 'Removed: '));
+    line.append(element('span', 'git-line-text', value));
+    lines.append(line);
+  }
+  const nodes = [element('p', 'git-legend', 'What was saved last time against what is there now: removed lines are struck through, added lines are highlighted.'), lines];
+  if (data.truncated) nodes.push(element('p', 'git-truncated', `Only the first ${GIT_VISIBLE_LINES} lines are shown.`));
+  ids.gitChangesBody.replaceChildren(...nodes);
+}
+function closeGitDialogs() {
+  gitChangesRequest += 1;
+  gitConfirmCard = null;
+  for (const dialog of [ids.gitConfirmDialog, ids.gitChangesDialog]) if (dialog.open) dialog.close();
+}
+ids.gitConfirmGo.addEventListener('click', () => {
+  const card = gitConfirmCard;
+  gitConfirmCard = null;
+  ids.gitConfirmDialog.close();
+  if (card) runGit(card, 'save');
+});
+ids.gitChangesClose.addEventListener('click', () => ids.gitChangesDialog.close());
+// A click on the backdrop closes the comparison, as it does for the other dialogs of the page.
+ids.gitChangesDialog.addEventListener('click', event => { if (event.target === ids.gitChangesDialog) ids.gitChangesDialog.close(); });
 
 // ---------- Undo ----------
 // Undo labels come from the server ("status of ABC-001 → In progress"): the arrow is shown as "to" in the interface.
@@ -2667,6 +2800,7 @@ async function undoLast() {
     setUndo(result.undo);
     detailCache.clear();
     await refresh();
+    if (result.restored && isDocsView()) openDoc(result.action_id, {nav: 'root'}); // a deleted note is back: show it
     showToast(`Undone: ${undoText(result.undone)}`);
   } catch (error) {
     showToast(error.message);
@@ -2699,7 +2833,7 @@ function showError(message) {
   ids.errorBanner.hidden = false;
 }
 async function refresh() {
-  if (view === 'git') loadGit();
+  loadGit({quiet: view !== 'git'}); // the number next to Git follows the writes made from the page
   if (isDocsView()) refreshDocsView();
   try {
     snapshot = await request('/api/actions');
@@ -2723,6 +2857,7 @@ async function refresh() {
 async function refreshQuietly() {
   try {
     snapshot = await request('/api/actions');
+    loadGit({quiet: true});
     setSummary();
     const scrolls = viewScrolls();
     if (ACTION_VIEWS.includes(view)) { render(); restoreViewScrolls(scrolls); }
@@ -2976,6 +3111,7 @@ function renderDocPane() {
   ids.docEditor.hidden = !doc || !docEditing;
   ids.docEditorToolbar.hidden = ids.docEditor.hidden;
   ids.docEdit.hidden = !doc || !doc.note || docEditing;
+  ids.docDelete.hidden = !doc || !doc.deletable || docEditing;
   ids.docCancel.hidden = !doc || !docEditing;
   ids.docSave.hidden = !doc || !docEditing;
   ids.docSave.disabled = docSaving;
@@ -3131,6 +3267,101 @@ async function saveDoc() {
     renderDocPane();
   }
 }
+// ---------- Deleting a note ----------
+// Only a working note has a Delete button (the server says so: `deletable`). The dialog asks first; when other pages still link to the note it
+// lists them instead (each opens in the reader) and offers no Delete, so that nothing breaks the next save. The toast offers Undo.
+let noteToDelete = null; // {id, version, title} of the note the open dialog is about
+function showDeleteNoteDialog(title, count, pages, error = '') {
+  const linked = count > 0;
+  ids.deleteNoteHeading.textContent = `Delete the note “${title}”?`;
+  ids.deleteNoteText.textContent = linked
+    ? `This note is linked from ${plural(count, 'page')}. Remove those links first, or ask your agent.`
+    : 'The note is removed from this brain. You can undo it right after.';
+  ids.deleteNoteLinks.hidden = !linked;
+  ids.deleteNoteLinks.replaceChildren(...pages.map(page => {
+    const item = element('li');
+    const open = element('button', 'link-button', page.title);
+    open.type = 'button';
+    open.title = `Open ${page.id}`;
+    open.addEventListener('click', () => openLinkingPage(page.id));
+    item.append(open, element('span', 'delete-note-path', page.id));
+    return item;
+  }));
+  if (count > pages.length) ids.deleteNoteLinks.append(element('li', 'delete-note-more', `and ${plural(count - pages.length, 'more page')}`));
+  ids.deleteNoteError.textContent = error;
+  ids.deleteNoteError.hidden = !error;
+  ids.deleteNoteConfirm.hidden = linked;
+  ids.deleteNoteConfirm.disabled = false;
+  ids.deleteNoteCancel.textContent = linked ? 'Close' : 'Cancel';
+}
+function openLinkingPage(id) {
+  ids.deleteNoteDialog.close();
+  if (view !== 'notes' && view !== 'search') setView('notes');
+  openDoc(id, {nav: 'root'});
+}
+async function askDeleteNote() {
+  const doc = docCurrent;
+  if (!doc || !doc.deletable || docEditing || docSaving || ids.docDelete.getAttribute('aria-busy') === 'true') return;
+  ids.docDelete.setAttribute('aria-busy', 'true'); // not `disabled`: a disabled button would lose the focus the dialog gives back to it
+  setDocError('');
+  try {
+    const info = await request(`/api/notes/backlinks?id=${encodeURIComponent(doc.id)}`);
+    if (!docCurrent || docCurrent.id !== doc.id) return;
+    noteToDelete = {id: doc.id, version: doc.version, title: info.title};
+    showDeleteNoteDialog(info.title, info.count, info.pages);
+    ids.deleteNoteDialog.showModal();
+  } catch (error) {
+    if (!error.stale) setDocError(error.status === 404 ? 'This note no longer exists.' : error.message);
+  } finally {
+    ids.docDelete.removeAttribute('aria-busy');
+  }
+}
+// The pane after the note is gone: nothing selected, the lists read again (and with them the number next to Sync).
+function clearDocPane() {
+  docRenderRequest += 1;
+  docSelectedId = null;
+  docCurrent = null;
+  docHistory = [];
+  docEditing = false;
+  docNote = null;
+  ids.docPaneEmpty.textContent = 'Choose a document to read it.';
+  setDocError('');
+  renderDocPane();
+  markDocSelection();
+}
+async function confirmDeleteNote() {
+  const target = noteToDelete;
+  if (!target) return;
+  ids.deleteNoteConfirm.disabled = true;
+  ids.deleteNoteError.hidden = true;
+  try {
+    const result = await request('/api/notes', {
+      method: 'DELETE', headers: {'Content-Type': 'application/json', 'X-Tasks-Token': token},
+      body: JSON.stringify({id: target.id, version: target.version})
+    });
+    noteToDelete = null;
+    setUndo(result.undo);
+    ids.deleteNoteDialog.close();
+    clearDocPane();
+    showToast('Note deleted', {undo: true});
+    await refresh();
+    await loadNotes(); // the list as it is drawn last: the focus goes to its first note (or, with none left, to New note)
+    (ids.docList.querySelector('.doc-item') || ids.newNoteButton).focus();
+  } catch (error) {
+    const data = error.data || {};
+    if (error.status === 409 && Array.isArray(data.backlinks)) showDeleteNoteDialog(target.title, data.count, data.backlinks);
+    else if (error.status === 409 || error.status === 404) {
+      // The note is not what the person saw (or is gone): say so in the pane, which shows it as it is now.
+      ids.deleteNoteDialog.close();
+      await openDoc(target.id, {nav: 'keep'});
+      setDocError(error.message);
+    } else showDeleteNoteDialog(target.title, 0, [], error.message);
+  }
+}
+ids.docDelete.addEventListener('click', askDeleteNote);
+ids.deleteNoteConfirm.addEventListener('click', confirmDeleteNote);
+ids.deleteNoteDialog.addEventListener('close', () => { noteToDelete = null; });
+
 function refreshDocsView() {
   loadNotes();
   if (view === 'search' && (ids.docQuery.value.trim() || docMode === 'search')) runDocSearch();
@@ -3321,6 +3552,7 @@ function focusSearch() {
 }
 function handleEscape(event) {
   if (document.querySelector('dialog[open]')) return;
+  if (dismissInfoTip()) { event.preventDefault(); return; }
   if (popoverState) { event.preventDefault(); closePopover(); return; }
   if (!ids.moreMenu.hidden) { event.preventDefault(); closeMoreMenu(); return; }
   if (ids.app.classList.contains('drawer-open')) { event.preventDefault(); closeDrawer(); return; }

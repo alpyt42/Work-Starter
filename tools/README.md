@@ -25,7 +25,7 @@ The tools act on the default brain, or on another brain with `BRAIN_DIR` (`--bra
 
 | Command | Role | Guide |
 |---|---|---|
-| `uv run tools/tasks-web/tasks-web.py [--port N] [--brain DIR]` | Local web interface for actions (Today, Actions, Board, Timeline, Notes, Search, Tools, Git) on `http://127.0.0.1:8765/`; a selector at the top left switches between the brains of the workspace without a restart (`?brain=<name>`, `GET /api/brains`; `--brain` sets the default brain); the Tools view runs predefined commands (links, brains, transcripts, actions, repositories) | [README.md](tasks-web/README.md) |
+| `uv run tools/tasks-web/tasks-web.py [--port N] [--brain DIR]` | Local web interface for actions (Today, Actions, Board, Timeline, Notes, Search, Tools, Sync) on `http://127.0.0.1:8765/`; a selector at the top left switches between the brains of the workspace without a restart (`?brain=<name>`, `GET /api/brains`; `--brain` sets the default brain); the Tools view runs predefined commands (links, brains, transcripts, actions, repositories); the Sync view saves and sends the changed notes of each brain (one card per brain, a confirmation, then `git add -A`, `git commit` and `git push` of that brain only, every hook running) | [README.md](tasks-web/README.md) |
 | `./tools/tasks-web/build-dock-app.sh` | Builds the macOS "Actions Brain" app to put in the Dock (macOS) | [README.md](tasks-web/README.md) |
 | `tools/tasks-web/launcher.sh` | Launcher called by the app: starts the server if needed and opens the page | [README.md](tasks-web/README.md) |
 

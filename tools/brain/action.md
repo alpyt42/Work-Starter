@@ -15,7 +15,12 @@
 A brain written with the earlier French labels is converted once with `uv run tools/brain/migrate-english.py` (dry run by default, `--write` to apply it).
 
 - **Creation**: `➕ YYYY-MM-DD` on the line (read by the Tasks plugin, which only knows dates) and `created: YYYY-MM-DD HH:MM` as a sub-bullet (Paris time, to the minute, no seconds). Set once, at creation.
-- **Update**: `updated: YYYY-MM-DD HH:MM`, rewritten by every change made with the tool (fields, status, adding or removing history).
+- **Update**: `updated: YYYY-MM-DD HH:MM` (Paris time, to the minute), set only when a change made with the tool really changes the action (fields, status, adding, editing or removing history). The semantic task is its line and all its sub-bullets except `updated:`, with trailing spaces ignored. That task is compared with the last Git synchronization point: the merge base of `HEAD` and its upstream branch, or `HEAD` when no upstream is configured.
+    1. the task is exactly as at that synchronization point (`git show <reference>:`, wherever it sits in the register): it gets back the `updated:` of that version, or none if that version had none;
+    2. otherwise, the action is as it was before the write (the same status set again, a note edited to the same text): the previous `updated:` stays, and when the whole register is unchanged the file is not rewritten;
+    3. otherwise the current time is stamped.
+
+  This single comparison covers any combination of fields and history: changing then restoring a status, date, title or note, repairing a stale stamp left by an earlier edit, and returning past unsent local commits. Without a Git repository, or when Git cannot read the reference, the file or the action, only 2 and 3 apply. `move` always stamps (it adds a history entry); `sweep` and `archive` move the block as it is and never touch `updated:`; `created:` is never rewritten. The JSON of `update` and `history` carries `updated_changed` (whether the `updated:` sub-bullet differs after the write).
 - **Due date**: `📅 YYYY-MM-DD` on the line when it is known; a nuanced due date ("before…") goes in a `due:` sub-bullet.
 - **Closure**: `✅ YYYY-MM-DD` (done) or `❌ YYYY-MM-DD` (cancelled) on the line; the evidence goes in a `done: <evidence>` sub-bullet, or `cancelled: YYYY-MM-DD by <person> — [source](…)`.
 - **Group**: an optional label, not a parent task. At most one `#group/<slug>` tag at the end of the title, just before the Tasks emojis: `- [ ] **DEM-097** — Owner — Plan the workshop #group/demo-workshop ➕ 2026-10-12 📅 2026-10-20`. Slug `[a-z0-9]+(-[a-z0-9]+)*`, 40 characters at most; the interface displays it as "Demo workshop". An action without a tag stays valid and is never modified when another field is rewritten. The tag is written with `--group`, not by hand in `--title`.
@@ -91,6 +96,6 @@ Versioned in `tools/machine/hooks/` and installed by `tools/machine/bootstrap.sh
 
 ## Guarantees
 
-- Atomic writes; refused if the register changed between the read and the write; the archive is written before the register and restored if the register write fails.
+- Atomic writes; refused if the register changed between the read and the write; the archive is written before the register and restored if the register write fails. A write that would leave the register byte-identical does not rewrite it.
 - Line endings and final newline preserved; `sweep` and `archive` are idempotent.
 - Symbolic links and anything outside the brain are ignored.
