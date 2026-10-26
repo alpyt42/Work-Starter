@@ -64,7 +64,7 @@
 *, *::before, *::after { box-sizing: border-box; }
 html, body { height: 100%; }
 body {
-  margin: 0; overflow: hidden; background: var(--bg-page); color: var(--text);
+  margin: 0; overflow-x: auto; overflow-y: hidden; background: var(--bg-page); color: var(--text);
   font-family: var(--font); font-size: var(--fs-sm); line-height: 1.45; font-weight: 400;
   -webkit-font-smoothing: antialiased; text-rendering: optimizeLegibility;
 }
@@ -400,7 +400,10 @@ input:disabled, select:disabled, textarea:disabled { opacity: .6; }
 .board-heading { flex: none; display: flex; align-items: center; gap: 8px; padding: 10px 12px 8px; font-size: var(--fs-sm); font-weight: 600; }
 .board-heading .status-icon { width: 14px; height: 14px; }
 .board-count { font-size: var(--fs-xs); font-weight: 400; color: var(--text-quiet); font-variant-numeric: tabular-nums; }
-.board-cards { flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior: contain; display: flex; flex-direction: column; gap: 6px; padding: 2px 8px 12px; }
+.board-cards {
+  flex: 1 1 0; min-height: 0; overflow-y: auto; overscroll-behavior-x: auto; overscroll-behavior-y: contain;
+  display: flex; flex-direction: column; gap: 6px; padding: 2px 8px 12px;
+}
 .board-cards > * { flex: none; }
 .board-empty { margin: 20px 8px; text-align: center; color: var(--text-quiet); font-size: var(--fs-xs); }
 .card {
