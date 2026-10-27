@@ -36,6 +36,7 @@ Portable agent instructions and tools for a `Work/` workspace. Reply in the user
 - Never delete anything in `artifacts/`, even a file you produced. In `agents/`, delete only what you created yourself in the same session (tests, fixtures, intermediate files); never the files of an earlier session, of another agent or of the owner. The only other move allowed is into an `archive/` folder inside them (for example `agents/archive/`, `artifacts/archive/`); the owner removes the rest.
 - Do not read, print, or copy the contents of `.env`, private keys, or credentials. `tools/.env` is ignored; `tools/.env.example` contains names only.
 - Do not edit home-directory configuration, SSH files, cloud configuration, or keychains without explicit user confirmation.
+- Never open or interact with an Internet site to perform an operation on the user's behalf. For online changes, prepare the content or instructions and let the user apply them.
 - Before any remote write or a first clone, read `tools/machine/GIT-IDENTITY.md`: how the Git author and SSH key are chosen per trust boundary, and how to verify them.
 - Scripts that write to an external service require an explicit request for that specific operation.
 
